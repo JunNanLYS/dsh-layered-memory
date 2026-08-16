@@ -1,6 +1,7 @@
 node_modules/
 dist-smoke/
 .zcode/
+AGENTS.md
 *.tsbuildinfo
 .DS_Store
 Thumbs.db
