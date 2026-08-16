@@ -160,6 +160,31 @@ window.__ModuleLoader__.load({
         padding: "4px 12px",
         marginBottom: 14,
       },
+      seg: {
+        display: "inline-flex",
+        border: "1px solid var(--dsw-alias-border-secondary, #e5e5e5)",
+        borderRadius: 8,
+        overflow: "hidden",
+        flexShrink: 0,
+      },
+      segBtn: {
+        padding: "4px 12px",
+        fontSize: 12,
+        lineHeight: "16px",
+        cursor: "pointer",
+        background: "transparent",
+        color: "inherit",
+        border: "none",
+        borderRight: "1px solid var(--dsw-alias-border-secondary, #e5e5e5)",
+      },
+      segBtnOn: {
+        background: "var(--dsw-alias-interactive-bg-primary, #1a7f37)",
+        color: "#fff",
+        fontWeight: 600,
+      },
+      segBtnOff: {
+        background: "var(--dsw-alias-bg-secondary, #f6f8fa)",
+      },
       flexRow: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
       grow: { flex: 1 },
       sceneHead: { display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" },
@@ -228,6 +253,36 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // ── Segmented 组件：分段选择器（记忆设置页的蒸馏思考档位等单选项） ──
+    function Segmented(props) {
+      var value = props.value;
+      var disabled = !!props.disabled;
+      return react.createElement(
+        "div",
+        { style: Object.assign({}, S.seg, disabled ? S.switchDisabled : null) },
+        props.options.map(function (opt, i) {
+          var on = opt.key === value;
+          return react.createElement(
+            "span",
+            {
+              key: opt.key,
+              style: Object.assign(
+                {},
+                S.segBtn,
+                on ? S.segBtnOn : S.segBtnOff,
+                i === props.options.length - 1 ? { borderRight: "none" } : null,
+                disabled ? { cursor: "not-allowed" } : null,
+              ),
+              onClick: function () {
+                if (!disabled && !on && props.onChange) props.onChange(opt.key);
+              },
+            },
+            opt.label,
+          );
+        }),
+      );
+    }
+
     // ── 会话记忆档位控件（输入栏 pill + macOS 风格滑动选择器） ──
     // 档位顺序即滑轨顺序：关闭 → chat → work → 自动（默认档"自动"居右）
     var MODES = [
@@ -257,40 +312,54 @@ window.__ModuleLoader__.load({
       return 3;
     }
 
-    /** 滑动选择器浮层（参考 macOS 滑动器：拖拽圆头 + 松手吸附最近档；当前档由下方标签高亮指示）。 */
+    /** 滑动选择器浮层（参考 macOS 滑动器：拖拽圆头 1:1 连续跟手，松手按动量投影吸附最近档）。 */
     function ModeSlider(props) {
+      ensureFlowStyle(); // 玻璃材质 class 与流光共用同一张注入样式表
       var trackRef = react.useRef(null);
+      // 拖拽状态：{ x: 圆头连续位置 px, lastX: 上次指针 clientX, t: 时间戳, v: 速度 px/ms（EMA 平滑） }
       var dragState = react.useState(null);
-      var dragIdx = dragState[0];
-      var setDragIdx = dragState[1];
+      var drag = dragState[0];
+      var setDrag = dragState[1];
 
-      var activeIdx = dragIdx === null ? modeIndex(props.mode) : dragIdx;
-
-      var idxFromClientX = function (clientX) {
+      var clampX = function (x) {
+        if (x < 0) return 0;
+        if (x > INNER_W) return INNER_W;
+        return x;
+      };
+      var xFromClientX = function (clientX) {
         var rect = trackRef.current.getBoundingClientRect();
-        var x = clientX - rect.left - THUMB / 2;
-        if (x < 0) x = 0;
-        if (x > INNER_W) x = INNER_W;
-        return Math.round((x / INNER_W) * (MODES.length - 1));
+        return clampX(clientX - rect.left - THUMB / 2);
       };
 
       var onPointerDown = function (e) {
         e.preventDefault();
         e.currentTarget.setPointerCapture(e.pointerId);
-        setDragIdx(idxFromClientX(e.clientX));
+        setDrag({ x: xFromClientX(e.clientX), lastX: e.clientX, t: e.timeStamp, v: 0 });
       };
       var onPointerMove = function (e) {
-        if (dragIdx === null) return;
-        setDragIdx(idxFromClientX(e.clientX));
+        if (drag === null) return;
+        var dt = e.timeStamp - drag.t;
+        var instV = dt > 0 ? (e.clientX - drag.lastX) / dt : drag.v;
+        setDrag({
+          x: xFromClientX(e.clientX),
+          lastX: e.clientX,
+          t: e.timeStamp,
+          v: drag.v * 0.7 + instV * 0.3, // EMA：瞬时抖动不放大，松手投影用
+        });
       };
       var onPointerUp = function (e) {
-        if (dragIdx === null) return;
-        var idx = idxFromClientX(e.clientX);
-        setDragIdx(null);
+        if (drag === null) return;
+        // 动量投影（Designing Fluid Interfaces）：按松手速度前瞻落点就近吸附；
+        // 投影量 clamp 到半档（±30px）——甩动最多把边界推到相邻档，绝不会跳两档
+        var projected = xFromClientX(e.clientX) + Math.max(-30, Math.min(30, drag.v * 120));
+        var idx = Math.round((clampX(projected) / INNER_W) * (MODES.length - 1));
+        setDrag(null);
         props.onCommit(MODES[idx].key);
       };
 
-      var thumbLeft = (activeIdx / (MODES.length - 1)) * INNER_W;
+      // 拖拽中圆头 1:1 跟指针（连续位置，不吸附）；静止时停在档位中心
+      var thumbLeft = drag !== null ? drag.x : (modeIndex(props.mode) / (MODES.length - 1)) * INNER_W;
+      var activeIdx = Math.min(MODES.length - 1, Math.max(0, Math.round((thumbLeft / INNER_W) * (MODES.length - 1))));
       var info = MODES[activeIdx];
 
       var stops = [];
@@ -310,7 +379,8 @@ window.__ModuleLoader__.load({
                   width: 6,
                   height: 6,
                   borderRadius: "50%",
-                  background: active ? MODES[i].color : "#c6cbd1",
+                  background: active ? MODES[i].color : "rgba(128,140,150,0.55)",
+                  zIndex: 2,
                 },
               },
             ),
@@ -331,9 +401,10 @@ window.__ModuleLoader__.load({
                   cursor: "pointer",
                   whiteSpace: "nowrap",
                   fontWeight: active ? 600 : 400,
-                  color: active ? MODES[i].color : "var(--dsw-alias-label-tertiary, #888)",
+                  // 未激活标签走主题 caption 令牌（浅色 #400 灰蓝 / 暗色 #600），玻璃面上保持可读
+                  color: active ? MODES[i].color : "var(--dsw-alias-label-caption, #888)",
                 },
-                onClick: function () { if (dragIdx === null) props.onCommit(MODES[i].key); },
+                onClick: function () { if (drag === null) props.onCommit(MODES[i].key); },
               },
               MODES[i].label,
             ),
@@ -344,6 +415,8 @@ window.__ModuleLoader__.load({
       return react.createElement(
         "div",
         {
+          // 外壳只负责定位（带 transform 居中）；玻璃材质拆到内层独立元素——
+          // Chromium 中 transform 元素上的 backdrop-filter 采样异常，玻璃会失效
           style: {
             position: "absolute",
             bottom: "calc(100% + 8px)",
@@ -351,32 +424,49 @@ window.__ModuleLoader__.load({
             left: "50%",
             transform: "translateX(-50%)",
             zIndex: 1000,
-            background: "var(--dsw-alias-bg-primary, #fff)",
-            border: "1px solid var(--dsw-alias-border-secondary, #e0e0e0)",
-            borderRadius: 10,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.16)",
-            padding: "12px 16px 30px",
           },
         },
+        react.createElement("div", {
+          className: "dsh-mem-glass",
+          style: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none" },
+        }),
         react.createElement(
           "div",
-          {
-            ref: trackRef,
-            style: {
-              position: "relative",
-              width: TRACK_W + THUMB,
-              height: 16,
-              touchAction: "none",
-              cursor: dragIdx === null ? "pointer" : "grabbing",
+          { style: { position: "relative", padding: "12px 16px 30px" } },
+          react.createElement(
+            "div",
+            {
+              ref: trackRef,
+              style: {
+                position: "relative",
+                // 容器宽 = thumb 活动范围（0..INNER_W + THUMB），点击映射与视觉两端严格对齐
+                width: TRACK_W,
+                height: 16,
+                touchAction: "none",
+                cursor: drag === null ? "pointer" : "grabbing",
             },
             onPointerDown: onPointerDown,
             onPointerMove: onPointerMove,
             onPointerUp: onPointerUp,
             onPointerCancel: onPointerUp,
           },
-          // 圆球先画、线条后画（叠在球面上）——线条从圆球中心穿过；
-          // 线两端延伸到两端球的边缘（对称穿过首尾停点的中心）；
-          // 当前档由下方标签高亮指示（上方不放文字）
+          // 线条（底层）：只连首尾停点的中心，两端不再露出停点外；
+          // thumb（当前档定位球）压最上层，不再被线条与停点穿过。
+          // 中性半透明灰在玻璃材质上深浅主题都可辨
+          react.createElement("div", {
+            style: {
+              position: "absolute",
+              left: THUMB / 2,
+              width: INNER_W,
+              top: 7,
+              height: 4,
+              borderRadius: 999,
+              background: "rgba(128,140,150,0.32)",
+              pointerEvents: "none",
+              zIndex: 1,
+            },
+          }),
+          stops,
           react.createElement("div", {
             style: {
               position: "absolute",
@@ -385,31 +475,81 @@ window.__ModuleLoader__.load({
               width: THUMB,
               height: THUMB,
               borderRadius: "50%",
-              background: "#fff",
+              // 微透白 + 上缘高光：与浮层玻璃材质同语言
+              background: "rgba(255,255,255,0.94)",
               border: "1px solid " + info.color,
-              boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.9)",
               pointerEvents: "none",
-              transition: dragIdx === null ? "left 120ms ease" : "none",
+              transition: drag === null ? "left 120ms ease" : "none",
+              zIndex: 3,
             },
           }),
-          react.createElement("div", {
-            style: {
-              position: "absolute",
-              left: 0,
-              width: TRACK_W,
-              top: 7,
-              height: 4,
-              borderRadius: 999,
-              background: "var(--dsw-alias-border-secondary, #e1e4e8)",
-              pointerEvents: "none",
-            },
-          }),
-          stops,
+          ),
+          props.error
+            ? react.createElement("div", { style: { fontSize: 11, color: "#cf222e", marginTop: 20, whiteSpace: "nowrap" } }, props.error)
+            : null,
         ),
-        props.error
-          ? react.createElement("div", { style: { fontSize: 11, color: "#cf222e", marginTop: 20, whiteSpace: "nowrap" } }, props.error)
-          : null,
       );
+    }
+
+    // ── auto 档边缘流光 + 浮层玻璃材质：inline style 放不了 @keyframes/@property/媒体查询，
+    // 惰性注入一次性样式表（id 防重复）。dsw 主题变量参考其前端令牌：暗色走 body[data-ds-dark-theme]。 ──
+    var FLOW_STYLE_ID = "dsh-mem-flow-style";
+    function ensureFlowStyle() {
+      if (document.getElementById(FLOW_STYLE_ID)) return;
+      var el = document.createElement("style");
+      el.id = FLOW_STYLE_ID;
+      el.textContent = [
+        // conic 角度动画需要 @property 注册才能插值；不支持的浏览器优雅降级为静态渐变边框
+        "@property --dsh-mem-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }",
+        "@keyframes dshMemFlow { to { --dsh-mem-angle: 360deg; } }",
+        // 边缘流光（双层背景）：border 区画旋转 conic 冷蓝光带；内部必须是【不透明】底色盖住
+        // 光带（半透明内层会让 conic 透进按钮内部，文字被光斑干扰——实测事故）。
+        // 不透明底 = 主题底混 12% 冷蓝（color-mix 出来 alpha=1），静态、随主题
+        ".dsh-mem-flow {",
+        "  border: 1px solid transparent;",
+        "  background:",
+        "    linear-gradient(",
+        "      color-mix(in srgb, var(--dsw-alias-bg-layer-2, #ffffff) 88%, #3b82f6),",
+        "      color-mix(in srgb, var(--dsw-alias-bg-layer-2, #ffffff) 88%, #3b82f6)",
+        "    ) padding-box,",
+        "    conic-gradient(from var(--dsh-mem-angle),",
+        "      rgba(8,145,178,0.9), rgba(59,130,246,0.9), rgba(125,211,252,1),",
+        "      rgba(99,102,241,0.9), rgba(8,145,178,0.9)) border-box;",
+        "  animation: dshMemFlow 3s linear infinite;",
+        "  color: #0284c7;",
+        "}",
+        "body[data-ds-dark-theme] .dsh-mem-flow { color: #7dd3fc; }",
+        "@media (prefers-reduced-motion: reduce) { .dsh-mem-flow { animation: none; } }",
+        // 浮层玻璃材质（Apple 菜单配方）：材质层必须是【无 transform 的独立元素】——
+        // Chromium 中 transform 元素上的 backdrop-filter 采样异常（玻璃失效，实测）。
+        // 低不透明度基底让底下内容透出 + 顶部光泽渐变 + blur/saturate + 亮缘 + 分主题阴影
+        ".dsh-mem-glass {",
+        "  border-radius: 12px;",
+        "  background:",
+        "    linear-gradient(rgba(255,255,255,0.34), rgba(255,255,255,0.05)),",
+        "    rgba(248,249,251,0.55);",
+        "  -webkit-backdrop-filter: blur(32px) saturate(180%);",
+        "  backdrop-filter: blur(32px) saturate(180%);",
+        "  border: 1px solid rgba(255,255,255,0.55);",
+        "  box-shadow:",
+        "    0 12px 40px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.07),",
+        "    inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -1px 0 rgba(0,0,0,0.03);",
+        "}",
+        "body[data-ds-dark-theme] .dsh-mem-glass {",
+        "  background:",
+        "    linear-gradient(rgba(255,255,255,0.09), rgba(255,255,255,0.015)),",
+        "    rgba(30,32,40,0.55);",
+        "  border-color: rgba(255,255,255,0.14);",
+        "  box-shadow:",
+        "    0 16px 48px rgba(0,0,0,0.55), 0 3px 12px rgba(0,0,0,0.35),",
+        "    inset 0 1px 0 rgba(255,255,255,0.12);",
+        "}",
+        "@media (prefers-reduced-transparency: reduce) {",
+        "  .dsh-mem-glass { background: var(--dsw-alias-bg-layer-2, #ffffff); backdrop-filter: none; -webkit-backdrop-filter: none; }",
+        "}",
+      ].join("\n");
+      document.head.appendChild(el);
     }
 
     /** 输入栏 pill：点击展开滑动选择器；props 来自 conversation.input.left 的 zone 注入。 */
@@ -474,6 +614,31 @@ window.__ModuleLoader__.load({
       if (!sessionId || !rpc) return null;
       var info = modeInfo(mode);
       var loaded = mode !== null;
+      var isAuto = loaded && mode === "auto";
+
+      if (isAuto) ensureFlowStyle();
+
+      // auto 档的边框/背景/文字色均由 .dsh-mem-flow 提供（双层背景画流光边 + 分主题文字），
+      // inline 不能设置这些——inline 优先级会盖掉 class 里的流光
+      var pillStyle = {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        height: 24,
+        padding: "0 10px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 500,
+        lineHeight: "20px",
+        cursor: "pointer",
+      };
+      if (isAuto) {
+        pillStyle.boxShadow = "0 0 12px rgba(56,189,248,0.30)";
+      } else {
+        pillStyle.border = "1px solid " + (loaded ? info.color + "66" : "var(--dsw-alias-border-secondary, #ccc)");
+        pillStyle.background = loaded ? info.color + "14" : "var(--dsw-alias-bg-secondary, #f6f8fa)";
+        pillStyle.color = loaded ? info.color : "var(--dsh-alias-label-tertiary, #888)";
+      }
 
       return react.createElement(
         "div",
@@ -484,21 +649,8 @@ window.__ModuleLoader__.load({
             type: "button",
             title: "本会话记忆档位（点击切换）",
             onClick: function () { setOpen(!open); },
-            style: {
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              height: 24,
-              padding: "0 10px",
-              borderRadius: 999,
-              fontSize: 12,
-              fontWeight: 500,
-              lineHeight: "20px",
-              cursor: "pointer",
-              border: "1px solid " + (loaded ? info.color + "66" : "var(--dsw-alias-border-secondary, #ccc)"),
-              background: loaded ? info.color + "14" : "var(--dsw-alias-bg-secondary, #f6f8fa)",
-              color: loaded ? info.color : "var(--dsh-alias-label-tertiary, #888)",
-            },
+            className: isAuto ? "dsh-mem-flow" : null,
+            style: pillStyle,
           },
           "记忆·",
           react.createElement("span", null, loaded ? info.label : "…"),
@@ -630,6 +782,31 @@ window.__ModuleLoader__.load({
                   disabled: !master,
                   onChange: function (v) { toggle("recall", v); },
                 }),
+                settingsData.effort
+                  ? react.createElement(
+                      "div",
+                      { style: S.switchRow },
+                      react.createElement(Segmented, {
+                        value: settingsData.effort.current,
+                        options: [
+                          { key: "", label: "跟随配置" },
+                          { key: "off", label: "off" },
+                          { key: "high", label: "high" },
+                          { key: "max", label: "max" },
+                        ],
+                        disabled: !master,
+                        onChange: function (v) { toggle("reasoningEffort", v); },
+                      }),
+                      react.createElement("div", null,
+                        react.createElement("div", { style: S.switchLabel }, "蒸馏思考"),
+                        react.createElement(
+                          "div",
+                          { style: S.switchDesc },
+                          "当前生效 " + (settingsData.effort.effective || "（不传，跟随模型默认）") +
+                            (settingsData.effort.current ? "" : "（来自部署配置 llm.reasoningEffort）"),
+                        )),
+                    )
+                  : null,
                 ceilingNote
                   ? react.createElement("p", { style: S.hint }, ceilingNote)
                   : null,
