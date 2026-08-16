@@ -74,6 +74,8 @@ export interface MemoryConfig {
     model: string;
     /** 单次蒸馏调用的输出 token 上限（推理模型的 reasoning 与正文共享该预算）。 */
     maxTokens: number;
+    /** 蒸馏调用的思考档位；空串不传（跟随模型默认）。 */
+    reasoningEffort: string;
     temperature: number;
     /** 单次蒸馏调用的用户 prompt 字符预算（≈token 数，按中文 1 字≈1 token 保守估算）。 */
     maxInputChars: number;
@@ -130,6 +132,9 @@ export const memorySchema = Schema.object({
     model: Schema.string().default(''),
     // 推理模型（如 v4-flash）的 reasoning 计入输出预算：预算不足会被思考吃光导致正文 0 字符
     maxTokens: Schema.number().default(20_000),
+    // 蒸馏是结构化抽取任务，默认关思考（off）：v4-flash 默认 high 档的思考可把任意 maxTokens
+    // 预算全部吃光导致正文 0 字符；非推理模型不认识 effort 时会报 UNSUPPORTED_REASONING_EFFORT，设空串跳过
+    reasoningEffort: Schema.union(['', 'off', 'high', 'max']).default('off'),
     temperature: Schema.number().default(0.3),
     // 模型上下文 1M token，日常压到 ~700k 使用（中文按 1 字≈1 token 保守折算）
     maxInputChars: Schema.number().default(700_000),

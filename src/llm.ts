@@ -4,7 +4,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 // 纯类型导入：拉入 dsh-agent-default-model 的 Context.agentDefaultModel 声明合并。
 import type {} from '@deepseek-ai/dsh-agent-default-model';
-import { createUserMessage } from '@deepseek-ai/dsh-llm';
+import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import type { MemoryConfig } from './config.js';
 import type { MemoryLogger } from './types.js';
 import { errDetail } from './util/filelog.js';
@@ -63,6 +63,10 @@ export async function callLLM(ctx: Context, cfg: MemoryConfig, opts: LlmCallOpti
     messages: [createUserMessage({ content: [{ type: 'text', text: user }], source: { kind: 'user' } })],
     temperature: opts.temperature ?? cfg.llm.temperature,
     maxTokens: opts.maxTokens ?? cfg.llm.maxTokens,
+    // 默认 off：蒸馏是结构化抽取，high 思考可吃光全部输出预算致正文 0 字符；空串不传（非推理模型）
+    ...(cfg.llm.reasoningEffort
+      ? { reasoningEffort: ReasoningEffortId(cfg.llm.reasoningEffort) }
+      : {}),
     signal,
   });
 

@@ -51,20 +51,26 @@ export class MemoryRunner {
         const turnStart = Date.now();
         this.logger.info(`[memory] 蒸馏管线开始（session=${sessionId}，mode=${mode}，本轮 ${messages.length} 条消息，待重试 ${this.pendingCount} 条）`);
         // ── L0：原始对话已由 capture 在 turn/end 即时落盘（不排蒸馏队列，防慢 LLM 阻塞/退出丢消息） ──
+        // ── 运行时调参视图：UI 选择器可临时覆盖蒸馏思考档位（空串回退静态 config 默认）。
+        // 浅拷贝只覆盖 llm 一层，其余键与 this.cfg 共享只读引用；pipeline 全链继续收 cfg，无需感知。 ──
+        const liveNow = this.live.get();
+        const cfg = liveNow.reasoningEffort
+            ? { ...this.cfg, llm: { ...this.cfg.llm, reasoningEffort: liveNow.reasoningEffort } }
+            : this.cfg;
         // ── L1：抽取 + 去重（按档分桶，失败按桶保留待重试） ──
         let newRecords = [];
-        const distillOn = this.live.get().enabled && this.live.get().distill;
-        if (this.cfg.extract.enabled && distillOn) {
+        const distillOn = liveNow.enabled && liveNow.distill;
+        if (cfg.extract.enabled && distillOn) {
             const bucket = this.pending[mode];
             bucket.push(...messages);
             if (bucket.length > 200)
                 bucket.splice(0, bucket.length - 200);
             try {
                 const t = Date.now();
-                const result = await runExtraction(this.ctx, this.cfg, this.stores.l1, this.states, bucket, this.background, this.logger, mode);
+                const result = await runExtraction(this.ctx, cfg, this.stores.l1, this.states, bucket, this.background, this.logger, mode);
                 if (!result.skipped)
                     this.pending[mode] = [];
-                this.background = [...this.background.slice(-this.cfg.extract.backgroundMessages), ...messages];
+                this.background = [...this.background.slice(-cfg.extract.backgroundMessages), ...messages];
                 newRecords = result.newRecords;
                 this.logger.info(`[memory] L1 阶段完成（${Date.now() - t}ms）`);
             }
@@ -84,16 +90,16 @@ export class MemoryRunner {
             }
         }
         // ── L2/L3：按记录族各自判定与执行 ──
-        if (this.cfg.l2.enabled && distillOn) {
+        if (cfg.l2.enabled && distillOn) {
             for (const family of ['chat', 'work']) {
                 const familyRecords = newRecords.filter((r) => (r.family ?? 'chat') === family);
                 if (familyRecords.length === 0)
                     continue;
                 const fstate = this.states[family];
-                if (fstate.newMemoriesSinceL2 >= this.cfg.l2.minNewMemories) {
+                if (fstate.newMemoriesSinceL2 >= cfg.l2.minNewMemories) {
                     try {
                         const t = Date.now();
-                        const result = await runSceneConsolidation(this.ctx, this.cfg, this.stores.scenes[family], familyRecords, this.logger, family);
+                        const result = await runSceneConsolidation(this.ctx, cfg, this.stores.scenes[family], familyRecords, this.logger, family);
                         fstate.lastL2At = Date.now();
                         fstate.newMemoriesSinceL2 = 0;
                         if (result.personaRequestedReason)
@@ -105,14 +111,14 @@ export class MemoryRunner {
                     }
                 }
                 else {
-                    this.logger.debug?.(`[memory] L2 跳过（family=${family}，本族新增 ${familyRecords.length} 条，累计未整合 ${fstate.newMemoriesSinceL2}/${this.cfg.l2.minNewMemories}）`);
+                    this.logger.debug?.(`[memory] L2 跳过（family=${family}，本族新增 ${familyRecords.length} 条，累计未整合 ${fstate.newMemoriesSinceL2}/${cfg.l2.minNewMemories}）`);
                 }
             }
         }
-        if (this.cfg.l3.enabled && distillOn) {
+        if (cfg.l3.enabled && distillOn) {
             for (const family of ['chat', 'work']) {
                 try {
-                    await runPersona(this.ctx, this.cfg, this.stores.scenes[family], this.stores.persona[family], this.states[family], this.logger, family);
+                    await runPersona(this.ctx, cfg, this.stores.scenes[family], this.stores.persona[family], this.states[family], this.logger, family);
                 }
                 catch (err) {
                     this.logger.warn(`[memory] L3 画像蒸馏失败（family=${family}）: ${errDetail(err)}`);

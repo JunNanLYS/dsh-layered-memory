@@ -46,10 +46,11 @@ Agent 循环；召回注入用标签包裹、捕获侧自动剥离，防止反�
 
 ### 记忆浏览器（设置页 → 记忆）
 
-多 Tab 页面，两族混合视图：**概览**（各层计数 + 记忆模式开关面板，5 秒自动刷新）、
+多 Tab 页面，两族混合视图：**概览**（各层计数 + 记忆模式开关面板 + 蒸馏思考档位选择器，5 秒自动刷新）、
 **记忆**（L1 卡片列表，关键词/类型/情境筛选）、**场景**（L2 全文）、**画像**（L3 全文）、
-**日志**（`memory.log` 尾部 200 行）。开关走官方 settings 服务（命名空间 `dsh-memory`，
-实时生效、重启保留）；生效规则 = **静态 config（部署上限）AND 运行时开关**，
+**日志**（`memory.log` 尾部 200 行）。开关与思考档位走官方 settings 服务（命名空间 `dsh-memory`，
+实时生效、重启保留）；开关生效规则 = **静态 config（部署上限）AND 运行时开关**；
+思考档位为运行时覆盖（选择器选"跟随配置"则用部署配置 `llm.reasoningEffort` 作默认），
 数据通道为 loopback RPC（`dsh-memory/*`）。
 
 ## 快速开始
@@ -134,6 +135,7 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 | `embedding.dimensions` | `0` | 向量维度（启用时必填，须与模型输出一致） |
 | `llm.provider/model` | 空 | 蒸馏模型覆盖（默认用当前默认选择） |
 | `llm.maxTokens` | `20000` | 单次蒸馏输出 token 上限（全阶段统一；推理模型的 reasoning 与正文共享该预算，过低会被思考吃光导致正文 0 字符） |
+| `llm.reasoningEffort` | `off` | 蒸馏思考档位（部署默认）：`off` / `high` / `max`，空串不传（跟随模型默认）。蒸馏是结构化抽取任务，默认关思考——推理模型（如 v4-flash）默认 high 档的思考可把任意输出预算全部吃光导致正文 0 字符；非推理模型不认识 effort 时需设为空串。运行时可在设置页 → 记忆 → 概览临时切换（选"跟随配置"即回退本值） |
 | `llm.temperature` | `0.3` | 蒸馏温度 |
 | `llm.maxInputChars` | `700000` | 单次蒸馏输入字符预算（超限的 L1 输入自动分块抽取） |
 | `tools` | `true` | 是否注册模型可调用的记忆工具 |

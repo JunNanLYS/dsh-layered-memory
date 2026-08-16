@@ -10,6 +10,9 @@ import Schema from '@deepseek-ai/schemastery';
 import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 import type { MemoryLogger } from './types.js';
 
+/** 蒸馏思考档位可选项：'' = 跟随静态 config（部署默认）。 */
+export type EffortChoice = '' | 'off' | 'high' | 'max';
+
 export interface MemoryLiveSettings {
   /** 总开关：关 = 捕获/蒸馏/召回注入全停（数据保留） */
   enabled: boolean;
@@ -19,6 +22,8 @@ export interface MemoryLiveSettings {
   distill: boolean;
   /** 召回注入（画像/记忆上下文） */
   recall: boolean;
+  /** 蒸馏思考档位运行时覆盖：'' = 跟随静态 config（llm.reasoningEffort） */
+  reasoningEffort: EffortChoice;
 }
 
 export interface LiveSettingsHandle {
@@ -31,7 +36,7 @@ export interface LiveSettingsHandle {
 
 const NS = settingsNamespace('dsh-memory');
 
-const ALWAYS_ON: MemoryLiveSettings = { enabled: true, capture: true, distill: true, recall: true };
+const ALWAYS_ON: MemoryLiveSettings = { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' };
 
 export function liveSettingsSchema(): Schema<MemoryLiveSettings> {
   return Schema.object({
@@ -39,6 +44,7 @@ export function liveSettingsSchema(): Schema<MemoryLiveSettings> {
     capture: Schema.boolean().default(true),
     distill: Schema.boolean().default(true),
     recall: Schema.boolean().default(true),
+    reasoningEffort: Schema.union(['', 'off', 'high', 'max']).default(''),
   });
 }
 
@@ -60,7 +66,8 @@ export function registerLiveSettings(ctx: Context, logger: MemoryLogger): LiveSe
         const prev = current;
         current = resolveSettings(next);
         logger.info(
-          `[memory] 记忆模式开关更新：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}（此前 总=${prev.enabled}）`,
+          `[memory] 记忆模式开关更新：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}` +
+            `，蒸馏思考=${current.reasoningEffort || '跟随配置'}（此前 总=${prev.enabled}）`,
         );
       });
       inner = {
@@ -71,7 +78,8 @@ export function registerLiveSettings(ctx: Context, logger: MemoryLogger): LiveSe
         },
       };
       logger.info(
-        `[memory] 记忆模式开关就绪（settings 命名空间 dsh-memory，当前：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}）`,
+        `[memory] 记忆模式开关就绪（settings 命名空间 dsh-memory，当前：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}` +
+          `，蒸馏思考=${current.reasoningEffort || '跟随配置'}）`,
       );
       return true;
     } catch (err) {
@@ -100,10 +108,15 @@ export function registerLiveSettings(ctx: Context, logger: MemoryLogger): LiveSe
 function resolveSettings(value: unknown): MemoryLiveSettings {
   if (!value || typeof value !== 'object') return { ...ALWAYS_ON };
   const v = value as Partial<MemoryLiveSettings>;
+  const efforts = ['', 'off', 'high', 'max'] as const;
   return {
     enabled: v.enabled !== false,
     capture: v.capture !== false,
     distill: v.distill !== false,
     recall: v.recall !== false,
+    reasoningEffort:
+      typeof v.reasoningEffort === 'string' && efforts.includes(v.reasoningEffort as EffortChoice)
+        ? (v.reasoningEffort as EffortChoice)
+        : '',
   };
 }

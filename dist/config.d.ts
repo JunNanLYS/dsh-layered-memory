@@ -72,6 +72,8 @@ export interface MemoryConfig {
         model: string;
         /** 单次蒸馏调用的输出 token 上限（推理模型的 reasoning 与正文共享该预算）。 */
         maxTokens: number;
+        /** 蒸馏调用的思考档位；空串不传（跟随模型默认）。 */
+        reasoningEffort: string;
         temperature: number;
         /** 单次蒸馏调用的用户 prompt 字符预算（≈token 数，按中文 1 字≈1 token 保守估算）。 */
         maxInputChars: number;
@@ -158,6 +160,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         provider: Schema<string, string>;
         model: Schema<string, string>;
         maxTokens: Schema<number, number>;
+        reasoningEffort: Schema<"" | "off" | "high" | "max", "" | "off" | "high" | "max">;
         temperature: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;
@@ -165,6 +168,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         provider: Schema<string, string>;
         model: Schema<string, string>;
         maxTokens: Schema<number, number>;
+        reasoningEffort: Schema<"" | "off" | "high" | "max", "" | "off" | "high" | "max">;
         temperature: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;
@@ -247,6 +251,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         provider: Schema<string, string>;
         model: Schema<string, string>;
         maxTokens: Schema<number, number>;
+        reasoningEffort: Schema<"" | "off" | "high" | "max", "" | "off" | "high" | "max">;
         temperature: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;
@@ -254,6 +259,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         provider: Schema<string, string>;
         model: Schema<string, string>;
         maxTokens: Schema<number, number>;
+        reasoningEffort: Schema<"" | "off" | "high" | "max", "" | "off" | "high" | "max">;
         temperature: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;

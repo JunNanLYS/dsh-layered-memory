@@ -1,13 +1,14 @@
 import Schema from '@deepseek-ai/schemastery';
 import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 const NS = settingsNamespace('dsh-memory');
-const ALWAYS_ON = { enabled: true, capture: true, distill: true, recall: true };
+const ALWAYS_ON = { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' };
 export function liveSettingsSchema() {
     return Schema.object({
         enabled: Schema.boolean().default(true),
         capture: Schema.boolean().default(true),
         distill: Schema.boolean().default(true),
         recall: Schema.boolean().default(true),
+        reasoningEffort: Schema.union(['', 'off', 'high', 'max']).default(''),
     });
 }
 export function registerLiveSettings(ctx, logger) {
@@ -27,7 +28,8 @@ export function registerLiveSettings(ctx, logger) {
             scope.watch((next) => {
                 const prev = current;
                 current = resolveSettings(next);
-                logger.info(`[memory] 记忆模式开关更新：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}（此前 总=${prev.enabled}）`);
+                logger.info(`[memory] 记忆模式开关更新：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}` +
+                    `，蒸馏思考=${current.reasoningEffort || '跟随配置'}（此前 总=${prev.enabled}）`);
             });
             inner = {
                 supported: true,
@@ -36,7 +38,8 @@ export function registerLiveSettings(ctx, logger) {
                     await scope.update(patch);
                 },
             };
-            logger.info(`[memory] 记忆模式开关就绪（settings 命名空间 dsh-memory，当前：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}）`);
+            logger.info(`[memory] 记忆模式开关就绪（settings 命名空间 dsh-memory，当前：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}` +
+                `，蒸馏思考=${current.reasoningEffort || '跟随配置'}）`);
             return true;
         }
         catch (err) {
@@ -64,10 +67,14 @@ function resolveSettings(value) {
     if (!value || typeof value !== 'object')
         return { ...ALWAYS_ON };
     const v = value;
+    const efforts = ['', 'off', 'high', 'max'];
     return {
         enabled: v.enabled !== false,
         capture: v.capture !== false,
         distill: v.distill !== false,
         recall: v.recall !== false,
+        reasoningEffort: typeof v.reasoningEffort === 'string' && efforts.includes(v.reasoningEffort)
+            ? v.reasoningEffort
+            : '',
     };
 }

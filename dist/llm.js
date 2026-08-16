@@ -1,4 +1,4 @@
-import { createUserMessage } from '@deepseek-ai/dsh-llm';
+import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import { errDetail } from './util/filelog.js';
 /** 解析蒸馏用的 provider/model：配置优先，其次当前默认选择。 */
 export async function resolveModelRoute(ctx, cfg) {
@@ -35,6 +35,10 @@ export async function callLLM(ctx, cfg, opts) {
         messages: [createUserMessage({ content: [{ type: 'text', text: user }], source: { kind: 'user' } })],
         temperature: opts.temperature ?? cfg.llm.temperature,
         maxTokens: opts.maxTokens ?? cfg.llm.maxTokens,
+        // 默认 off：蒸馏是结构化抽取，high 思考可吃光全部输出预算致正文 0 字符；空串不传（非推理模型）
+        ...(cfg.llm.reasoningEffort
+            ? { reasoningEffort: ReasoningEffortId(cfg.llm.reasoningEffort) }
+            : {}),
         signal,
     });
     const startedAt = Date.now();

@@ -221,24 +221,39 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       return { sessionId: p.sessionId, mode: p.mode };
     }
 
-    case 'dsh-memory/settings-get':
+    case 'dsh-memory/settings-get': {
+      const s = live?.get();
       return {
         supported: live?.supported ?? false,
-        settings: live?.get() ?? { enabled: true, capture: true, distill: true, recall: true },
+        settings: s ?? { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' },
         // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
         ceilings: { capture: cfg.capture.enabled, distill: cfg.extract.enabled, recall: cfg.recall.enabled },
+        // 蒸馏思考档位：current 是运行时覆盖（'' = 跟随配置），effective 是实际生效值
+        effort: {
+          current: s?.reasoningEffort ?? '',
+          effective: s?.reasoningEffort || cfg.llm.reasoningEffort,
+          fallback: cfg.llm.reasoningEffort,
+        },
       };
+    }
 
     case 'dsh-memory/settings-set': {
       if (!live) throw new Error('开关通道未初始化');
       const patch = (payload ?? {}) as Record<string, unknown>;
-      const allowed: Array<keyof ReturnType<typeof live.get>> = ['enabled', 'capture', 'distill', 'recall'];
-      const clean: Record<string, boolean> = {};
-      for (const key of allowed) {
+      const clean: Record<string, boolean | string> = {};
+      for (const key of ['enabled', 'capture', 'distill', 'recall'] as const) {
         if (typeof patch[key] === 'boolean') clean[key] = patch[key] as boolean;
+      }
+      if (patch.reasoningEffort !== undefined) {
+        const v = String(patch.reasoningEffort);
+        if (!['', 'off', 'high', 'max'].includes(v)) {
+          throw new Error(`非法思考档位: ${v}（允许 ''/off/high/max）`);
+        }
+        clean.reasoningEffort = v;
       }
       if (Object.keys(clean).length === 0) throw new Error('开关更新载荷为空');
       await live.update(clean);
+      deps.logger.info(`[memory] 设置更新：${JSON.stringify(clean)}`);
       return { ok: true, settings: live.get() };
     }
 

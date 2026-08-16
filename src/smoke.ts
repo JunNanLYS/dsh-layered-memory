@@ -389,7 +389,7 @@ async function main(): Promise<void> {
       await personaS.chat.write('# Team Operating Doctrine\n\n- Nann 喜欢简洁回复\n');
 
       // fake live 开关句柄
-      let liveVal = { enabled: true, capture: true, distill: true, recall: true };
+      let liveVal = { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' };
       const live = {
         supported: true,
         get: () => liveVal,
@@ -413,6 +413,7 @@ async function main(): Promise<void> {
           capture: { enabled: true, stripCodeBlocks: true, maxMessageChars: 4000 },
           extract: { enabled: true, minMessages: 1, backgroundMessages: 10, candidatePool: 5 },
           recall: { enabled: true, maxResults: 5, includePersona: true, includeSceneNav: true, strategy: 'keyword', scoreThreshold: 0.3 },
+          llm: { reasoningEffort: 'off' },
         } as never,
         { l0: l0s, l1: l1s, scenes: scenesS, persona: personaS, state: stateS },
         silentLogger,
@@ -429,8 +430,9 @@ async function main(): Promise<void> {
         return r.value as never;
       };
 
-      const sg = await call('dsh-memory/settings-get') as never as { supported: boolean; settings: { enabled: boolean }; ceilings: { capture: boolean } };
+      const sg = await call('dsh-memory/settings-get') as never as { supported: boolean; settings: { enabled: boolean }; ceilings: { capture: boolean }; effort: { current: string; effective: string; fallback: string } };
       assert(sg.supported && sg.settings.enabled === true && sg.ceilings.capture === true, 'settings-get 返回开关与上限');
+      assert(sg.effort.current === '' && sg.effort.effective === 'off' && sg.effort.fallback === 'off', 'settings-get 思考档位：空覆盖回退部署默认');
 
       const smg = await call('dsh-memory/session-mode-get', { sessionId: 'sess-x' }) as never as { mode: string; defaultMode: string };
       assert(smg.mode === 'auto' && smg.defaultMode === 'auto', 'session-mode-get 未设置会话返回默认档');
@@ -446,6 +448,12 @@ async function main(): Promise<void> {
 
       const ss = await call('dsh-memory/settings-set', { enabled: false }) as never as { settings: { enabled: boolean } };
       assert(ss.settings.enabled === false && liveVal.enabled === false, 'settings-set 写透到 live 句柄');
+
+      const se = await call('dsh-memory/settings-set', { reasoningEffort: 'high' }) as never as { settings: { reasoningEffort: string } };
+      assert(se.settings.reasoningEffort === 'high' && liveVal.reasoningEffort === 'high', 'settings-set 写入思考档位覆盖');
+      let badEffort = false;
+      try { await call('dsh-memory/settings-set', { reasoningEffort: 'banana' }); } catch { badEffort = true; }
+      assert(badEffort, 'settings-set 拒绝非法思考档位');
 
       const lr = await call('dsh-memory/list-records', { limit: 10, offset: 0 }) as never as { items: Array<{ id: string; content: string; type: string }>; total: number; hasMore: boolean; scenes: string[] };
       assert(lr.total === 1 && lr.items[0].id === 'rpc-r1' && lr.items[0].type === 'instruction', 'list-records 默认浏览');

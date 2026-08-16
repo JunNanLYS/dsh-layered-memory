@@ -6,6 +6,8 @@
 import type { Context } from '@deepseek-ai/cordis';
 import Schema from '@deepseek-ai/schemastery';
 import type { MemoryLogger } from './types.js';
+/** 蒸馏思考档位可选项：'' = 跟随静态 config（部署默认）。 */
+export type EffortChoice = '' | 'off' | 'high' | 'max';
 export interface MemoryLiveSettings {
     /** 总开关：关 = 捕获/蒸馏/召回注入全停（数据保留） */
     enabled: boolean;
@@ -15,6 +17,8 @@ export interface MemoryLiveSettings {
     distill: boolean;
     /** 召回注入（画像/记忆上下文） */
     recall: boolean;
+    /** 蒸馏思考档位运行时覆盖：'' = 跟随静态 config（llm.reasoningEffort） */
+    reasoningEffort: EffortChoice;
 }
 export interface LiveSettingsHandle {
     /** settings 服务是否可用（不可用时 UI 侧隐藏开关面板） */
