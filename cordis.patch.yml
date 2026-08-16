@@ -1,6 +1,10 @@
 # dsh-layered-memory 组合包层：安装（dsh plugin --profile <name> add dsh-layered-memory）
 # 后自动挂载插件行，无需再手改 profile 的 cordis.patch.yml。
-# 覆盖配置请在 profile 自己的 cordis.patch.yml 里按同 id 覆写（整行替换，不深合并）。
+# 覆盖配置请在 profile 自己的 cordis.patch.yml 里写顶层裸 patch（直接 id:，不要包 insert:，
+# 同 id 再 insert 会报 duplicate loader entry id 启动失败）：
+#   - id: dsh-memory
+#     name: dsh-layered-memory
+#     config: { family: auto }   # 键按行整体替换，不深合并
 - insert:
     - id: dsh-memory
       name: dsh-layered-memory

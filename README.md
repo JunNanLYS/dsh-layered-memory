@@ -66,17 +66,17 @@ dsh plugin --profile web add /path/to/dsh-layered-memory
 
 本包声明了 `dsh.bundle` 组合包层（`cordis.patch.yml`），安装后会**自动挂载插件行**——
 不需要再手改 `$DSH_HOME/profiles/web/cordis.patch.yml`；要覆盖配置时，在 profile 自己的
-`cordis.patch.yml` 里按同 id（`dsh-memory`）覆写：
+`cordis.patch.yml` 里写**顶层裸 patch 条目**（直接 `id:`，不要包在 `insert:` 里——
+insert 与 bundle 层同 id 追加会导致 `duplicate loader entry id` 启动失败）：
 
 ```yaml
-- insert:
-    - id: dsh-memory
-      name: dsh-layered-memory
-      config:
-        family: auto          # 新会话默认档：auto | chat | work
-        llm:                  # 蒸馏模型路由（不写则跟随当前默认模型）
-          provider: ''
-          model: ''
+- id: dsh-memory
+  name: dsh-layered-memory
+  config:                    # 键按行整体替换（不深合并），按需写全要保留的键
+    family: auto             # 新会话默认档：auto | chat | work
+    llm:                     # 蒸馏模型路由（不写则跟随当前默认模型）
+      provider: ''
+      model: ''
 ```
 
 然后重启 DeepSeek Harness。验证方式：`~/.dsh/memory/` 下出现 `conversations/ records/ scenes/`
