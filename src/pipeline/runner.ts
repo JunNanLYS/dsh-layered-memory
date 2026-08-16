@@ -108,6 +108,13 @@ export class MemoryRunner {
         if (this.pending[mode].length > 200) this.pending[mode] = [];
         this.logger.warn(`[memory] L1 抽取失败（mode=${mode}，pending=${this.pending[mode].length}）: ${errDetail(err)}`);
       }
+      // L1 计数推进后立即落盘：L2/L3 失败或进程中途退出不得回滚阈值进度
+      // （记录已入库但计数丢失会让该族 L2 永远差一截，state 与 DB 脱节）
+      try {
+        await this.stores.state.save();
+      } catch (err) {
+        this.logger.warn(`[memory] 状态保存失败: ${errDetail(err)}`);
+      }
     }
 
     // ── L2/L3：按记录族各自判定与执行 ──

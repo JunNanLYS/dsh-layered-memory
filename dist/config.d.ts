@@ -70,6 +70,7 @@ export interface MemoryConfig {
         provider: string;
         /** 蒸馏用的模型；留空用当前默认选择。 */
         model: string;
+        /** 单次蒸馏调用的输出 token 上限（推理模型的 reasoning 与正文共享该预算）。 */
         maxTokens: number;
         temperature: number;
         /** 单次蒸馏调用的用户 prompt 字符预算（≈token 数，按中文 1 字≈1 token 保守估算）。 */

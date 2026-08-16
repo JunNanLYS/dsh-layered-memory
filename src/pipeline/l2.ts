@@ -58,7 +58,7 @@ export async function runSceneConsolidation(
     family,
   });
 
-  const raw = await callLLM(ctx, cfg, { system: systemPrompt, user: userPrompt, maxTokens: 4096, logger });
+  const raw = await callLLM(ctx, cfg, { system: systemPrompt, user: userPrompt, logger });
 
   // ── 解析：先取 PERSONA_UPDATE_REQUEST 标记，再解析操作数组 ──
   const reqMatch = REQUEST_RE.exec(raw);

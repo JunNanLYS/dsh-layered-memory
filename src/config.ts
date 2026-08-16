@@ -72,6 +72,7 @@ export interface MemoryConfig {
     provider: string;
     /** 蒸馏用的模型；留空用当前默认选择。 */
     model: string;
+    /** 单次蒸馏调用的输出 token 上限（推理模型的 reasoning 与正文共享该预算）。 */
     maxTokens: number;
     temperature: number;
     /** 单次蒸馏调用的用户 prompt 字符预算（≈token 数，按中文 1 字≈1 token 保守估算）。 */
@@ -127,7 +128,8 @@ export const memorySchema = Schema.object({
   llm: Schema.object({
     provider: Schema.string().default(''),
     model: Schema.string().default(''),
-    maxTokens: Schema.number().default(4096),
+    // 推理模型（如 v4-flash）的 reasoning 计入输出预算：预算不足会被思考吃光导致正文 0 字符
+    maxTokens: Schema.number().default(20_000),
     temperature: Schema.number().default(0.3),
     // 模型上下文 1M token，日常压到 ~700k 使用（中文按 1 字≈1 token 保守折算）
     maxInputChars: Schema.number().default(700_000),

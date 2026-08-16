@@ -64,7 +64,6 @@ export async function runExtraction(ctx, cfg, store, states, pending, background
         const raw = await callLLM(ctx, cfg, {
             system: getExtractMemoriesSystemPrompt(mode),
             user: userPrompt,
-            maxTokens: 4096,
             logger,
         });
         const scenes = parseJsonLogged(raw, 'L1 抽取', logger);
@@ -102,7 +101,6 @@ export async function runExtraction(ctx, cfg, store, states, pending, background
     const dedupRaw = await callLLM(ctx, cfg, {
         system: getConflictDetectionSystemPrompt(mode),
         user: dedupPrompt,
-        maxTokens: 4096,
         logger,
     });
     const decisions = parseJsonLogged(dedupRaw, 'L1 去重判定', logger);

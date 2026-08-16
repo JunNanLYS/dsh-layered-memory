@@ -73,7 +73,7 @@ export async function runPersona(
     triggerInfo: reason,
   });
 
-  const raw = await callLLM(ctx, cfg, { system: systemPrompt, user: userPrompt, maxTokens: 3000, logger });
+  const raw = await callLLM(ctx, cfg, { system: systemPrompt, user: userPrompt, logger });
   const body = unwrapFence(raw);
   if (!body) {
     logger.error(`[memory] L3 输出为空，原始输出前 400 字符: ${raw.slice(0, 400)}`);
