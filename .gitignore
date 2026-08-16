@@ -1,0 +1,6 @@
+node_modules/
+dist-smoke/
+.zcode/
+*.tsbuildinfo
+.DS_Store
+Thumbs.db

@@ -1,0 +1,70 @@
+import type { L1Hit, MemoryFamily, MemoryLogger, MemoryRecord } from '../types.js';
+import { type EmbeddingService } from './embedding.js';
+import type { MemoryDb } from './sqlite.js';
+export type RecallStrategy = 'keyword' | 'embedding' | 'hybrid';
+export interface L1SearchOptions {
+    /** 按记忆类型精确过滤（后置过滤，官方做法）。 */
+    type?: string;
+    /** 按族过滤（undefined = 不过滤，即 auto 档与浏览路径；检索唯一缝的族语义）。 */
+    family?: MemoryFamily;
+    /** 分数阈值（仅召回路径传；keyword/embedding 策略生效，FTS 含小语料例外；
+     *  hybrid 按官方语义在 RRF 融合前不过滤）。 */
+    scoreThreshold?: number;
+}
+export declare class L1Store {
+    private readonly db;
+    private readonly strategy;
+    private readonly recordsDir;
+    private readonly legacyFile;
+    private readonly helper;
+    private readonly embedSvc;
+    private readonly logger?;
+    constructor(dataDir: string, db: MemoryDb, embed?: EmbeddingService, strategy?: RecallStrategy, logger?: MemoryLogger);
+    init(): Promise<void>;
+    /** 旧版单文件 records.jsonl 一次性导入检索库，成功后改名 .imported。 */
+    private importLegacy;
+    get size(): number;
+    /** 全量读取（调试/迁移用；检索请走 search）。 */
+    all(): MemoryRecord[];
+    /** 按 id 精确取记录（去重决策的版本号查询用，避免全表扫描）。 */
+    getByIds(ids: string[]): MemoryRecord[];
+    /** 新记忆落盘：JSONL 按天追加（事实源）+ 检索库 upsert + 向量。 */
+    appendNew(records: MemoryRecord[]): Promise<void>;
+    /** 去重 update/merge 产出的记录：只更新检索库（JSONL 事实源不改写，官方语义）。 */
+    upsert(record: MemoryRecord): Promise<void>;
+    deleteBatch(ids: string[]): Promise<void>;
+    /**
+     * 三策略检索（自动召回与 memory_search 工具共用接缝）。
+     * embedding 不可用时自动降级 keyword；type 后置过滤；
+     * scoreThreshold 仅对 keyword/embedding 单路策略生效——hybrid 按官方语义
+     * 融合完整列表（融合分已归一化 0~1，可直接用于展示/过滤）。
+     */
+    search(query: string, limit: number, opts?: L1SearchOptions): Promise<L1Hit[]>;
+    /** 浏览列表（UI 用）：无关键词时按更新时间倒序分页。 */
+    list(opts: {
+        type?: string;
+        scene?: string;
+        family?: string;
+        limit: number;
+        offset: number;
+    }): {
+        items: MemoryRecord[];
+        total: number;
+    };
+    /** 场景名去重列表（UI 筛选器数据源）。 */
+    distinctScenes(): string[];
+    /**
+     * 去重候选召回（官方 3 级）：空库跳过 → 向量优先 → FTS 兜底。
+     * 传入 family 时只在同族记录里召回（去重永不跨族）。
+     */
+    searchCandidates(query: string, limit: number, family?: MemoryFamily): Promise<MemoryRecord[]>;
+    /**
+     * 全量重嵌入（embedding 配置变化 / 周期性补齐用）。
+     * 返回写入数与失败数——failed > 0 时调用方不应标记 meta 同步完成。
+     */
+    reindex(): Promise<{
+        written: number;
+        failed: number;
+    }>;
+    private postProcess;
+}

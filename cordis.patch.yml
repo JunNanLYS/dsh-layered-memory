@@ -1,0 +1,12 @@
+# dsh-layered-memory 组合包层：安装（dsh plugin --profile <name> add dsh-layered-memory）
+# 后自动挂载插件行，无需再手改 profile 的 cordis.patch.yml。
+# 覆盖配置请在 profile 自己的 cordis.patch.yml 里按同 id 覆写（整行替换，不深合并）。
+- insert:
+    - id: dsh-memory
+      name: dsh-layered-memory
+      # config:                      # 全部字段有默认值，按需覆盖：
+      #   family: auto               #   新会话默认档：auto | chat | work
+      #   dataDir: ''                #   默认 $DSH_HOME/memory
+      #   llm:
+      #     provider: ''             #   蒸馏模型路由（默认跟随当前默认模型）
+      #     model: ''
