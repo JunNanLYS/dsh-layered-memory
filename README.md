@@ -52,16 +52,17 @@ Agent 循环；召回注入用标签包裹、捕获侧自动剥离，防止反�
 
 ## 快速开始
 
-需要 Node ≥ 22.16 与已安装的 dsh CLI（dsh 是 pnpm 转发器，未装 pnpm 时先 `npm i -g pnpm`）。
+需要 Node ≥ 22.16。两种调用方式任选（`npx` 前缀可替换下面任何 `dsh` 命令）：
 
 ```bash
-# 从 npm 安装（推荐；可 pin 版本，如 @0.5.3）
+# 方式一：npx 直接跑官方 CLI（无需预装 dsh；可 pin 版本，如 dsh-layered-memory@0.5.4）
+npx -y @deepseek-ai/dsh plugin --profile web add dsh-layered-memory
+
+# 方式二：已装 dsh CLI（dsh 是 pnpm 转发器，未装 pnpm 时先 npm i -g pnpm）
 dsh plugin --profile web add dsh-layered-memory
 
-# 或从 GitHub 仓库安装
+# 包源备选：GitHub 仓库 / 本地路径（开发调试，link: 指向仓库，npm run build + 重启 dsh 即生效）
 dsh plugin --profile web add https://github.com/JunNanLYS/dsh-layered-memory
-
-# 或从本地路径安装（开发/调试，link: 指向仓库，npm run build + 重启 dsh 即生效）
 dsh plugin --profile web add /path/to/dsh-layered-memory
 ```
 
