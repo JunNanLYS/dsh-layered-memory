@@ -1,3 +1,5 @@
+**简体中文** | [English](README.en.md)
+
 <p align="center">
   <img src="./assets/readme/hero.svg" width="100%"
        alt="dsh-layered-memory：对话自动分层蒸馏成记忆，模型每步前自动召回注入（L0 原始对话 → L1 原子记忆 → L2 场景块 → L3 核心画像）">
