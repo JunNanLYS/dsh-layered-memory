@@ -1,0 +1,37 @@
+# npm Trusted Publishing（OIDC）：push v* tag 自动发布，无需 token / 2FA。
+# 前提（npmjs.com → dsh-layered-memory → Settings → Trusted Publisher）：
+#   Repository: JunNanLYS/dsh-layered-memory，Workflow filename: publish.yml，
+#   Allowed actions: npm publish（未配置前此工作流会在 publish 步骤鉴权失败）。
+# 发版流程：改 package.json 版本 → 提交推送 → git tag vX.Y.Z && git push origin vX.Y.Z。
+name: Publish Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write # OIDC 必需
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Node 24 自带 npm ≥ 11.5.1（OIDC 自动探测的最低要求），且满足 engines >=22.16
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm run build
+      - name: 校验 tag 与版本一致
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "v$PKG_VERSION" != "${GITHUB_REF_NAME}" ]; then
+            echo "tag ${GITHUB_REF_NAME} 与 package.json 版本 v$PKG_VERSION 不一致" >&2
+            exit 1
+          fi
+      - run: npm publish
