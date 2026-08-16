@@ -31,7 +31,7 @@ Agent 循环；召回注入用标签包裹、捕获侧自动剥离，防止反�
 
 | 档位 | 蒸馏（写入） | 召回（注入） |
 | --- | --- | --- |
-| `自动`（默认） | 合并词表 prompt 单次抽取，个人三类 + 工作四类全开，按 type 前缀落族标签 | 两族全召回；画像/场景导航两族拼接 |
+| `自动`（默认） | 合并词表 prompt 单次抽取，个人三类 + 工作四类全开，按 type 前缀落族标签 | 两族全召回；画像/场景导航按类别归组、`<domain>` 分域结构化注入 |
 | `chat` | 窄 prompt 只提个人三类，只入 chat 族 | 只查 chat 记忆 + chat 画像/场景导航 |
 | `work` | 窄 prompt 只提工作四类，只入 work 族 | 只查 work 记忆 + work 画像/场景导航 |
 | `关闭` | 不写 L0、不蒸馏 | 不召回；三个记忆工具返回"已隐身"提示 |
@@ -55,7 +55,10 @@ Agent 循环；召回注入用标签包裹、捕获侧自动剥离，防止反�
 需要 Node ≥ 22.16 与已安装的 dsh CLI（dsh 是 pnpm 转发器，未装 pnpm 时先 `npm i -g pnpm`）。
 
 ```bash
-# 从本仓库安装（GitHub）
+# 从 npm 安装（推荐；可 pin 版本，如 @0.5.3）
+dsh plugin --profile web add dsh-layered-memory
+
+# 或从 GitHub 仓库安装
 dsh plugin --profile web add https://github.com/JunNanLYS/dsh-layered-memory
 
 # 或从本地路径安装（开发/调试，link: 指向仓库，npm run build + 重启 dsh 即生效）
@@ -127,7 +130,7 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 | `embedding.model` | 空 | embedding 模型名 |
 | `embedding.dimensions` | `0` | 向量维度（启用时必填，须与模型输出一致） |
 | `llm.provider/model` | 空 | 蒸馏模型覆盖（默认用当前默认选择） |
-| `llm.maxTokens` | `4096` | 单次蒸馏输出上限兜底（各阶段分设：L1 抽取/去重/L2=4096，L3=3000） |
+| `llm.maxTokens` | `20000` | 单次蒸馏输出 token 上限（全阶段统一；推理模型的 reasoning 与正文共享该预算，过低会被思考吃光导致正文 0 字符） |
 | `llm.temperature` | `0.3` | 蒸馏温度 |
 | `llm.maxInputChars` | `700000` | 单次蒸馏输入字符预算（超限的 L1 输入自动分块抽取） |
 | `tools` | `true` | 是否注册模型可调用的记忆工具 |
