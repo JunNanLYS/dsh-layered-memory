@@ -27,6 +27,16 @@ L0 捕获 → L1 原子记忆 → L2 场景整合 → L3 画像蒸馏，模型�
 管线原则：所有蒸馏调用复用 DSH 自身的 `ctx.llm`；任何阶段失败只记日志、绝不阻塞
 Agent 循环；召回注入用标签包裹、捕获侧自动剥离，防止反馈循环。
 
+**未蒸馏缓冲持久化**：抽取失败的待重试消息与攒触发阈值中途的消息都暂存在按档分桶的
+缓冲里（`pending.json`，每次蒸馏尝试后原子落盘）——重启不丢，启动 20 秒后自动补跑一次，
+失败则维持"等下一轮同档对话"的语义。
+
+**重建**（设置页 → 记忆 → 概览 → 重建记忆）：以 L0 原始对话为事实源重新推导全部派生层。
+旧 `records/`、`scenes/`、`persona-*.md` 整体归档（改名 `*.bak.<时间戳>`，不删除），检索库
+L1 清空、checkpoint 重置，随后按会话分块、统一 auto 档重蒸馏 L1→L2→L3（收尾强制跑一轮
+L2 残余 + L3 冷启动）。重建分块走低优先级队列——期间正常对话的蒸馏优先进行；带确认弹窗
+（会话数/消息数/预计调用数）、进度条与取消（已重建部分保留）。
+
 ### 会话级记忆档位
 
 每个会话可独立选择记忆档位，**写入与召回同档**：
@@ -134,7 +144,7 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 | `embedding.model` | 空 | embedding 模型名 |
 | `embedding.dimensions` | `0` | 向量维度（启用时必填，须与模型输出一致） |
 | `llm.provider/model` | 空 | 蒸馏模型覆盖（默认用当前默认选择） |
-| `llm.maxTokens` | `20000` | 单次蒸馏输出 token 上限（全阶段统一；推理模型的 reasoning 与正文共享该预算，过低会被思考吃光导致正文 0 字符） |
+| `llm.maxTokens` | `256000` | 单次蒸馏输出 token 上限（全阶段统一；推理模型的 reasoning 与正文共享该预算，过低会被思考吃光导致正文 0 字符） |
 | `llm.reasoningEffort` | `off` | 蒸馏思考档位（部署默认）：`off` / `high` / `max`，空串不传（跟随模型默认）。蒸馏是结构化抽取任务，默认关思考——推理模型（如 v4-flash）默认 high 档的思考可把任意输出预算全部吃光导致正文 0 字符；非推理模型不认识 effort 时需设为空串。运行时可在设置页 → 记忆 → 概览临时切换（选"跟随配置"即回退本值） |
 | `llm.temperature` | `0.3` | 蒸馏温度 |
 | `llm.maxInputChars` | `700000` | 单次蒸馏输入字符预算（超限的 L1 输入自动分块抽取） |
@@ -165,7 +175,9 @@ memory/
 ├── persona-chat.md        # L3 画像（chat 族：用户画像）
 ├── persona-work.md        # L3 画像（work 族：Team Operating Doctrine）
 ├── state.json             # 管线 checkpoint（v2 分族：families.chat / families.work）
+├── pending.json           # 未蒸馏缓冲（按档分桶；重启恢复 + 启动自动补跑）
 ├── session-modes.json     # 会话档位映射（sessionId → 档位，>90 天自动清理）
+├── records.bak.<ts>/      # 重建时归档的旧产物（scenes/persona 同款 *.bak.<ts>）
 └── memory.log             # 诊断日志（info+，超 2MB 轮转为 memory.log.1）
 ```
 

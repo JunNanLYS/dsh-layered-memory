@@ -626,6 +626,42 @@ export class MemoryDb {
     }
   }
 
+  /**
+   * 清空 L1 检索库全部数据（重建用）。records/FTS 直接 DELETE；
+   * 向量表走 DROP + 重建（vec0 的全表 DELETE 语义不可靠，dropVectorTables
+   * 会连 l0_vec 一起删——L0 向量必须保留——故此处单独处理 l1_vec）。
+   * L0 表与 embedding_meta 不动：backfill 的行数比对天然重新一致。
+   */
+  clearL1(): boolean {
+    if (this.degraded) return false;
+    try {
+      this.db.exec('BEGIN');
+      try {
+        this.db.exec('DELETE FROM l1_records');
+        if (this.ftsAvailable) this.db.exec('DELETE FROM l1_fts');
+        this.db.exec('COMMIT');
+      } catch (err) {
+        try {
+          this.db.exec('ROLLBACK');
+        } catch {
+          /* ignore */
+        }
+        throw err;
+      }
+      // vec0 全表 DELETE 语义不可靠 → DROP + 重建空表；放事务外（vtab DDL 事务性弱）。
+      // 中间态：向量行短暂孤儿——检索侧对缺 meta 的向量本就跳过（searchL1Vector 回查过滤）。
+      if (this.stmtDeleteL1Vec) {
+        this.db.exec('DROP TABLE IF EXISTS l1_vec');
+        this.prepareL1VecStatements();
+      }
+      this.logger?.info(`${TAG} L1 检索库已清空（重建）`);
+      return true;
+    } catch (err) {
+      this.logger?.warn(`${TAG} L1 清空失败: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  }
+
   countL1(): number {
     if (this.degraded) return 0;
     try {
@@ -838,6 +874,42 @@ export class MemoryDb {
       return row?.n ?? 0;
     } catch {
       return 0;
+    }
+  }
+
+  /** L0 全量列举（重建快照用；按时间升序，事务一致性避开 JSONL 追加竞态）。 */
+  listL0All(): L0MessageRecord[] {
+    if (this.degraded) return [];
+    try {
+      const rows = this.db
+        .prepare('SELECT record_id, session_id, role, message_text, recorded_at, timestamp FROM l0_conversations ORDER BY timestamp ASC')
+        .all() as Array<{ record_id: string; session_id: string; role: string; message_text: string; recorded_at: string; timestamp: number }>;
+      return rows.map((r) => ({
+        sessionId: r.session_id,
+        recordedAt: r.recorded_at,
+        id: r.record_id,
+        role: r.role as L0MessageRecord['role'],
+        content: r.message_text,
+        timestamp: r.timestamp ?? 0,
+      }));
+    } catch (err) {
+      this.logger?.warn(`${TAG} L0 全量列举失败（返回空）: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  }
+
+  /** 重建成本预估（一次全表聚合：会话数 / 消息数 / 字符量）。 */
+  l0RebuildEstimate(): { sessions: number; messages: number; chars: number } {
+    if (this.degraded) return { sessions: 0, messages: 0, chars: 0 };
+    try {
+      const row = this.db
+        .prepare(
+          'SELECT COUNT(DISTINCT session_id) AS s, COUNT(*) AS n, COALESCE(SUM(LENGTH(message_text)), 0) AS c FROM l0_conversations',
+        )
+        .get() as { s: number; n: number; c: number };
+      return { sessions: row?.s ?? 0, messages: row?.n ?? 0, chars: row?.c ?? 0 };
+    } catch {
+      return { sessions: 0, messages: 0, chars: 0 };
     }
   }
 

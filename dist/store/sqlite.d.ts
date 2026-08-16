@@ -75,6 +75,13 @@ export declare class MemoryDb {
     upsertL1(record: MemoryRecord, embedding?: Float32Array): boolean;
     /** 批量删除 L1（元数据 + 向量 + FTS），返回删除条数。 */
     deleteL1Batch(ids: string[]): number;
+    /**
+     * 清空 L1 检索库全部数据（重建用）。records/FTS 直接 DELETE；
+     * 向量表走 DROP + 重建（vec0 的全表 DELETE 语义不可靠，dropVectorTables
+     * 会连 l0_vec 一起删——L0 向量必须保留——故此处单独处理 l1_vec）。
+     * L0 表与 embedding_meta 不动：backfill 的行数比对天然重新一致。
+     */
+    clearL1(): boolean;
     countL1(): number;
     /** 全量读取（调试/迁移/重嵌入用；检索请走 FTS/向量）。 */
     getAllL1(): MemoryRecord[];
@@ -101,6 +108,14 @@ export declare class MemoryDb {
     countL0(): number;
     /** 统计 recorded_at >= iso 的消息数（状态面板"今日捕获"用）。 */
     countL0Since(iso: string): number;
+    /** L0 全量列举（重建快照用；按时间升序，事务一致性避开 JSONL 追加竞态）。 */
+    listL0All(): L0MessageRecord[];
+    /** 重建成本预估（一次全表聚合：会话数 / 消息数 / 字符量）。 */
+    l0RebuildEstimate(): {
+        sessions: number;
+        messages: number;
+        chars: number;
+    };
     /** 向量表行数（backfill 判据：与元数据行数的差值即缺失向量数；不可用时返回 -1）。 */
     countL1Vec(): number;
     countL0Vec(): number;

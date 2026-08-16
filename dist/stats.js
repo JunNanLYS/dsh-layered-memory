@@ -12,7 +12,7 @@ import { resolveDataDir } from './config.js';
 const require = createRequire(import.meta.url);
 export const PLUGIN_VERSION = require('../package.json').version;
 /** 注册状态 RPC（web 侧 connection 服务可选，缺失时跳过，不影响插件主体）。 */
-export function registerMemoryRpc(ctx, cfg, stores, logger, status, live, modes, dataDir) {
+export function registerMemoryRpc(ctx, cfg, stores, logger, status, live, modes, dataDir, rebuild) {
     /** 当前是否持有一段有效注册（dispose 完成后清空，允许服务重上线时重注册）。 */
     let holding = false;
     const tryRegister = () => {
@@ -34,6 +34,7 @@ export function registerMemoryRpc(ctx, cfg, stores, logger, status, live, modes,
                     modes,
                     dataDir: dataDir ?? resolveDataDir(cfg),
                     logger,
+                    rebuild,
                 });
                 return { ok: true, value };
             }
@@ -104,7 +105,7 @@ async function buildStats(cfg, stores, status) {
     };
 }
 async function handleEndpoint(endpoint, payload, deps) {
-    const { cfg, stores, status, live, modes, dataDir } = deps;
+    const { cfg, stores, status, live, modes, dataDir, rebuild } = deps;
     switch (endpoint) {
         case 'dsh-memory/stats':
             return buildStats(cfg, stores, status);
@@ -214,6 +215,30 @@ async function handleEndpoint(endpoint, payload, deps) {
         case 'dsh-memory/log-tail': {
             const p = (payload ?? {});
             return { lines: readLogTail(join(dataDir, 'memory.log'), Math.min(Math.max(Number(p.lines) || 200, 1), 1000)) };
+        }
+        case 'dsh-memory/rebuild-status': {
+            if (!rebuild)
+                return { supported: false, running: false, phase: 'idle' };
+            return rebuild.getStatus();
+        }
+        case 'dsh-memory/rebuild-start': {
+            if (!rebuild)
+                throw new Error('重建控制器未初始化（存储不可用）');
+            if (status?.degraded())
+                throw new Error('存储处于降级状态，无法重建');
+            const s = live?.get();
+            if (s && (!s.enabled || !s.distill))
+                throw new Error('蒸馏开关已关闭，请先开启蒸馏再重建');
+            if (!cfg.extract.enabled)
+                throw new Error('部署配置已停用蒸馏（extract.enabled=false），无法重建');
+            const result = rebuild.start();
+            deps.logger.info('[memory] 收到重建指令（设置页按钮）');
+            return result;
+        }
+        case 'dsh-memory/rebuild-cancel': {
+            if (!rebuild)
+                throw new Error('重建控制器未初始化');
+            return rebuild.requestCancel();
         }
         default:
             throw new Error(`unknown endpoint: ${endpoint}`);

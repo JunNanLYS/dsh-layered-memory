@@ -492,8 +492,9 @@ window.__ModuleLoader__.load({
       );
     }
 
-    // ── auto 档边缘流光 + 浮层玻璃材质：inline style 放不了 @keyframes/@property/媒体查询，
-    // 惰性注入一次性样式表（id 防重复）。dsw 主题变量参考其前端令牌：暗色走 body[data-ds-dark-theme]。 ──
+    // ── auto 档边缘流光 + 浮层玻璃材质 + 重建面板样式：inline style 放不了
+    // @keyframes/@property/媒体查询，惰性注入一次性样式表（id 防重复）。
+    // dsw 主题变量参考其前端令牌：暗色走 body[data-ds-dark-theme]。 ──
     var FLOW_STYLE_ID = "dsh-mem-flow-style";
     function ensureFlowStyle() {
       if (document.getElementById(FLOW_STYLE_ID)) return;
@@ -548,6 +549,41 @@ window.__ModuleLoader__.load({
         "@media (prefers-reduced-transparency: reduce) {",
         "  .dsh-mem-glass { background: var(--dsw-alias-bg-layer-2, #ffffff); backdrop-filter: none; -webkit-backdrop-filter: none; }",
         "}",
+        // ── 重建面板（Light/Dark 双主题：基底用 dsw 真实令牌 bg-layer-2/border-l2，
+        //    暗色由 body[data-ds-dark-theme] 切换；强调红/进度蓝紫双主题各调一档） ──
+        ".dsh-mem-rb-card {",
+        "  border: 1px solid var(--dsw-alias-border-l2, #e5e7eb);",
+        "  border-radius: 10px;",
+        "  background: var(--dsw-alias-bg-layer-2, #ffffff);",
+        "  padding: 12px 14px;",
+        "  margin-bottom: 14px;",
+        "  font-size: 13px;",
+        "}",
+        ".dsh-mem-rb-btn {",
+        "  padding: 5px 14px; font-size: 13px; border-radius: 6px; cursor: pointer;",
+        "  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);",
+        "  background: var(--dsw-alias-bg-layer-2, #ffffff);",
+        "  color: inherit;",
+        "}",
+        ".dsh-mem-rb-btn:disabled { opacity: 0.45; cursor: not-allowed; }",
+        ".dsh-mem-rb-danger { border-color: rgba(207,34,46,0.45); color: #cf222e; background: transparent; }",
+        "body[data-ds-dark-theme] .dsh-mem-rb-danger { color: #f4707b; border-color: rgba(244,112,123,0.5); }",
+        ".dsh-mem-rb-primary { background: #cf222e; border-color: #cf222e; color: #fff; }",
+        "body[data-ds-dark-theme] .dsh-mem-rb-primary { background: #b62324; border-color: #b62324; }",
+        ".dsh-mem-rb-bar { height: 8px; border-radius: 4px; overflow: hidden; flex: 1;",
+        "  background: var(--dsw-alias-border-l2, #e8ebef); }",
+        "body[data-ds-dark-theme] .dsh-mem-rb-bar { background: rgba(255,255,255,0.12); }",
+        ".dsh-mem-rb-fill { height: 100%; border-radius: 4px;",
+        "  background: linear-gradient(90deg, #0969da, #8250df); transition: width .4s ease; }",
+        ".dsh-mem-rb-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);",
+        "  display: flex; align-items: center; justify-content: center; z-index: 2000; }",
+        ".dsh-mem-rb-modal { width: 440px; max-width: calc(100vw - 48px); border-radius: 12px;",
+        "  padding: 18px 20px; font-size: 13px; line-height: 1.6;",
+        "  border: 1px solid var(--dsw-alias-border-l2, #e5e7eb);",
+        "  background: var(--dsw-alias-bg-layer-2, #ffffff);",
+        "  box-shadow: 0 16px 48px rgba(0,0,0,0.24); }",
+        "body[data-ds-dark-theme] .dsh-mem-rb-modal { box-shadow: 0 16px 48px rgba(0,0,0,0.6); }",
+        ".dsh-mem-rb-muted { font-size: 12px; color: var(--dsw-alias-label-caption, #6e7781); }",
       ].join("\n");
       document.head.appendChild(el);
     }
@@ -661,6 +697,188 @@ window.__ModuleLoader__.load({
               onCommit: commit,
               error: error,
             })
+          : null,
+      );
+    }
+
+    // ── 重建面板：从 L0 重导 L1/L2/L3（确认弹窗 + 进度 + 取消；Light/Dark 双主题走 class） ──
+    var RB_PHASE_LABEL = {
+      preparing: "准备中（归档旧数据 · 清空检索库）",
+      distilling: "分块蒸馏中",
+      finalizing: "收尾（强制 L2 场景 + L3 画像）",
+    };
+
+    function RebuildPanel(props) {
+      var rpc = props.rpc;
+      var rbState = react.useState(null);
+      var rb = rbState[0];
+      var setRb = rbState[1];
+      var confirmState = react.useState(false);
+      var confirmOpen = confirmState[0];
+      var setConfirmOpen = confirmState[1];
+      var busyState = react.useState(false);
+      var busy = busyState[0];
+      var setBusy = busyState[1];
+      var errState = react.useState(null);
+      var rbError = errState[0];
+      var setRbError = errState[1];
+
+      var refresh = react.useCallback(function () {
+        rpc("dsh-memory/rebuild-status", {})
+          .then(function (r) {
+            if (r && r.ok) setRb(r.value);
+          })
+          .catch(function () {});
+      }, [rpc]);
+
+      react.useEffect(function () { refresh(); }, [refresh]);
+
+      // 运行中 1.5s 高频轮询进度；空闲不轮询（重新打开 Tab 时挂载刷新一次）
+      var running = !!(rb && rb.running);
+      react.useEffect(function () {
+        if (!running) return;
+        var timer = setInterval(refresh, 1500);
+        return function () { clearInterval(timer); };
+      }, [running, refresh]);
+
+      if (!rb || rb.supported === false) return null;
+      ensureFlowStyle();
+
+      var start = function () {
+        setBusy(true);
+        setRbError(null);
+        rpc("dsh-memory/rebuild-start", {})
+          .then(function (r) {
+            setBusy(false);
+            if (r && r.ok) {
+              setConfirmOpen(false);
+              setRb(r.value);
+            } else {
+              setRbError(r && r.error ? r.error.message : "启动失败");
+            }
+          })
+          .catch(function (e) {
+            setBusy(false);
+            setRbError(String((e && e.message) || e));
+          });
+      };
+      var cancel = function () {
+        setBusy(true);
+        rpc("dsh-memory/rebuild-cancel", {})
+          .then(function (r) {
+            setBusy(false);
+            if (r && r.ok) setRb(r.value);
+          })
+          .catch(function () {
+            setBusy(false);
+          });
+      };
+
+      var empty = !running && (rb.messageCount === 0 || rb.estCalls === 0);
+      var pct = rb.total > 0 ? Math.round((rb.done / rb.total) * 100) : 0;
+
+      var lastNote = null;
+      if (!running && rb.phase === "done") {
+        lastNote =
+          "上次重建：完成（" + rb.done + "/" + rb.total + " 会话，产出 " + rb.recordsBuilt + " 条记录）" +
+          (rb.finishedAt ? " · " + fmtTime(new Date(rb.finishedAt).toISOString()) : "");
+      } else if (!running && rb.phase === "cancelled") {
+        lastNote = "上次重建：已取消（完成 " + rb.done + "/" + rb.total + " 会话，已重建部分保留）";
+      } else if (!running && rb.phase === "failed") {
+        lastNote = "上次重建：失败 — " + (rb.error || "未知错误");
+      }
+
+      return react.createElement(
+        "div", { className: "dsh-mem-rb-card" },
+        react.createElement(
+          "div", { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" } },
+          react.createElement("div", { style: { fontWeight: 600, whiteSpace: "nowrap" } }, "重建记忆"),
+          react.createElement(
+            "div", { className: "dsh-mem-rb-muted", style: { flex: 1, minWidth: 180 } },
+            running
+              ? (RB_PHASE_LABEL[rb.phase] || rb.phase) + " · " + rb.done + "/" + rb.total + " 会话（" + pct + "%）"
+              : "从 L0 原始对话重新蒸馏 L1/L2/L3；旧数据先归档（不删除）",
+          ),
+          running
+            ? react.createElement("button", {
+                type: "button",
+                className: "dsh-mem-rb-btn",
+                disabled: busy || rb.cancelRequested,
+                onClick: cancel,
+              }, rb.cancelRequested ? "取消中…" : "取消重建")
+            : react.createElement("button", {
+                type: "button",
+                className: "dsh-mem-rb-btn dsh-mem-rb-danger",
+                disabled: busy || empty,
+                title: empty ? "L0 无消息，无可重建内容" : "重新蒸馏全部记忆",
+                onClick: function () { setConfirmOpen(true); },
+              }, busy ? "…" : "开始重建"),
+        ),
+        running
+          ? react.createElement(
+              "div", { style: { display: "flex", alignItems: "center", gap: 10, marginTop: 10 } },
+              react.createElement(
+                "div", { className: "dsh-mem-rb-bar" },
+                react.createElement("div", { className: "dsh-mem-rb-fill", style: { width: pct + "%" } }),
+              ),
+              react.createElement(
+                "span", { className: "dsh-mem-rb-muted", style: { whiteSpace: "nowrap" } },
+                "产出 " + rb.recordsBuilt + " 条",
+              ),
+            )
+          : null,
+        lastNote
+          ? react.createElement("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 } }, lastNote)
+          : null,
+        rbError
+          ? react.createElement("div", { style: { marginTop: 8, fontSize: 12, color: "#cf222e" } }, rbError)
+          : null,
+        confirmOpen
+          ? react.createElement(
+              "div", {
+                className: "dsh-mem-rb-overlay",
+                onClick: function (e) {
+                  if (e.target === e.currentTarget) setConfirmOpen(false);
+                },
+              },
+              react.createElement(
+                "div", { className: "dsh-mem-rb-modal" },
+                react.createElement(
+                  "div", { style: { fontSize: 15, fontWeight: 600, marginBottom: 10 } },
+                  "确认重建全部记忆？",
+                ),
+                react.createElement(
+                  "div", null,
+                  "将以 L0 原始对话为事实源重新蒸馏：",
+                  react.createElement("b", null, rb.sessionCount + " 个会话 · " + rb.messageCount + " 条消息"),
+                  "，预计 ≥" + rb.estCalls + " 次蒸馏调用。",
+                ),
+                react.createElement(
+                  "div", { style: { marginTop: 8 } },
+                  "现有 L1 记忆 / L2 场景 / L3 画像会整体归档（*.bak.时间戳，可手工找回），随后清空重建；重建期间可正常对话，新对话的蒸馏优先进行；中途可取消，已重建部分保留。",
+                ),
+                react.createElement(
+                  "div", { style: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 } },
+                  react.createElement(
+                    "button", {
+                      type: "button",
+                      className: "dsh-mem-rb-btn",
+                      onClick: function () { setConfirmOpen(false); },
+                    },
+                    "取消",
+                  ),
+                  react.createElement(
+                    "button", {
+                      type: "button",
+                      className: "dsh-mem-rb-btn dsh-mem-rb-primary",
+                      disabled: busy,
+                      onClick: start,
+                    },
+                    busy ? "启动中…" : "开始重建",
+                  ),
+                ),
+              ),
+            )
           : null,
       );
     }
@@ -812,6 +1030,7 @@ window.__ModuleLoader__.load({
                   : null,
               )
             : null,
+        react.createElement(RebuildPanel, { rpc: rpc }),
         error
           ? react.createElement("div", { style: S.error }, "获取状态失败：" + error)
           : !stats

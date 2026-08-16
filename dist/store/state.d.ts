@@ -30,6 +30,12 @@ export declare class StateStore {
     get didMigrate(): boolean;
     /** 取某族的 checkpoint（活引用——改字段后 save 生效）。 */
     forFamily(family: MemoryFamily): MemoryState;
+    /**
+     * 重建用：两族 checkpoint 重置为默认值。
+     * 必须原地突变（Object.assign）——runner.states 等处持有桶对象的活引用，
+     * 换新对象会让引用指向已废弃的桶，后续计数写到内存孤儿上。
+     */
+    reset(): void;
     save(): Promise<void>;
     static pathFor(dataDir: string): string;
 }

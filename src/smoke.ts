@@ -25,6 +25,9 @@ import { isCaptureRelevant, trimBuffer } from './hooks/capture.js';
 import { sanitizeText, shouldCaptureL0, stripCodeBlocks } from './util/sanitize.js';
 import { parseJson } from './llm.js';
 import { chunkByCharBudget } from './pipeline/l1.js';
+import { pickNextTaskIndex } from './pipeline/runner.js';
+import { estimateCalls, groupL0Sessions, RebuildController } from './pipeline/rebuild.js';
+import { loadPending, pendingPathFor, savePending } from './store/pending.js';
 import { formatExtractionPrompt, getExtractMemoriesSystemPrompt } from './prompts/l1-extraction.js';
 import { formatBatchConflictPrompt, getConflictDetectionSystemPrompt } from './prompts/l1-dedup.js';
 import { buildScenePrompt, formatSceneSummaries } from './prompts/scene.js';
@@ -471,6 +474,12 @@ async function main(): Promise<void> {
       const lt = await call('dsh-memory/log-tail', { lines: 5 }) as never as { lines: string[] };
       assert(Array.isArray(lt.lines), 'log-tail 端点返回行数组（空目录容忍）');
 
+      const rbs = await call('dsh-memory/rebuild-status') as never as { supported: boolean; running: boolean };
+      assert(rbs.supported === false && rbs.running === false, 'rebuild-status 无控制器时 supported=false');
+      let rbStart = false;
+      try { await call('dsh-memory/rebuild-start'); } catch { rbStart = true; }
+      assert(rbStart, 'rebuild-start 无控制器时报错');
+
       let unknown = false;
       try { await call('dsh-memory/nope'); } catch { unknown = true; }
       assert(unknown, '未知端点抛错');
@@ -611,6 +620,208 @@ async function main(): Promise<void> {
     const buf3 = [ev('turn/start', 1), ev('user/message'), ev('turn/end', 1)];
     trimBuffer(buf3);
     assert(buf3.length === 3, '未超限不裁剪');
+  }
+
+  console.log('== 13. 未蒸馏缓冲持久化 + 优先级调度 + 重建 ==');
+  {
+    // 13a. pending.json 落盘/加载往返 + 坏文件/坏行宽容
+    const tmpP = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-pending-'));
+    try {
+      const pFile = pendingPathFor(tmpP);
+      await savePending(pFile, {
+        auto: [{ id: 'm1', role: 'user', content: '待重试', timestamp: 1 }],
+        chat: [],
+        work: [{ id: 'm2', role: 'assistant', content: '攒阈值', timestamp: 2 }],
+      });
+      const loaded = await loadPending(pFile);
+      assert(loaded.auto.length === 1 && loaded.auto[0].id === 'm1' && loaded.work.length === 1 && loaded.work[0].content === '攒阈值', 'pending 往返保真');
+
+      await fs.writeFile(pFile, '{oops', 'utf-8');
+      const bad = await loadPending(pFile, silentLogger);
+      assert(bad.auto.length === 0 && bad.chat.length === 0 && bad.work.length === 0, '坏 JSON → 空桶不抛');
+
+      await fs.writeFile(
+        pFile,
+        JSON.stringify({
+          version: 1,
+          buckets: { auto: [{ id: 'ok', role: 'user', content: 'x', timestamp: 1 }, { id: 'bad', role: 'root', content: 'y', timestamp: 2 }, 'junk'], chat: [], work: [] },
+        }),
+        'utf-8',
+      );
+      const mixed = await loadPending(pFile, silentLogger);
+      assert(mixed.auto.length === 1 && mixed.auto[0].id === 'ok', '非法记录（role/类型）被丢弃');
+    } finally {
+      await fs.rm(tmpP, { recursive: true, force: true }).catch(() => {});
+    }
+
+    // 13b. 优先级任务选取：live 永远插在 rebuild 前
+    assert(pickNextTaskIndex([]) === 0, '空任务列表返回 0');
+    const mixedTasks = [
+      { kind: 'rebuild' as const, run: async () => {} },
+      { kind: 'live' as const, run: async () => {} },
+      { kind: 'rebuild' as const, run: async () => {} },
+    ];
+    assert(pickNextTaskIndex(mixedTasks) === 1, 'live 优先于队首 rebuild');
+    assert(pickNextTaskIndex([{ kind: 'live' as const, run: async () => {} }, { kind: 'live' as const, run: async () => {} }]) === 0, '多个 live 取最早');
+    assert(pickNextTaskIndex([{ kind: 'rebuild' as const, run: async () => {} }]) === 0, '无 live 取队首');
+
+    // 13c. StateStore.reset 原地突变（runner 持有的活引用必须看到重置）
+    const tmpSt = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-reset-'));
+    try {
+      const sst = new StateStore(StateStore.pathFor(tmpSt));
+      await sst.load();
+      const ref = sst.forFamily('chat');
+      ref.totalExtracted = 9;
+      ref.hasPersona = true;
+      ref.personaRequestedReason = 'why';
+      sst.reset();
+      assert(ref.totalExtracted === 0 && (ref.hasPersona as boolean) === false && ref.personaRequestedReason === undefined, 'reset 后活引用可见归零');
+    } finally {
+      await fs.rm(tmpSt, { recursive: true, force: true }).catch(() => {});
+    }
+
+    // 13d. L0 分组 + 调用数下界估算
+    const grouped = groupL0Sessions([
+      { sessionId: 'b', recordedAt: '', id: 'b1', role: 'user', content: 'hello', timestamp: 200 },
+      { sessionId: 'a', recordedAt: '', id: 'a2', role: 'assistant', content: 'hi', timestamp: 150 },
+      { sessionId: 'a', recordedAt: '', id: 'a1', role: 'user', content: 'yo', timestamp: 100 },
+      { sessionId: 'a', recordedAt: '', id: 'bad-role', role: 'system' as never, content: 'x', timestamp: 120 },
+      { sessionId: 'empty', recordedAt: '', id: 'e1', role: 'user', content: '  ', timestamp: 1 },
+    ]);
+    assert(grouped.length === 2, `L0 按会话分组（坏 role/空内容丢弃）(${grouped.length})`);
+    assert(grouped[0].sessionId === 'a' && grouped[0].messages.length === 2 && grouped[0].messages[0].id === 'a1', '会话按首条时间排序 + 组内按时间');
+    assert(grouped[1].sessionId === 'b', '次会话顺位正确');
+    assert(estimateCalls(0, 0, 0, 5000) === 0, '无消息 → 0 次调用');
+    assert(estimateCalls(3, 3, 100, 5000) === 3, '下界 = 会话数');
+    assert(estimateCalls(1, 100, 100_000, 5000) > 1, '超字符预算按块放大');
+
+    // 13e. MemoryDb：listL0All / l0RebuildEstimate / clearL1（清 L1 不动 L0）
+    const tmpRb = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-rebuild-'));
+    try {
+      const dbR = new MemoryDb(path.join(tmpRb, 'memory.db'), 0, silentLogger);
+      dbR.init();
+      // L0 经 store 落盘（JSONL + DB 双写）——重建后 conversations/ 必须原样保留
+      const l0s = new L0Store(tmpRb, dbR, undefined, silentLogger);
+      await l0s.init();
+      await l0s.append('s1', [
+        { id: 'l1', role: 'user', content: 'a', timestamp: 100 },
+        { id: 'l2', role: 'assistant', content: 'bb', timestamp: 200 },
+      ]);
+      await l0s.append('s2', [{ id: 'l3', role: 'user', content: 'ccc', timestamp: 300 }]);
+      const all = dbR.listL0All();
+      assert(all.length === 3 && all[0].id === 'l1' && all[2].id === 'l3', 'listL0All 按时间升序');
+      const estR = dbR.l0RebuildEstimate();
+      assert(estR.sessions === 2 && estR.messages === 3 && estR.chars === 6, `聚合预估 (${estR.sessions}/${estR.messages}/${estR.chars})`);
+
+      // 13f. RebuildController 全链路（stub runner：runRebuildTurn 不打 LLM；l2/l3 关闭走不到 callLLM）
+      const l1s = new L1Store(tmpRb, dbR, undefined, 'keyword', silentLogger);
+      await l1s.init();
+      const t0 = Date.now();
+      await l1s.appendNew([
+        { id: 'rb-old', content: '旧记录会被归档', type: 'persona', priority: 70, scene_name: '旧情境', timestamps: [t0], createdAt: t0, updatedAt: t0, family: 'chat' },
+      ]);
+      const scenesR = { chat: new SceneStore(tmpRb, 'chat', silentLogger), work: new SceneStore(tmpRb, 'work', silentLogger) };
+      const personaR = { chat: new PersonaStore(tmpRb, 'chat'), work: new PersonaStore(tmpRb, 'work') };
+      await Promise.all([scenesR.chat.init(), scenesR.work.init(), personaR.chat.init(), personaR.work.init()]);
+      await scenesR.chat.write('旧情境.md', '# 旧情境\n\n<!-- META heat=1 updated=2026-08-01T00:00:00Z summary=旧 -->');
+      await personaR.chat.write('# 旧画像');
+      const stateR = new StateStore(StateStore.pathFor(tmpRb));
+      await stateR.load();
+      const liveRef = stateR.forFamily('chat');
+      liveRef.totalExtracted = 42;
+
+      let liveVal2 = { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' };
+      const live2 = { supported: true, get: () => liveVal2, update: async () => {} };
+      const fakeCtx2 = { get: () => undefined, on: () => () => {}, effect: (f: () => (() => void)) => f() } as never;
+      const fakeCfg2 = {
+        dataDir: tmpRb,
+        family: 'auto',
+        capture: { enabled: true, stripCodeBlocks: true, maxMessageChars: 4000 },
+        extract: { enabled: true, minMessages: 1, backgroundMessages: 10, candidatePool: 5 },
+        recall: { enabled: true, maxResults: 5, includePersona: true, includeSceneNav: true, strategy: 'keyword', scoreThreshold: 0.3 },
+        llm: { reasoningEffort: 'off', maxInputChars: 5000 },
+        l2: { enabled: false },
+        l3: { enabled: false },
+      } as never;
+
+      // 取消路径：先跑 prepare（快照+归档+清库），再请求取消 → 只收尾
+      const tasks1: Array<() => Promise<unknown>> = [];
+      const runner1 = {
+        enqueueRebuildTask: (fn: () => Promise<unknown>) => { tasks1.push(fn); },
+        runRebuildTurn: async () => 0,
+        states: { chat: stateR.forFamily('chat'), work: stateR.forFamily('work') },
+      } as never;
+      const ctl1 = new RebuildController(fakeCtx2, fakeCfg2, { l1: l1s, scenes: scenesR, persona: personaR, state: stateR }, dbR, runner1, silentLogger, live2 as never);
+      const stIdle = ctl1.getStatus();
+      assert(stIdle.phase === 'idle' && stIdle.sessionCount === 2 && stIdle.messageCount === 3, 'idle 状态附带实时 L0 预估');
+      const stStarted = ctl1.start();
+      assert(stStarted.running && stStarted.phase === 'preparing', 'start → preparing');
+      assert(tasks1.length === 1, '准备任务已入队');
+      await tasks1.shift()!();
+      assert(ctl1.getStatus().phase === 'distilling' && ctl1.getStatus().total === 2, '快照完成 → distilling');
+      ctl1.requestCancel();
+      assert(ctl1.getStatus().cancelRequested === true, '取消请求已记录');
+      let guard = 0;
+      while (tasks1.length > 0 && guard++ < 50) await tasks1.shift()!();
+      const stCancelled = ctl1.getStatus();
+      assert(!stCancelled.running && stCancelled.phase === 'cancelled' && stCancelled.done === 0, `取消后收尾 → cancelled（done=${stCancelled.done}）`);
+      assert(dbR.countL1() === 0 && dbR.countL0() === 3, '清库只清 L1，L0 原样');
+      assert(liveRef.totalExtracted === 0, 'checkpoint 原地重置');
+      assert(dbR.searchL1Fts('归档', 5).length === 0, 'FTS 一并清空');
+      const names1 = await fs.readdir(tmpRb);
+      assert(names1.some((n) => n.startsWith('records.bak.')) && names1.some((n) => n.startsWith('scenes.bak.')) && names1.some((n) => n.startsWith('persona-chat.md.bak.')), '三处旧产物均已归档');
+      assert(names1.includes('conversations'), 'L0 conversations 目录不受影响');
+      // 结束后（running=false）可再次启动
+      const ctl1Again = ctl1.start();
+      assert(ctl1Again.running === true, '结束后可再次重建');
+
+      // 完成路径：全新目录重跑一遍跑满 done
+      const tmpRb2 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-rebuild2-'));
+      try {
+        const dbR2 = new MemoryDb(path.join(tmpRb2, 'memory.db'), 0, silentLogger);
+        dbR2.init();
+        dbR2.upsertL0Batch([
+          { sessionId: 's1', recordedAt: '', id: 'k1', role: 'user', content: 'aa', timestamp: 1 },
+          { sessionId: 's2', recordedAt: '', id: 'k2', role: 'user', content: 'bb', timestamp: 2 },
+        ]);
+        const l1s2 = new L1Store(tmpRb2, dbR2, undefined, 'keyword', silentLogger);
+        await l1s2.init();
+        const scenesR2 = { chat: new SceneStore(tmpRb2, 'chat', silentLogger), work: new SceneStore(tmpRb2, 'work', silentLogger) };
+        const personaR2 = { chat: new PersonaStore(tmpRb2, 'chat'), work: new PersonaStore(tmpRb2, 'work') };
+        await Promise.all([scenesR2.chat.init(), scenesR2.work.init(), personaR2.chat.init(), personaR2.work.init()]);
+        const stateR2 = new StateStore(StateStore.pathFor(tmpRb2));
+        await stateR2.load();
+        const tasks2: Array<() => Promise<unknown>> = [];
+        const runner2 = {
+          enqueueRebuildTask: (fn: () => Promise<unknown>) => { tasks2.push(fn); },
+          runRebuildTurn: async () => 2,
+          states: { chat: stateR2.forFamily('chat'), work: stateR2.forFamily('work') },
+        } as never;
+        const cfg2 = {
+          dataDir: tmpRb2,
+          family: 'auto',
+          capture: { enabled: true, stripCodeBlocks: true, maxMessageChars: 4000 },
+          extract: { enabled: true, minMessages: 1, backgroundMessages: 10, candidatePool: 5 },
+          recall: { enabled: true, maxResults: 5, includePersona: true, includeSceneNav: true, strategy: 'keyword', scoreThreshold: 0.3 },
+          llm: { reasoningEffort: 'off', maxInputChars: 5000 },
+          l2: { enabled: false },
+          l3: { enabled: false },
+        } as never;
+        const ctl2 = new RebuildController(fakeCtx2, cfg2, { l1: l1s2, scenes: scenesR2, persona: personaR2, state: stateR2 }, dbR2, runner2, silentLogger, live2 as never);
+        ctl2.start();
+        let guard2 = 0;
+        while (tasks2.length > 0 && guard2++ < 50) await tasks2.shift()!();
+        const stDone = ctl2.getStatus();
+        assert(!stDone.running && stDone.phase === 'done' && stDone.done === 2 && stDone.total === 2, `链跑完 → done（${stDone.done}/${stDone.total}）`);
+        assert(stDone.recordsBuilt === 4, `产出计数累加（${stDone.recordsBuilt}）`);
+        dbR2.close();
+      } finally {
+        await fs.rm(tmpRb2, { recursive: true, force: true }).catch(() => {});
+      }
+      dbR.close();
+    } finally {
+      await fs.rm(tmpRb, { recursive: true, force: true }).catch(() => {});
+    }
   }
 
   console.log(failures === 0 ? '\n全部通过 ✅' : `\n${failures} 个失败 ❌`);

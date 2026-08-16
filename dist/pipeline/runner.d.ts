@@ -4,9 +4,15 @@
  *
  * 会话档位：enqueue 带 mode（off 在捕获侧已被拦截）；L1 待重试缓冲按档分桶；
  * L2/L3 按记录族各自跑各自的场景/画像存储与阈值计数（分族隔离不变量）。
+ *
+ * 调度：内部是带优先级的任务列表——正常对话轮次（live）优先于重建分块（rebuild），
+ * 重建期间用户照常聊天，新轮次的蒸馏最多等一个重建块。任务串行，同一时刻至多一个在跑。
+ *
+ * 未蒸馏缓冲：pending 三桶持久化在 pending.json，进程重启不丢；init 恢复后延迟补跑一次
+ * （受 live 开关与 minMessages 阈值约束，失败维持"等下一轮同档对话"的现状语义）。
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { MemoryConfig } from '../config.js';
+import { type MemoryConfig } from '../config.js';
 import type { LiveSettingsHandle } from '../settings.js';
 import type { L0Store } from '../store/l0.js';
 import type { L1Store } from '../store/l1.js';
@@ -14,6 +20,7 @@ import type { PersonaStore } from '../store/persona.js';
 import type { SceneStore } from '../store/scenes.js';
 import type { StateStore } from '../store/state.js';
 import type { ConversationMessage, ExtractMode, MemoryFamily, MemoryLogger } from '../types.js';
+import type { FamilyStates } from './l1.js';
 export interface MemoryStores {
     l0: L0Store;
     l1: L1Store;
@@ -21,24 +28,49 @@ export interface MemoryStores {
     persona: Record<MemoryFamily, PersonaStore>;
     state: StateStore;
 }
+/** 管线任务（优先级调度：live 优先于 rebuild）。 */
+export interface PipelineTask {
+    kind: 'live' | 'rebuild';
+    run: () => Promise<unknown>;
+}
+/** 选取下一个要执行的任务下标：最早的 live 优先，否则队首（rebuild 分块让位）。 */
+export declare function pickNextTaskIndex(tasks: PipelineTask[]): number;
+/**
+ * 运行时调参视图：UI 选择器可临时覆盖蒸馏思考档位（空串回退静态 config 默认）。
+ * 浅拷贝只覆盖 llm 一层，其余键与原 cfg 共享只读引用；pipeline 全链继续收 cfg，无需感知。
+ */
+export declare function effectiveCfg(cfg: MemoryConfig, live: LiveSettingsHandle): MemoryConfig;
 export declare class MemoryRunner {
     private readonly ctx;
     private readonly cfg;
     private readonly stores;
     private readonly logger;
     private readonly live;
-    private queue;
+    private tasks;
+    private draining;
     private pending;
+    private readonly pendingFile;
     private background;
-    private states;
+    /** 分族 checkpoint（init 后可用；重建收尾也从这里读活引用）。 */
+    states: FamilyStates;
     private afterRun;
     constructor(ctx: Context, cfg: MemoryConfig, stores: MemoryStores, logger: MemoryLogger, live: LiveSettingsHandle);
     init(): Promise<void>;
+    /** 启动补跑：对每个非空桶入队一次蒸馏尝试（受 live 开关与阈值约束，失败不无限重试）。 */
+    private scheduleStartupRetry;
     /** L1 抽取待重试的消息条数（状态面板用）。 */
     get pendingCount(): number;
     /** 管线跑完一轮后的回调（用于召回缓存失效）。 */
     setAfterRun(fn: () => void): void;
-    /** 一轮对话结束后入队（L0 落盘 + 蒸馏触发判定）。 */
+    /** 一轮对话结束后入队（L0 落盘由 capture 在 turn/end 即时完成，不排蒸馏队列）。 */
     enqueue(sessionId: string, messages: ConversationMessage[], mode: ExtractMode): void;
+    /** 重建任务入队（低优先级：让位于正常轮次；由 RebuildController 分块驱动）。 */
+    enqueueRebuildTask(run: () => Promise<unknown>): void;
+    /** 重建蒸馏轮：统一 auto 档，不受缓冲 200 上限（历史会话全量入桶，由 char 预算分块）。 */
+    runRebuildTurn(sessionId: string, messages: ConversationMessage[]): Promise<number>;
+    private pushTask;
+    private drain;
+    /** 缓冲落盘（每次蒸馏尝试后调用；失败只告警不阻断管线）。 */
+    private persistPending;
     private runTurn;
 }

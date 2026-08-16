@@ -13,6 +13,7 @@ import type { Context } from '@deepseek-ai/cordis';
 // 使 ctx.get('connection') 拿到 HostConnectionHandle 类型（编译后无运行时依赖）。
 import type {} from '@deepseek-ai/dsh-client-connection';
 import { resolveDataDir, type MemoryConfig } from './config.js';
+import type { RebuildController } from './pipeline/rebuild.js';
 import type { LiveSettingsHandle } from './settings.js';
 import type { L0Store } from './store/l0.js';
 import type { L1Store } from './store/l1.js';
@@ -76,6 +77,7 @@ export function registerMemoryRpc(
   live?: LiveSettingsHandle,
   modes?: SessionModeStore,
   dataDir?: string,
+  rebuild?: RebuildController,
 ): void {
   /** 当前是否持有一段有效注册（dispose 完成后清空，允许服务重上线时重注册）。 */
   let holding = false;
@@ -99,6 +101,7 @@ export function registerMemoryRpc(
             modes,
             dataDir: dataDir ?? resolveDataDir(cfg),
             logger,
+            rebuild,
           });
           return { ok: true, value };
         } catch (err) {
@@ -193,10 +196,11 @@ interface EndpointDeps {
   modes?: SessionModeStore;
   dataDir: string;
   logger: MemoryLogger;
+  rebuild?: RebuildController;
 }
 
 async function handleEndpoint(endpoint: string, payload: unknown, deps: EndpointDeps): Promise<unknown> {
-  const { cfg, stores, status, live, modes, dataDir } = deps;
+  const { cfg, stores, status, live, modes, dataDir, rebuild } = deps;
   switch (endpoint) {
     case 'dsh-memory/stats':
       return buildStats(cfg, stores, status);
@@ -305,6 +309,27 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
     case 'dsh-memory/log-tail': {
       const p = (payload ?? {}) as { lines?: number };
       return { lines: readLogTail(join(dataDir, 'memory.log'), Math.min(Math.max(Number(p.lines) || 200, 1), 1000)) };
+    }
+
+    case 'dsh-memory/rebuild-status': {
+      if (!rebuild) return { supported: false, running: false, phase: 'idle' };
+      return rebuild.getStatus();
+    }
+
+    case 'dsh-memory/rebuild-start': {
+      if (!rebuild) throw new Error('重建控制器未初始化（存储不可用）');
+      if (status?.degraded()) throw new Error('存储处于降级状态，无法重建');
+      const s = live?.get();
+      if (s && (!s.enabled || !s.distill)) throw new Error('蒸馏开关已关闭，请先开启蒸馏再重建');
+      if (!cfg.extract.enabled) throw new Error('部署配置已停用蒸馏（extract.enabled=false），无法重建');
+      const result = rebuild.start();
+      deps.logger.info('[memory] 收到重建指令（设置页按钮）');
+      return result;
+    }
+
+    case 'dsh-memory/rebuild-cancel': {
+      if (!rebuild) throw new Error('重建控制器未初始化');
+      return rebuild.requestCancel();
     }
 
     default:

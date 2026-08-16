@@ -22,6 +22,7 @@ import { memorySchema, resolveDataDir, type MemoryConfig } from './config.js';
 import { registerCapture } from './hooks/capture.js';
 import { registerRecall } from './hooks/recall.js';
 import { MemoryRunner } from './pipeline/runner.js';
+import { RebuildController } from './pipeline/rebuild.js';
 import { registerMemoryRpc, PLUGIN_VERSION } from './stats.js';
 import { registerLiveSettings } from './settings.js';
 import {
@@ -248,16 +249,32 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
   const runner = new MemoryRunner(ctx, config, stores, logger, live);
   await runner.init();
 
+  // 重建控制器（存储降级时不建——RPC 端点走 supported=false 分支）
+  const rebuild =
+    storageOk && !db.isDegraded()
+      ? new RebuildController(ctx, config, stores, db, runner, logger, live)
+      : undefined;
+
   if (storageOk) {
     registerCapture(ctx, config, runner, stores.l0, logger, live, modes);
   }
   const recall = registerRecall(ctx, config, stores, logger, live, modes);
   runner.setAfterRun(recall.invalidateProfile);
   registerMemoryTools(ctx, config, stores, logger, modes);
-  registerMemoryRpc(ctx, config, stores, logger, {
-    degraded: () => !storageOk || db.isDegraded(),
-    pending: () => runner.pendingCount,
-  }, live, modes, dataDir);
+  registerMemoryRpc(
+    ctx,
+    config,
+    stores,
+    logger,
+    {
+      degraded: () => !storageOk || db.isDegraded(),
+      pending: () => runner.pendingCount,
+    },
+    live,
+    modes,
+    dataDir,
+    rebuild,
+  );
 
   logger.info(
     `[memory] L0~L3 分层蒸馏记忆插件就绪（L1 记忆 ${storageOk ? stores.l1.size : 0} 条 | 捕获=${

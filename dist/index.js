@@ -21,6 +21,7 @@ import { memorySchema, resolveDataDir } from './config.js';
 import { registerCapture } from './hooks/capture.js';
 import { registerRecall } from './hooks/recall.js';
 import { MemoryRunner } from './pipeline/runner.js';
+import { RebuildController } from './pipeline/rebuild.js';
 import { registerMemoryRpc, PLUGIN_VERSION } from './stats.js';
 import { registerLiveSettings } from './settings.js';
 import { NoopEmbeddingService, RemoteEmbeddingService, } from './store/embedding.js';
@@ -220,6 +221,10 @@ export async function apply(ctx, config) {
     }
     const runner = new MemoryRunner(ctx, config, stores, logger, live);
     await runner.init();
+    // 重建控制器（存储降级时不建——RPC 端点走 supported=false 分支）
+    const rebuild = storageOk && !db.isDegraded()
+        ? new RebuildController(ctx, config, stores, db, runner, logger, live)
+        : undefined;
     if (storageOk) {
         registerCapture(ctx, config, runner, stores.l0, logger, live, modes);
     }
@@ -229,6 +234,6 @@ export async function apply(ctx, config) {
     registerMemoryRpc(ctx, config, stores, logger, {
         degraded: () => !storageOk || db.isDegraded(),
         pending: () => runner.pendingCount,
-    }, live, modes, dataDir);
+    }, live, modes, dataDir, rebuild);
     logger.info(`[memory] L0~L3 分层蒸馏记忆插件就绪（L1 记忆 ${storageOk ? stores.l1.size : 0} 条 | 捕获=${storageOk && config.capture.enabled} | 蒸馏=${storageOk && config.extract.enabled} | 召回=${config.recall.enabled}）`);
 }

@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { type MemoryConfig } from './config.js';
+import type { RebuildController } from './pipeline/rebuild.js';
 import type { LiveSettingsHandle } from './settings.js';
 import type { L0Store } from './store/l0.js';
 import type { L1Store } from './store/l1.js';
@@ -43,4 +44,4 @@ export declare function registerMemoryRpc(ctx: Context, cfg: MemoryConfig, store
     scenes: Record<MemoryFamily, SceneStore>;
     persona: Record<MemoryFamily, PersonaStore>;
     state: StateStore;
-}, logger: MemoryLogger, status?: MemoryStatusSource, live?: LiveSettingsHandle, modes?: SessionModeStore, dataDir?: string): void;
+}, logger: MemoryLogger, status?: MemoryStatusSource, live?: LiveSettingsHandle, modes?: SessionModeStore, dataDir?: string, rebuild?: RebuildController): void;

@@ -52,6 +52,17 @@ export class StateStore {
     forFamily(family) {
         return this.buckets[family];
     }
+    /**
+     * 重建用：两族 checkpoint 重置为默认值。
+     * 必须原地突变（Object.assign）——runner.states 等处持有桶对象的活引用，
+     * 换新对象会让引用指向已废弃的桶，后续计数写到内存孤儿上。
+     */
+    reset() {
+        for (const family of ['chat', 'work']) {
+            Object.assign(this.buckets[family], defaultState());
+            this.buckets[family].personaRequestedReason = undefined;
+        }
+    }
     async save() {
         const file = { version: 2, families: this.buckets };
         await atomicWriteJson(this.file, file);
