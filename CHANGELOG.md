@@ -3,6 +3,31 @@
 本文件记录 dsh-layered-memory（0.5.0 前名为 dsh-memory-plugin）的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.2] — 2026-08-16
+
+修复 Linux/macOS 上"任何工具调用都报
+`Cannot read properties of undefined (reading 'prepare')"`的严重 bug
+（WSL 真实事故：bash 工具一调就崩，turn 级失败）。
+
+### 根因
+
+插件把宿主运行时包（`@deepseek-ai/cordis`、`dsh-tools` 等）声明成了普通
+`dependencies`——安装器为插件装入**私有拷贝**，与宿主自己的模块图形成
+**双 `dsh-tools` 实例**。`ToolRuntime` 服务由插件侧拷贝实例化，而
+`dsh-agent-loop` 用宿主侧拷贝的 `Symbol(@deepseek-ai/dsh-tools.scheduler)`
+去读调度器——Symbol 身份不等（同名不同实例），读取落空 → 每次工具调用
+在 `scheduler.prepare` 处抛 TypeError。Windows 上恰好两图解析顺序一致而
+侥幸可用，Linux（pnpm hoisted + symlink 布局）必现。
+
+### 修复
+
+- **宿主运行时包改为 `peerDependencies`**（对齐官方插件约定，如
+  `dsh-bash-local`：cordis / dsh-agent / dsh-home-paths / dsh-llm /
+  dsh-session / dsh-settings / dsh-system-prompt / dsh-tools，`^` 范围），
+  安装不再产生私有拷贝，插件与宿主共享同一模块图；
+- 本地开发所需版本移入 `devDependencies`（构建/冒烟不受影响）；
+- 纯库依赖保留 `dependencies`（schemastery、sqlite-vec）。
+
 ## [0.5.1] — 2026-08-16
 
 修复 0.5.0 改名的客户端注册 bug（真实事故：从 GitHub 安装后浏览器端报
