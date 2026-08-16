@@ -17,12 +17,15 @@ const MEMORY_TOOLS_GUIDE = `<memory-tools-guide>
 export function registerRecall(ctx, cfg, stores, logger, live, modes) {
     const l1Cache = new Map();
     // 画像/场景导航按族缓存（分族隔离：注入时按会话档位选族）
-    const profileCache = { chat: '', work: '' };
+    const profileCache = {
+        chat: { persona: '', nav: '' },
+        work: { persona: '', nav: '' },
+    };
     const refreshProfile = async () => {
         try {
             const [chat, work] = await Promise.all([
-                buildProfile(stores, cfg, 'chat'),
-                buildProfile(stores, cfg, 'work'),
+                loadProfileParts(stores, cfg, 'chat'),
+                loadProfileParts(stores, cfg, 'work'),
             ]);
             profileCache.chat = chat;
             profileCache.work = work;
@@ -107,14 +110,10 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
                     const mode = modes.get(agent.id);
                     if (mode === 'off')
                         return '';
-                    let body;
-                    if (mode === 'auto') {
-                        // 自动档：两族画像/导航拼接（任一非空即输出）
-                        body = [profileCache.chat, profileCache.work].filter((p) => p && p.trim()).join('\n\n');
-                    }
-                    else {
-                        body = profileCache[mode];
-                    }
+                    // auto 档：两族按类别归组（画像/导航各一个标签，域内 <domain> 分块）；纯档：单族原格式
+                    const body = mode === 'auto'
+                        ? formatProfileAuto(profileCache.chat, profileCache.work)
+                        : formatProfileSingle(profileCache[mode]);
                     if (!body)
                         return MEMORY_TOOLS_GUIDE;
                     return `${body}\n\n${MEMORY_TOOLS_GUIDE}`;
@@ -157,23 +156,46 @@ function formatL1Memories(items) {
     lines.push('', '</relevant-memories>');
     return lines.join('\n');
 }
-async function buildProfile(stores, cfg, family) {
-    const parts = [];
-    if (cfg.recall.includePersona) {
-        const persona = await stores.persona[family].read();
-        if (persona) {
-            parts.push('<user-persona>');
-            parts.push(persona);
-            parts.push('</user-persona>');
-        }
+/** auto 档 <user-persona> 内的域说明：让模型理解分块结构与两域的独立性。 */
+const DOMAIN_HINT = '以下内容按记忆域分块：chat=用户个人画像（User Narrative Profile），work=团队工作准则（Team Operating Doctrine）。' +
+    '两域独立蒸馏与更新，请按当前对话语境参考对应域，不要把一域的内容当作另一域的事实。';
+function wrapDomain(family, content) {
+    const label = family === 'chat' ? '用户个人画像' : '团队工作准则';
+    return `<domain family="${family}" label="${label}">\n${content.trim()}\n</domain>`;
+}
+/** 纯档注入：单族画像 + 场景导航（沿用原有格式）。 */
+function formatProfileSingle(parts) {
+    const segments = [];
+    if (parts.persona)
+        segments.push(`<user-persona>\n${parts.persona}\n</user-persona>`);
+    if (parts.nav)
+        segments.push(`<scene-navigation>\n${parts.nav}\n</scene-navigation>`);
+    return segments.join('\n\n');
+}
+/** auto 档注入：两族按类别归组——画像共用一个 <user-persona>、导航共用一个 <scene-navigation>，域内 <domain> 分块。 */
+function formatProfileAuto(chat, work) {
+    const segments = [];
+    const personas = [
+        ['chat', chat.persona],
+        ['work', work.persona],
+    ];
+    const personaBlocks = personas.filter(([, p]) => p.trim()).map(([f, p]) => wrapDomain(f, p));
+    if (personaBlocks.length > 0) {
+        segments.push(`<user-persona>\n${DOMAIN_HINT}\n\n${personaBlocks.join('\n\n')}\n</user-persona>`);
     }
-    if (cfg.recall.includeSceneNav) {
-        const nav = await stores.scenes[family].navigation();
-        if (nav && nav.trim()) {
-            parts.push('');
-            parts.push(`<scene-navigation>\n${nav}\n</scene-navigation>`);
-        }
+    const navs = [
+        ['chat', chat.nav],
+        ['work', work.nav],
+    ];
+    const navBlocks = navs.filter(([, n]) => n.trim()).map(([f, n]) => wrapDomain(f, n));
+    if (navBlocks.length > 0) {
+        segments.push(`<scene-navigation>\n${navBlocks.join('\n\n')}\n</scene-navigation>`);
     }
-    // 注意：工具指南由注入侧统一附加一次（auto 档两族拼接时不重复）
-    return parts.join('\n').trim();
+    // 注意：工具指南由注入侧统一附加一次（auto 档不重复）
+    return segments.join('\n\n');
+}
+async function loadProfileParts(stores, cfg, family) {
+    const persona = cfg.recall.includePersona ? ((await stores.persona[family].read()) ?? '') : '';
+    const nav = cfg.recall.includeSceneNav ? ((await stores.scenes[family].navigation()) ?? '').trim() : '';
+    return { persona, nav };
 }

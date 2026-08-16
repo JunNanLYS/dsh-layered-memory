@@ -6,6 +6,8 @@
  *
  * 注入内容使用 <relevant-memories> / <user-persona> / <scene-navigation> / <memory-tools-guide>
  * 标签包裹——capture 侧 sanitize 会剥离这些标签，防止反馈循环。
+ * auto 档两族合并时在 <user-persona>/<scene-navigation> 内部用 <domain family="..."> 子块
+ * 分域（子块只出现在外层标签内部，随外层一起被 sanitize 剥离，无泄漏风险）。
  *
  * 注意：PromptContext.text 是**同步**函数，画像/场景导航这类异步文件读取必须走内存缓存，
  * 由定时刷新 + 管线更新后的主动失效来更新。
@@ -53,13 +55,16 @@ export function registerRecall(
 ): RecallHooks {
   const l1Cache = new Map<string, L1Hit[]>();
   // 画像/场景导航按族缓存（分族隔离：注入时按会话档位选族）
-  const profileCache: Record<'chat' | 'work', string> = { chat: '', work: '' };
+  const profileCache: Record<'chat' | 'work', ProfileParts> = {
+    chat: { persona: '', nav: '' },
+    work: { persona: '', nav: '' },
+  };
 
   const refreshProfile = async (): Promise<void> => {
     try {
       const [chat, work] = await Promise.all([
-        buildProfile(stores, cfg, 'chat'),
-        buildProfile(stores, cfg, 'work'),
+        loadProfileParts(stores, cfg, 'chat'),
+        loadProfileParts(stores, cfg, 'work'),
       ]);
       profileCache.chat = chat;
       profileCache.work = work;
@@ -147,13 +152,11 @@ export function registerRecall(
             if (!s.enabled || !s.recall) return '';
             const mode = modes.get(agent.id);
             if (mode === 'off') return '';
-            let body: string;
-            if (mode === 'auto') {
-              // 自动档：两族画像/导航拼接（任一非空即输出）
-              body = [profileCache.chat, profileCache.work].filter((p) => p && p.trim()).join('\n\n');
-            } else {
-              body = profileCache[mode];
-            }
+            // auto 档：两族按类别归组（画像/导航各一个标签，域内 <domain> 分块）；纯档：单族原格式
+            const body =
+              mode === 'auto'
+                ? formatProfileAuto(profileCache.chat, profileCache.work)
+                : formatProfileSingle(profileCache[mode]);
             if (!body) return MEMORY_TOOLS_GUIDE;
             return `${body}\n\n${MEMORY_TOOLS_GUIDE}`;
           },
@@ -196,27 +199,59 @@ function formatL1Memories(items: L1Hit[]): string {
   return lines.join('\n');
 }
 
-async function buildProfile(
+/** 单族画像/导航片段（注入侧按档位组装，纯档与 auto 档格式不同）。 */
+interface ProfileParts {
+  persona: string;
+  nav: string;
+}
+
+/** auto 档 <user-persona> 内的域说明：让模型理解分块结构与两域的独立性。 */
+const DOMAIN_HINT =
+  '以下内容按记忆域分块：chat=用户个人画像（User Narrative Profile），work=团队工作准则（Team Operating Doctrine）。' +
+  '两域独立蒸馏与更新，请按当前对话语境参考对应域，不要把一域的内容当作另一域的事实。';
+
+function wrapDomain(family: 'chat' | 'work', content: string): string {
+  const label = family === 'chat' ? '用户个人画像' : '团队工作准则';
+  return `<domain family="${family}" label="${label}">\n${content.trim()}\n</domain>`;
+}
+
+/** 纯档注入：单族画像 + 场景导航（沿用原有格式）。 */
+function formatProfileSingle(parts: ProfileParts): string {
+  const segments: string[] = [];
+  if (parts.persona) segments.push(`<user-persona>\n${parts.persona}\n</user-persona>`);
+  if (parts.nav) segments.push(`<scene-navigation>\n${parts.nav}\n</scene-navigation>`);
+  return segments.join('\n\n');
+}
+
+/** auto 档注入：两族按类别归组——画像共用一个 <user-persona>、导航共用一个 <scene-navigation>，域内 <domain> 分块。 */
+function formatProfileAuto(chat: ProfileParts, work: ProfileParts): string {
+  const segments: string[] = [];
+  const personas: Array<['chat' | 'work', string]> = [
+    ['chat', chat.persona],
+    ['work', work.persona],
+  ];
+  const personaBlocks = personas.filter(([, p]) => p.trim()).map(([f, p]) => wrapDomain(f, p));
+  if (personaBlocks.length > 0) {
+    segments.push(`<user-persona>\n${DOMAIN_HINT}\n\n${personaBlocks.join('\n\n')}\n</user-persona>`);
+  }
+  const navs: Array<['chat' | 'work', string]> = [
+    ['chat', chat.nav],
+    ['work', work.nav],
+  ];
+  const navBlocks = navs.filter(([, n]) => n.trim()).map(([f, n]) => wrapDomain(f, n));
+  if (navBlocks.length > 0) {
+    segments.push(`<scene-navigation>\n${navBlocks.join('\n\n')}\n</scene-navigation>`);
+  }
+  // 注意：工具指南由注入侧统一附加一次（auto 档不重复）
+  return segments.join('\n\n');
+}
+
+async function loadProfileParts(
   stores: { scenes: Record<'chat' | 'work', SceneStore>; persona: Record<'chat' | 'work', PersonaStore> },
   cfg: MemoryConfig,
   family: 'chat' | 'work',
-): Promise<string> {
-  const parts: string[] = [];
-  if (cfg.recall.includePersona) {
-    const persona = await stores.persona[family].read();
-    if (persona) {
-      parts.push('<user-persona>');
-      parts.push(persona);
-      parts.push('</user-persona>');
-    }
-  }
-  if (cfg.recall.includeSceneNav) {
-    const nav = await stores.scenes[family].navigation();
-    if (nav && nav.trim()) {
-      parts.push('');
-      parts.push(`<scene-navigation>\n${nav}\n</scene-navigation>`);
-    }
-  }
-  // 注意：工具指南由注入侧统一附加一次（auto 档两族拼接时不重复）
-  return parts.join('\n').trim();
+): Promise<ProfileParts> {
+  const persona = cfg.recall.includePersona ? ((await stores.persona[family].read()) ?? '') : '';
+  const nav = cfg.recall.includeSceneNav ? ((await stores.scenes[family].navigation()) ?? '').trim() : '';
+  return { persona, nav };
 }

@@ -6,6 +6,8 @@
  *
  * 注入内容使用 <relevant-memories> / <user-persona> / <scene-navigation> / <memory-tools-guide>
  * 标签包裹——capture 侧 sanitize 会剥离这些标签，防止反馈循环。
+ * auto 档两族合并时在 <user-persona>/<scene-navigation> 内部用 <domain family="..."> 子块
+ * 分域（子块只出现在外层标签内部，随外层一起被 sanitize 剥离，无泄漏风险）。
  *
  * 注意：PromptContext.text 是**同步**函数，画像/场景导航这类异步文件读取必须走内存缓存，
  * 由定时刷新 + 管线更新后的主动失效来更新。
