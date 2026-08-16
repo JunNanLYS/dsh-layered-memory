@@ -27,7 +27,9 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
       - run: npm ci
       - run: npm run build
+      # 仅 tag 触发时校验（workflow_dispatch 手动试跑跳过：ref 是分支名，会走到 publish 鉴权一步）
       - name: 校验 tag 与版本一致
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "v$PKG_VERSION" != "${GITHUB_REF_NAME}" ]; then
