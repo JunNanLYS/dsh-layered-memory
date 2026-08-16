@@ -1,5 +1,5 @@
 /**
- * dsh-memory-plugin — browser half（手写 plain-JS bundle，无打包器）。
+ * dsh-layered-memory — browser half（手写 plain-JS bundle，无打包器）。
  *
  * 1. 输入栏（conversation.input.left，模式选择器右侧）：会话记忆档位 pill
  *    （关闭/chat/自动/work 四态），点击展开 macOS 风格滑动选择器；
@@ -12,7 +12,7 @@
  *   factory(require) 返回 { apply, inject }。
  */
 window.__ModuleLoader__.load({
-  id: "dsh-memory-plugin",
+  id: "dsh-layered-memory",
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;
