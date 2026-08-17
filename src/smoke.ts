@@ -1103,6 +1103,67 @@ async function main(): Promise<void> {
     assert(h3.supported === false && h3.get().enabled === true, '服务缺失保持全开（既有行为不变）');
   }
 
+  console.log('== 17. connection 波动后 RPC 重挂（M11） ==');
+  {
+    const tmpT9 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-conn-'));
+    try {
+      type H = (endpoint: string, payload?: unknown) => Promise<unknown>;
+      let handler1: H | undefined;
+      let handler2: H | undefined;
+      let disposed1 = 0;
+      let disposed2 = 0;
+      const svc1 = {
+        rpc: {
+          handle: (_ch: string, h: H) => {
+            handler1 = h;
+            return async () => {
+              disposed1++;
+            };
+          },
+        },
+      };
+      const svc2 = {
+        rpc: {
+          handle: (_ch: string, h: H) => {
+            handler2 = h;
+            return async () => {
+              disposed2++;
+            };
+          },
+        },
+      };
+      let svc: unknown = svc1;
+      let serviceListener: ((name: string, impl: unknown) => void) | undefined;
+      const ctxC = {
+        get: (n: string) => (n === 'connection' ? svc : undefined),
+        on: (_e: string, h: (name: string, impl: unknown) => void) => {
+          serviceListener = h;
+          return () => {};
+        },
+        effect: (f: () => (() => void)) => {
+          f();
+          return () => {};
+        },
+      } as never;
+      registerMemoryRpc(ctxC, {} as never, {} as never, silentLogger, undefined, undefined, undefined, tmpT9);
+      assert(typeof handler1 === 'function', '初始注册到 svc1');
+
+      // 服务下线（impl=undefined）：旧 handle 随旧实例失效 → 立即释放复位
+      svc = undefined;
+      serviceListener!('connection', undefined);
+      assert(disposed1 === 1, '下线即释放旧 handle（holding 复位，不再卡死）');
+
+      // 服务恢复（新实例）：自动重挂
+      svc = svc2;
+      serviceListener!('connection', svc2);
+      assert(typeof handler2 === 'function', '恢复后自动重挂到新实例');
+      const r = (await handler2!('dsh-memory/log-tail', { lines: 3 })) as { ok: boolean; value: { lines: string[] } };
+      assert(r.ok === true && Array.isArray(r.value.lines), '重挂后的 handler 端点可用');
+    } finally {
+      await fs.rm(tmpT9, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   console.log(failures === 0 ? '\n全部通过 ✅' : `\n${failures} 个失败 ❌`);
   process.exit(failures === 0 ? 0 : 1);
 }

@@ -3,7 +3,8 @@
  * Client 设置页通过 ctx.connection.rpc.call('/rpc', 'dsh-memory/stats') 拉取。
  *
  * connection 是可选服务且可能晚于本插件就绪：先探测一次，未就绪则监听
- * internal/service，服务上线时再注册（服务消失又回来时也能重注册）。
+ * internal/service（事件携带 (name, impl)，impl=undefined 即下线），服务
+ * 上线、下线、替换实例三种迁移都会正确释放/重挂 RPC 注册。
  */
 import { createRequire } from 'node:module';
 import { readFileSync, statSync } from 'node:fs';
@@ -15,6 +16,8 @@ export const PLUGIN_VERSION = require('../package.json').version;
 export function registerMemoryRpc(ctx, cfg, stores, logger, status, live, modes, dataDir, rebuild) {
     /** 当前是否持有一段有效注册（dispose 完成后清空，允许服务重上线时重注册）。 */
     let holding = false;
+    /** 当前 handle 绑定的 connection 实例（internal/service 第二参；用于识别实例替换）。 */
+    let registeredImpl;
     const tryRegister = () => {
         if (holding)
             return;
@@ -45,6 +48,7 @@ export function registerMemoryRpc(ctx, cfg, stores, logger, status, live, modes,
                 };
             }
         }, { authority: 'loopback' });
+        registeredImpl = connection;
         if (!active) {
             void dispose();
             return;
@@ -56,17 +60,35 @@ export function registerMemoryRpc(ctx, cfg, stores, logger, status, live, modes,
             void dispose();
         });
     };
+    /** 释放全部持有注册（handle 随旧服务实例失效，holding 复位以允许重挂）。 */
+    const release = () => {
+        for (const dispose of disposers.splice(0))
+            dispose();
+    };
     const disposers = [];
     ctx.effect(() => {
         tryRegister();
-        const off = ctx.on('internal/service', (name) => {
-            if (name === 'connection')
-                tryRegister();
+        const off = ctx.on('internal/service', (name, impl) => {
+            if (name !== 'connection')
+                return;
+            if (!impl) {
+                // 服务下线：旧 handle 已随旧服务实例失效——主动释放并复位，
+                // 服务恢复时本事件再触发即可重挂（否则 holding 恒真 → RPC 永久失联）
+                release();
+                registeredImpl = undefined;
+                logger.debug?.('[memory] connection 服务下线，RPC 注册已释放（待恢复重挂）');
+                return;
+            }
+            if (impl !== registeredImpl) {
+                // 实例替换：旧 handle 失效，换新实例重挂
+                release();
+                registeredImpl = undefined;
+            }
+            tryRegister();
         });
         return () => {
             off();
-            for (const dispose of disposers.splice(0))
-                dispose();
+            release();
         };
     });
 }
