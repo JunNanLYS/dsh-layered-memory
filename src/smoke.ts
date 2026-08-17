@@ -22,6 +22,7 @@ import { StateStore } from './store/state.js';
 import { dayKey } from './store/io.js';
 import { familyForType } from './types.js';
 import { CaptureBuffers, isCaptureRelevant, registerCapture, trimBuffer } from './hooks/capture.js';
+import { buildRecallQuery, registerRecall } from './hooks/recall.js';
 import { sanitizeText, shouldCaptureL0, stripCodeBlocks } from './util/sanitize.js';
 import { parseJson } from './llm.js';
 import { chunkByCharBudget } from './pipeline/l1.js';
@@ -972,6 +973,81 @@ async function main(): Promise<void> {
       db4.close();
     } finally {
       await fs.rm(tmpT4, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  console.log('== 15. 召回查询截断 + 空查询清缓存 ==');
+  {
+    // 15a. 纯函数：末尾 N 条 + 字符上限 + 空输入
+    const msg = (marker: string, len = 1): { content: unknown } => ({ content: [{ type: 'text', text: `${marker}${'x'.repeat(Math.max(0, len - marker.length))}` }] });
+    const many = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => msg(`m${i}·`));
+    const q1 = buildRecallQuery(many);
+    assert(q1.includes('m5·') && !q1.includes('m4·'), '长会话只取末尾 8 条（早于窗口的消息不进查询）');
+    const longTail = [msg('头部标记', 3000)];
+    const q2 = buildRecallQuery(longTail);
+    assert(q2.length <= 2000 && !q2.includes('头部标记') && q2.endsWith('xxx'), `字符上限截断且保留末尾（len=${q2.length}）`);
+    assert(buildRecallQuery([]) === '', '空输入返回空查询');
+    assert(buildRecallQuery([{ content: [] }, { content: [{ type: 'text', text: '  ' }] }]) === '', '无有效文本返回空查询');
+
+    // 15b. pre-step：空查询清空该 agent 的召回缓存（不沿用上一步命中）
+    const tmpT5 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-recall-'));
+    try {
+      const contextText: Record<string, () => string> = {};
+      const fakeAgent = {
+        id: 'agent-t5',
+        ctx: { systemPrompt: { context: (def: { name: string; text: () => string }) => { contextText[def.name] = def.text; return () => {}; } } },
+      };
+      let preStep: ((payload: { agent: { id: string }; messages: Array<{ content: unknown }> }, next: () => void) => Promise<void>) | undefined;
+      const ctxT5 = {
+        on: (ev: string, h: typeof preStep) => {
+          if (ev === 'agent/pre-step') preStep = h;
+          return () => {};
+        },
+        effect: (f: () => (() => void)) => f(),
+        get: (name: string) => (name === 'agents' ? { list: () => [fakeAgent] } : undefined),
+      } as never;
+      let searchCalls = 0;
+      const storesT5 = {
+        l1: {
+          search: async () => {
+            searchCalls++;
+            return [{ id: 'h1', content: '命中记忆内容', type: 'persona', priority: 70, scene_name: '', score: 0.9, family: 'chat' }];
+          },
+        },
+        scenes: {
+          chat: { navigation: async () => '' },
+          work: { navigation: async () => '' },
+        },
+        persona: {
+          chat: { read: async () => '' },
+          work: { read: async () => '' },
+        },
+      } as never;
+      const modesT5 = new SessionModeStore(tmpT5, 'auto');
+      await modesT5.init();
+      const liveT5 = { supported: true, get: () => ({ enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' }) };
+      registerRecall(
+        ctxT5,
+        { recall: { enabled: true, maxResults: 5, includePersona: true, includeSceneNav: true, strategy: 'keyword', scoreThreshold: 0.3 } } as never,
+        storesT5,
+        silentLogger,
+        liveT5 as never,
+        modesT5,
+      );
+      assert(typeof contextText['memory:recall'] === 'function', 'agent 作用域召回上下文已注册');
+      let nexted = 0;
+      await preStep!({ agent: { id: 'agent-t5' }, messages: [msg('咖啡 手冲 偏好')] }, () => {
+        nexted++;
+      });
+      assert(nexted === 1 && searchCalls === 1, '有查询时执行检索且必调 next()');
+      assert(contextText['memory:recall']().includes('命中记忆内容'), '命中注入 <relevant-memories>');
+      await preStep!({ agent: { id: 'agent-t5' }, messages: [] }, () => {
+        nexted++;
+      });
+      assert(nexted === 2 && searchCalls === 1, '空查询不发起检索');
+      assert(contextText['memory:recall']() === '', '空查询清空缓存（上一步命中不再注入）');
+    } finally {
+      await fs.rm(tmpT5, { recursive: true, force: true }).catch(() => {});
     }
   }
 

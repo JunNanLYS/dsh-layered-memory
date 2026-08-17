@@ -1,5 +1,20 @@
 import { blocksToText } from '../util/text.js';
 const PROFILE_TTL = 60_000;
+/** 召回查询只取会话末尾 N 条消息（长会话每步把全史拼进 FTS MATCH 会让检索成本线性上涨）。 */
+const RECALL_QUERY_TAIL_MESSAGES = 8;
+/** 召回查询总字符上限（保留末尾——最新语境权重最高）。 */
+const RECALL_QUERY_MAX_CHARS = 2_000;
+/**
+ * 从会话消息构建召回查询（纯函数）：末尾 N 条 + 总长截断，空输入返回空串。
+ * 全史拼接会让 MATCH 表达式随会话长度线性膨胀（整会话累计二次方成本）。
+ */
+export function buildRecallQuery(messages, tailMessages = RECALL_QUERY_TAIL_MESSAGES, maxChars = RECALL_QUERY_MAX_CHARS) {
+    const tail = messages.slice(-tailMessages);
+    let text = tail.map((m) => blocksToText(m.content)).join(' ').trim();
+    if (text.length > maxChars)
+        text = text.slice(-maxChars);
+    return text;
+}
 const MEMORY_TOOLS_GUIDE = `<memory-tools-guide>
 ## 记忆工具调用指南
 
@@ -57,10 +72,7 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
                     l1Cache.set(payload.agent.id, []);
                     return next();
                 }
-                const query = payload.messages
-                    .map((m) => blocksToText(m.content))
-                    .join(' ')
-                    .trim();
+                const query = buildRecallQuery(payload.messages);
                 if (query) {
                     const hits = await stores.l1.search(query, cfg.recall.maxResults, {
                         scoreThreshold: cfg.recall.scoreThreshold,
@@ -70,6 +82,10 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
                     if (hits.length > 0) {
                         logger.info(`[memory] 召回命中 ${hits.length} 条 L1（mode=${mode}，query="${query.slice(0, 30).replace(/\n/g, ' ')}…"，agent=${payload.agent.id}）`);
                     }
+                }
+                else {
+                    // 空查询清缓存：不把上一步的命中注入到与本步无关的上下文
+                    l1Cache.set(payload.agent.id, []);
                 }
             }
             catch (err) {

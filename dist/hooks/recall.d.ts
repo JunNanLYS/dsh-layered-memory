@@ -20,6 +20,13 @@ import type { PersonaStore } from '../store/persona.js';
 import type { SceneStore } from '../store/scenes.js';
 import type { SessionModeStore } from '../store/session-modes.js';
 import type { MemoryLogger } from '../types.js';
+/**
+ * 从会话消息构建召回查询（纯函数）：末尾 N 条 + 总长截断，空输入返回空串。
+ * 全史拼接会让 MATCH 表达式随会话长度线性膨胀（整会话累计二次方成本）。
+ */
+export declare function buildRecallQuery(messages: Array<{
+    content: unknown;
+}>, tailMessages?: number, maxChars?: number): string;
 export interface RecallHooks {
     /** 管线更新后调用：画像/场景缓存立即失效并异步刷新。 */
     invalidateProfile(): void;
