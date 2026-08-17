@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import { EmbedHelper, NoopEmbeddingService } from './embedding.js';
 import { appendJsonl, dayKey, ensureDir, nowIso, readJsonl } from './io.js';
 import { rrfMerge } from './search-utils.js';
+import { isZeroVector } from './sqlite.js';
 /** 官方过度召回倍数（conversation-search：limit × 3）。 */
 const CANDIDATE_MULTIPLIER = 3;
 export class L0Store {
@@ -116,15 +117,17 @@ export class L0Store {
         return this.db.searchL0Fts(query, limit).map(({ score: _score, ...r }) => r);
     }
     /**
-     * 全量重嵌入（embedding 启用 / 周期性补齐用）。
-     * 返回写入数与失败数——failed > 0 时调用方不应标记 meta 同步完成。
+     * 增量重嵌入（同 L1Store.reindex：只补缺失向量，零向量记 skipped 并入 skip 集，
+     * 不算失败、不阻塞同步标记——保证补齐判据收敛）。
      */
     async reindex() {
         if (!this.helper.vectorReady())
-            return { written: 0, failed: 0 };
-        const items = this.db.getL0ForReindex();
+            return { written: 0, failed: 0, skipped: 0 };
+        const items = this.db.getL0ForReindex(this.db.getVecSkipSet('l0'));
         let written = 0;
         let failed = 0;
+        let skipped = 0;
+        const skippedNow = [];
         const CHUNK = 32;
         for (let i = 0; i < items.length; i += CHUNK) {
             const chunk = items.slice(i, i + CHUNK);
@@ -137,12 +140,19 @@ export class L0Store {
                 continue;
             }
             chunk.forEach((c, j) => {
+                if (isZeroVector(vecs[j])) {
+                    skipped++;
+                    skippedNow.push(c.id);
+                    return;
+                }
                 if (this.db.updateL0Vec(c.id, vecs[j], ''))
                     written++;
                 else
                     failed++;
             });
         }
-        return { written, failed };
+        if (skippedNow.length > 0)
+            this.db.addVecSkippedIds('l0', skippedNow);
+        return { written, failed, skipped };
     }
 }

@@ -1,6 +1,6 @@
 import type { ConversationMessage, L0MessageRecord, MemoryLogger } from '../types.js';
 import { type EmbeddingService } from './embedding.js';
-import type { MemoryDb } from './sqlite.js';
+import { type MemoryDb } from './sqlite.js';
 export declare class L0Store {
     private readonly db;
     private readonly dir;
@@ -18,11 +18,12 @@ export declare class L0Store {
     /** 检索：FTS + 向量 hybrid（RRF 融合），返回按相关性排序的消息。 */
     search(query: string, limit: number): Promise<L0MessageRecord[]>;
     /**
-     * 全量重嵌入（embedding 启用 / 周期性补齐用）。
-     * 返回写入数与失败数——failed > 0 时调用方不应标记 meta 同步完成。
+     * 增量重嵌入（同 L1Store.reindex：只补缺失向量，零向量记 skipped 并入 skip 集，
+     * 不算失败、不阻塞同步标记——保证补齐判据收敛）。
      */
     reindex(): Promise<{
         written: number;
         failed: number;
+        skipped: number;
     }>;
 }

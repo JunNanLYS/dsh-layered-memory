@@ -121,16 +121,31 @@ export declare class MemoryDb {
     countL0Vec(): number;
     searchL0Fts(query: string, limit: number): L0SearchHit[];
     searchL0Vector(embedding: Float32Array, topK: number): L0SearchHit[];
-    getL1ForReindex(): Array<{
+    /** L1 缺失向量的记录数（排除 skip 集后的补齐判据；向量能力不可用返回 -1）。 */
+    countL1VecMissing(exclude?: Set<string>): number;
+    /** L0 缺失向量的记录数（同上）。 */
+    countL0VecMissing(exclude?: Set<string>): number;
+    /**
+     * 待重嵌入的 L1：只取缺失向量的记录（增量），排除 skip 集里已判定
+     * "当前 provider 下不可嵌入（零向量）"的 id——缺 1 条不再全量重嵌，
+     * 零向量记录也不再反复喂给 embeddings API（H1 死循环双根因）。
+     */
+    getL1ForReindex(exclude?: Set<string>): Array<{
         id: string;
         content: string;
     }>;
-    getL0ForReindex(): Array<{
+    /** 待重嵌入的 L0（增量 + 排除 skip 集，同 getL1ForReindex）。 */
+    getL0ForReindex(exclude?: Set<string>): Array<{
         id: string;
         text: string;
     }>;
+    getVecSkipSet(kind: 'l1' | 'l0'): Set<string>;
+    addVecSkippedIds(kind: 'l1' | 'l0', ids: string[]): void;
+    clearVecSkipIds(kind: 'l1' | 'l0'): void;
     /** 只更新向量行（重嵌入用）。 */
     updateL1Vec(id: string, embedding: Float32Array): boolean;
     updateL0Vec(id: string, embedding: Float32Array, recordedAt: string): boolean;
     close(): void;
 }
+/** 全零向量（cosine 未定义，不可入向量表）。reindex 侧用它区分"不可嵌入"与"写入失败"。 */
+export declare function isZeroVector(vec: Float32Array): boolean;

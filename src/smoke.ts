@@ -68,6 +68,8 @@ class FakeEmbedding implements EmbeddingService {
   }
   async embedBatch(texts: string[]): Promise<Float32Array[]> {
     return texts.map((t) => {
+      // 命中标记的内容返回全零向量（模拟 provider 对个别内容不可嵌入，H1 场景）
+      if (t.includes('空向量标记')) return new Float32Array(4);
       const v = new Float32Array(4);
       if (t.includes('咖啡') || t.includes('coffee')) v[0] = 1;
       if (t.includes('分层') || t.includes('架构') || t.includes('memory')) v[1] = 1;
@@ -293,13 +295,25 @@ async function main(): Promise<void> {
     const eh = await l1e.search('分层 架构', 5, { scoreThreshold: 0.3 });
     assert(eh.length >= 1 && eh[0].id === 'c2', 'embedding 策略 + 阈值命中');
 
-    // 直接写库不带向量 → reindex 补齐 → 向量可检索
+    // 直接写库不带向量 → reindex 增量补齐 → 向量可检索
     db2.upsertL1({ id: 'c3', content: 'react 前端组件状态管理方案', type: 'work_method', priority: 60, scene_name: '前端', timestamps: [t], createdAt: t, updatedAt: t });
     const q = await embed.embed('react 组件');
     assert(!db2.searchL1Vector(q, 5).some((h) => h.id === 'c3'), 'reindex 前无向量行');
+    assert(db2.countL1VecMissing(db2.getVecSkipSet('l1')) === 1, '缺失判定只数无向量行的记录（增量）');
     const ri = await l1v.reindex();
-    assert(ri.written >= 3 && ri.failed === 0, `reindex 全量重嵌入 (${ri.written} 条, 失败 ${ri.failed})`);
+    assert(ri.written === 1 && ri.failed === 0 && ri.skipped === 0, `reindex 增量补齐（written=${ri.written}，不重嵌已有向量）`);
     assert(db2.searchL1Vector(q, 5).some((h) => h.id === 'c3'), 'reindex 后向量命中');
+
+    // T1/H1：零向量记录 → skipped 不算 failed + 进 skip 集 → 补齐判据收敛（不再每 30 分钟重嵌）
+    db2.upsertL1({ id: 'c4', content: '补齐增量验证的普通缺失记录', type: 'work_fact', priority: 60, scene_name: 's', timestamps: [t], createdAt: t, updatedAt: t });
+    db2.upsertL1({ id: 'c5', content: '这条内容会返回空向量标记（provider 不可嵌入）', type: 'persona', priority: 60, scene_name: 's', timestamps: [t], createdAt: t, updatedAt: t });
+    assert(db2.countL1VecMissing(db2.getVecSkipSet('l1')) === 2, '零向量记录初始也算缺失');
+    const ri2 = await l1v.reindex();
+    assert(ri2.written === 1 && ri2.failed === 0 && ri2.skipped === 1, `零向量记 skipped 不算 failed（written=${ri2.written}, skipped=${ri2.skipped}）`);
+    assert(db2.getVecSkipSet('l1').has('c5'), 'skip 集持久化零向量 id');
+    assert(db2.countL1VecMissing(db2.getVecSkipSet('l1')) === 0, '补齐判据收敛（缺失数排除 skip 集后归零）');
+    const ri3 = await l1v.reindex();
+    assert(ri3.written === 0 && ri3.skipped === 0 && ri3.failed === 0, '收敛后 reindex 空转（零 embeddings 调用）');
 
     const l0v = new L0Store(tmp2, db2, embed);
     await l0v.init();
@@ -308,6 +322,11 @@ async function main(): Promise<void> {
     ]);
     const l0vh = await l0v.search('react 渲染', 5);
     assert(l0vh.length === 1 && l0vh[0].content.includes('react'), 'L0 向量+FTS hybrid 命中');
+    // L0 侧同语义：增量 + 零向量 skipped + 判据收敛
+    db2.upsertL0Batch([{ sessionId: 'sess-v', recordedAt: '', id: 'vm2', role: 'user', content: 'L0 的空向量标记记录', timestamp: t }]);
+    const ri0 = await l0v.reindex();
+    assert(ri0.written === 0 && ri0.failed === 0 && ri0.skipped === 1, `L0 零向量 skipped（skipped=${ri0.skipped}）`);
+    assert(db2.countL0VecMissing(db2.getVecSkipSet('l0')) === 0, 'L0 补齐判据收敛');
     db2.close();
   } finally {
     await fs.rm(tmp2, { recursive: true, force: true }).catch(() => undefined);

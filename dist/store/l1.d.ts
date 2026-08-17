@@ -1,6 +1,6 @@
 import type { L1Hit, MemoryFamily, MemoryLogger, MemoryRecord } from '../types.js';
 import { type EmbeddingService } from './embedding.js';
-import type { MemoryDb } from './sqlite.js';
+import { type MemoryDb } from './sqlite.js';
 export type RecallStrategy = 'keyword' | 'embedding' | 'hybrid';
 export interface L1SearchOptions {
     /** 按记忆类型精确过滤（后置过滤，官方做法）。 */
@@ -59,12 +59,15 @@ export declare class L1Store {
      */
     searchCandidates(query: string, limit: number, family?: MemoryFamily): Promise<MemoryRecord[]>;
     /**
-     * 全量重嵌入（embedding 配置变化 / 周期性补齐用）。
-     * 返回写入数与失败数——failed > 0 时调用方不应标记 meta 同步完成。
+     * 增量重嵌入（embedding 配置变化 / 周期性补齐用）：只处理缺失向量的记录，
+     * 排除已判定"当前 provider 不可嵌入"的 skip 集。返回写入/失败/跳过数——
+     * failed > 0 时调用方不应标记 meta 同步完成；skipped（零向量）不算失败、
+     * 不阻塞同步标记（否则补齐判据永不收敛，每 30 分钟全量重嵌死循环）。
      */
     reindex(): Promise<{
         written: number;
         failed: number;
+        skipped: number;
     }>;
     private postProcess;
 }

@@ -13,7 +13,7 @@ import { familyForType } from '../types.js';
 import { EmbedHelper, NoopEmbeddingService, type EmbeddingService } from './embedding.js';
 import { appendJsonl, dayKey, ensureDir, readJsonl } from './io.js';
 import { RRF_K, rrfMerge } from './search-utils.js';
-import type { MemoryDb } from './sqlite.js';
+import { isZeroVector, type MemoryDb } from './sqlite.js';
 
 export type RecallStrategy = 'keyword' | 'embedding' | 'hybrid';
 
@@ -214,14 +214,18 @@ export class L1Store {
   }
 
   /**
-   * 全量重嵌入（embedding 配置变化 / 周期性补齐用）。
-   * 返回写入数与失败数——failed > 0 时调用方不应标记 meta 同步完成。
+   * 增量重嵌入（embedding 配置变化 / 周期性补齐用）：只处理缺失向量的记录，
+   * 排除已判定"当前 provider 不可嵌入"的 skip 集。返回写入/失败/跳过数——
+   * failed > 0 时调用方不应标记 meta 同步完成；skipped（零向量）不算失败、
+   * 不阻塞同步标记（否则补齐判据永不收敛，每 30 分钟全量重嵌死循环）。
    */
-  async reindex(): Promise<{ written: number; failed: number }> {
-    if (!this.helper.vectorReady()) return { written: 0, failed: 0 };
-    const items = this.db.getL1ForReindex();
+  async reindex(): Promise<{ written: number; failed: number; skipped: number }> {
+    if (!this.helper.vectorReady()) return { written: 0, failed: 0, skipped: 0 };
+    const items = this.db.getL1ForReindex(this.db.getVecSkipSet('l1'));
     let written = 0;
     let failed = 0;
+    let skipped = 0;
+    const skippedNow: string[] = [];
     const CHUNK = 16;
     for (let i = 0; i < items.length; i += CHUNK) {
       const chunk = items.slice(i, i + CHUNK);
@@ -233,11 +237,17 @@ export class L1Store {
         continue;
       }
       chunk.forEach((c, j) => {
+        if (isZeroVector(vecs[j])) {
+          skipped++;
+          skippedNow.push(c.id);
+          return;
+        }
         if (this.db.updateL1Vec(c.id, vecs[j])) written++;
         else failed++;
       });
     }
-    return { written, failed };
+    if (skippedNow.length > 0) this.db.addVecSkippedIds('l1', skippedNow);
+    return { written, failed, skipped };
   }
 
   private postProcess(hits: L1Hit[], type: string | undefined, limit: number): L1Hit[] {

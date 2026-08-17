@@ -194,12 +194,14 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
       if (caps.vectorSearch) {
         void (async () => {
           try {
+            // 增量：配置变化路径向量表已被 drop，全部记录均"缺失"，等效全量
             const r1 = await stores.l1.reindex();
             const r0 = await stores.l0.reindex();
             if (r1.failed === 0 && r0.failed === 0) {
               db.markEmbeddingSynced(info);
+              const skipNote = r1.skipped + r0.skipped > 0 ? `，跳过不可嵌入 ${r1.skipped + r0.skipped} 条` : '';
               logger.info(
-                `[memory] 向量重建完成：L1 ${r1.written} 条，L0 ${r0.written} 条（原因：${dbInit.reason ?? '配置变化'}）`,
+                `[memory] 向量重建完成：L1 ${r1.written} 条，L0 ${r0.written} 条${skipNote}（原因：${dbInit.reason ?? '配置变化'}）`,
               );
             } else {
               logger.warn(
@@ -216,19 +218,23 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
       db.markEmbeddingSynced(info);
     }
 
-    // 周期性向量补齐：嵌入失败的批次/漏网记录自动补上（30 分钟一次，缺量判定幂等）
+    // 周期性向量补齐：嵌入失败的批次/漏网记录自动补上（30 分钟一次）。
+    // 判据 = 排除 skip 集后的缺失数（增量语义）：缺 1 条只补 1 条，
+    // 零向量记录进 skip 集后不再触发——否则补齐永不收敛、每 30 分钟全量重嵌。
     if (caps.vectorSearch) {
       const backfill = (): void => {
         void (async () => {
           try {
-            const l1Missing = db.countL1Vec() >= 0 && db.countL1Vec() < db.countL1();
-            const l0Missing = db.countL0Vec() >= 0 && db.countL0Vec() < db.countL0();
+            const l1Missing = db.countL1VecMissing(db.getVecSkipSet('l1')) > 0;
+            const l0Missing = db.countL0VecMissing(db.getVecSkipSet('l0')) > 0;
             if (!l1Missing && !l0Missing) return;
             const r1 = await stores.l1.reindex();
             const r0 = await stores.l0.reindex();
             if (r1.failed === 0 && r0.failed === 0) {
               db.markEmbeddingSynced(info);
-              logger.info(`[memory] 向量补齐完成：L1 ${r1.written} 条，L0 ${r0.written} 条`);
+              logger.info(
+                `[memory] 向量补齐完成：L1 ${r1.written} 条，L0 ${r0.written} 条（跳过不可嵌入 ${r1.skipped + r0.skipped} 条）`,
+              );
             }
           } catch (err) {
             logger.warn(`[memory] 向量补齐失败: ${err instanceof Error ? err.message : String(err)}`);

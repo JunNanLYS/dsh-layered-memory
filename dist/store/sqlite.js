@@ -374,6 +374,9 @@ export class MemoryDb {
     dropVectorTables() {
         this.db.exec('DROP TABLE IF EXISTS l1_vec');
         this.db.exec('DROP TABLE IF EXISTS l0_vec');
+        // provider/model/维度已变：旧的"不可嵌入"判定作废（新 provider 可能嵌入得了），skip 集清空
+        this.clearVecSkipIds('l1');
+        this.clearVecSkipIds('l0');
         this.prepareL1VecStatements();
         this.prepareL0VecStatements();
     }
@@ -547,6 +550,8 @@ export class MemoryDb {
                 this.db.exec('DROP TABLE IF EXISTS l1_vec');
                 this.prepareL1VecStatements();
             }
+            // 重建后 L1 id 全新，旧 skip 集是死数据，清空让新记录获得一次嵌入机会
+            this.clearVecSkipIds('l1');
             this.logger?.info(`${TAG} L1 检索库已清空（重建）`);
             return true;
         }
@@ -877,19 +882,103 @@ export class MemoryDb {
     // ============================
     // 重嵌入（reindexAll 用）
     // ============================
-    getL1ForReindex() {
-        if (this.degraded)
-            return [];
-        return this.db
-            .prepare('SELECT record_id AS id, content FROM l1_records')
-            .all();
+    /** L1 缺失向量的记录数（排除 skip 集后的补齐判据；向量能力不可用返回 -1）。 */
+    countL1VecMissing(exclude) {
+        if (this.degraded || !this.stmtSearchL1Vec)
+            return -1;
+        try {
+            const row = this.db
+                .prepare(`SELECT COUNT(*) AS n FROM l1_records r
+           LEFT JOIN l1_vec v ON v.record_id = r.record_id
+           WHERE v.record_id IS NULL${notInClause('r.record_id', exclude)}`)
+                .all(...notInParams(exclude))[0];
+            return row?.n ?? 0;
+        }
+        catch {
+            return -1;
+        }
     }
-    getL0ForReindex() {
+    /** L0 缺失向量的记录数（同上）。 */
+    countL0VecMissing(exclude) {
+        if (this.degraded || !this.stmtSearchL0Vec)
+            return -1;
+        try {
+            const row = this.db
+                .prepare(`SELECT COUNT(*) AS n FROM l0_conversations r
+           LEFT JOIN l0_vec v ON v.record_id = r.record_id
+           WHERE v.record_id IS NULL${notInClause('r.record_id', exclude)}`)
+                .all(...notInParams(exclude))[0];
+            return row?.n ?? 0;
+        }
+        catch {
+            return -1;
+        }
+    }
+    /**
+     * 待重嵌入的 L1：只取缺失向量的记录（增量），排除 skip 集里已判定
+     * "当前 provider 下不可嵌入（零向量）"的 id——缺 1 条不再全量重嵌，
+     * 零向量记录也不再反复喂给 embeddings API（H1 死循环双根因）。
+     */
+    getL1ForReindex(exclude) {
         if (this.degraded)
             return [];
         return this.db
-            .prepare('SELECT record_id AS id, message_text AS text FROM l0_conversations')
-            .all();
+            .prepare(`SELECT r.record_id AS id, r.content FROM l1_records r
+         LEFT JOIN l1_vec v ON v.record_id = r.record_id
+         WHERE v.record_id IS NULL${notInClause('r.record_id', exclude)}`)
+            .all(...notInParams(exclude));
+    }
+    /** 待重嵌入的 L0（增量 + 排除 skip 集，同 getL1ForReindex）。 */
+    getL0ForReindex(exclude) {
+        if (this.degraded)
+            return [];
+        return this.db
+            .prepare(`SELECT r.record_id AS id, r.message_text AS text FROM l0_conversations r
+         LEFT JOIN l0_vec v ON v.record_id = r.record_id
+         WHERE v.record_id IS NULL${notInClause('r.record_id', exclude)}`)
+            .all(...notInParams(exclude));
+    }
+    // ── 零向量 skip 集（embedding_meta 持久化；provider 变化时随向量表一起清空） ──
+    getVecSkipSet(kind) {
+        if (this.degraded)
+            return new Set();
+        try {
+            const row = this.db
+                .prepare('SELECT value FROM embedding_meta WHERE key = ?')
+                .get(vecSkipKey(kind));
+            if (!row)
+                return new Set();
+            const parsed = JSON.parse(row.value);
+            if (!Array.isArray(parsed))
+                return new Set();
+            return new Set(parsed.filter((x) => typeof x === 'string'));
+        }
+        catch {
+            return new Set();
+        }
+    }
+    addVecSkippedIds(kind, ids) {
+        if (this.degraded || ids.length === 0)
+            return;
+        try {
+            const merged = [...new Set([...this.getVecSkipSet(kind), ...ids])];
+            this.db
+                .prepare('INSERT INTO embedding_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+                .run(vecSkipKey(kind), JSON.stringify(merged));
+        }
+        catch (err) {
+            this.logger?.warn(`${TAG} skip 集写入失败: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
+    clearVecSkipIds(kind) {
+        if (this.degraded)
+            return;
+        try {
+            this.db.prepare('DELETE FROM embedding_meta WHERE key = ?').run(vecSkipKey(kind));
+        }
+        catch {
+            /* 空集语义，失败无影响 */
+        }
     }
     /** 只更新向量行（重嵌入用）。 */
     updateL1Vec(id, embedding) {
@@ -973,12 +1062,27 @@ function toIso(epochMs) {
         return '';
     return new Date(epochMs).toISOString();
 }
-function isZeroVector(vec) {
+/** 全零向量（cosine 未定义，不可入向量表）。reindex 侧用它区分"不可嵌入"与"写入失败"。 */
+export function isZeroVector(vec) {
     for (const v of vec) {
         if (v !== 0)
             return false;
     }
     return true;
+}
+/** NOT IN 片段（空集 → 空串；配合 notInParams 使用）。 */
+function notInClause(column, exclude) {
+    if (!exclude || exclude.size === 0)
+        return '';
+    return ` AND ${column} NOT IN (${[...exclude].map(() => '?').join(',')})`;
+}
+function notInParams(exclude) {
+    if (!exclude || exclude.size === 0)
+        return [];
+    return [...exclude];
+}
+function vecSkipKey(kind) {
+    return kind === 'l1' ? 'embedding_zero_vec_l1' : 'embedding_zero_vec_l0';
 }
 /** DB 字符串 → 族（异常值按 type 前缀兜底归一）。 */
 function normFamily(raw, type) {
