@@ -10,9 +10,15 @@ const ALWAYS_ON = { enabled: true, capture: true, distill: true, recall: true, r
  * `settings namespace "dsh-memory" is already registered`。模块级状态在
  * fiber 重启间存活：复用上次注册的 scope 并重挂 watcher，否则开关读写停在
  * stub、用户已存开关被静默忽略直到重启进程。
+ *
+ * 同时按服务实例（cachedSvc）判活：settings 服务自身重启时其注册随服务 ctx
+ * 销毁，旧 scope 变死引用（get 返回冻结旧值、update 抛 not registered、
+ * watcher 永不触发）——internal/service 携带的新实例与缓存不符时作废缓存、
+ * 向新实例重新注册（用户层由服务从磁盘重解析，已存开关不丢）。
  */
 let cachedScope;
 let cachedUnwatch;
+let cachedSvc;
 export function liveSettingsSchema() {
     return Schema.object({
         enabled: Schema.boolean().default(true),
@@ -47,20 +53,35 @@ export function registerLiveSettings(ctx, logger) {
             },
         };
     };
+    /** 作废进程内缓存（服务下线/实例替换时旧注册已随服务销毁）。 */
+    const invalidateCache = () => {
+        cachedScope = undefined;
+        cachedSvc = undefined;
+        cachedUnwatch?.();
+        cachedUnwatch = undefined;
+    };
     const tryAttach = () => {
         const settings = ctx.get('settings');
         if (!settings)
             return false;
-        if (cachedScope) {
-            inner = wireScope(cachedScope);
-            const c = inner.get();
-            logger.info(`[memory] 记忆模式开关重挂（复用进程内注册，当前：总=${c.enabled} 捕获=${c.capture} 蒸馏=${c.distill} 召回=${c.recall}` +
-                `，蒸馏思考=${c.reasoningEffort || '跟随配置'}）`);
-            return true;
+        // 仅当缓存来自同一服务实例时才可复用——换了实例（服务重启/替换）就重新注册
+        if (cachedScope && cachedSvc === settings) {
+            try {
+                inner = wireScope(cachedScope);
+                const c = inner.get();
+                logger.info(`[memory] 记忆模式开关重挂（复用进程内注册，当前：总=${c.enabled} 捕获=${c.capture} 蒸馏=${c.distill} 召回=${c.recall}` +
+                    `，蒸馏思考=${c.reasoningEffort || '跟随配置'}）`);
+                return true;
+            }
+            catch (err) {
+                logger.warn(`[memory] 记忆模式开关缓存复用失败，改为重新注册: ${err instanceof Error ? err.message : String(err)}`);
+                invalidateCache();
+            }
         }
         try {
             const scope = settings.register(NS, liveSettingsSchema(), { applies: 'live' });
             cachedScope = scope;
+            cachedSvc = settings;
             inner = wireScope(scope);
             logger.info(`[memory] 记忆模式开关就绪（settings 命名空间 dsh-memory，当前：总=${inner.get().enabled} 捕获=${inner.get().capture} 蒸馏=${inner.get().distill} 召回=${inner.get().recall}` +
                 `，蒸馏思考=${inner.get().reasoningEffort || '跟随配置'}）`);
@@ -73,11 +94,24 @@ export function registerLiveSettings(ctx, logger) {
     };
     if (!tryAttach()) {
         logger.warn('[memory] settings 服务未就绪，记忆模式开关暂不可用（保持全开，等待服务上线）');
-        ctx.on('internal/service', (name) => {
-            if (name === 'settings' && !inner.supported)
-                tryAttach();
-        });
     }
+    // 无论初始是否成功都监听服务迁移：下线 → 作废缓存；换实例 → 作废后立即重挂
+    // （此前监听仅在初始失败时注册，服务替换场景下没有任何自愈路径）
+    ctx.on('internal/service', (name, impl) => {
+        if (name !== 'settings')
+            return;
+        if (!impl) {
+            if (cachedSvc !== undefined) {
+                invalidateCache();
+                logger.warn('[memory] settings 服务下线，开关缓存已作废（期间读数为冻结值，恢复后自动重挂）');
+            }
+            return;
+        }
+        if (impl !== cachedSvc) {
+            invalidateCache();
+            tryAttach();
+        }
+    });
     return {
         get supported() {
             return inner.supported;
