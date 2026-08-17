@@ -25,6 +25,7 @@ import { familyForType } from './types.js';
 import { CaptureBuffers, isCaptureRelevant, registerCapture, trimBuffer } from './hooks/capture.js';
 import { buildRecallQuery, registerRecall } from './hooks/recall.js';
 import { sanitizeText, shouldCaptureL0, stripCodeBlocks } from './util/sanitize.js';
+import { errDetail, SIZE_CHECK_INTERVAL, withFileLog } from './util/filelog.js';
 import { parseJson } from './llm.js';
 import { chunkByCharBudget } from './pipeline/l1.js';
 import { MemoryRunner, pickNextTaskIndex } from './pipeline/runner.js';
@@ -537,6 +538,15 @@ async function main(): Promise<void> {
 
       const lt = await call('dsh-memory/log-tail', { lines: 5 }) as never as { lines: string[] };
       assert(Array.isArray(lt.lines), 'log-tail 端点返回行数组（空目录容忍）');
+
+      // T12：反向分块读——文件 >64KB 跨块 + 尾部 N 行精确 + CJK 不因块边界乱码
+      const bigLog = Array.from({ length: 3000 }, (_, i) => `line-${i}-记忆日志条目流水`);
+      await fs.writeFile(path.join(tmpRpc, 'memory.log'), bigLog.join('\n') + '\n', 'utf-8');
+      const ltBig = await call('dsh-memory/log-tail', { lines: 5 }) as never as { lines: string[] };
+      assert(
+        ltBig.lines.length === 5 && ltBig.lines[0] === 'line-2995-记忆日志条目流水' && ltBig.lines[4] === 'line-2999-记忆日志条目流水',
+        `log-tail 反向分块读跨 64KB 块（${ltBig.lines.length} 行，首行=${ltBig.lines[0]}）`,
+      );
 
       const rbs = await call('dsh-memory/rebuild-status') as never as { supported: boolean; running: boolean };
       assert(rbs.supported === false && rbs.running === false, 'rebuild-status 无控制器时 supported=false');
@@ -1215,6 +1225,43 @@ async function main(): Promise<void> {
       assert(r.ok === true && Array.isArray(r.value.lines), '重挂后的 handler 端点可用');
     } finally {
       await fs.rm(tmpT9, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  console.log('== 18. 日志轮转兜底（rename 连续失败截断重开） ==');
+  {
+    const tmpF2 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-log-'));
+    try {
+      const logP = path.join(tmpF2, 'memory.log');
+      const fl = withFileLog(tmpF2, silentLogger);
+      fl.info('seed');
+      // 超限 → 轮转成功（.1 保留一代，当前文件回到小体积）
+      await fs.writeFile(logP, 'x'.repeat(2 * 1024 * 1024 + 100), 'utf-8');
+      let rotated = false;
+      for (let i = 0; i < SIZE_CHECK_INTERVAL + 8 && !rotated; i++) {
+        fl.info('r' + i);
+        rotated = existsSync(`${logP}.1`);
+      }
+      assert(rotated, '超限后轮转（rename 保留一代）');
+      assert((await fs.stat(logP)).size < 2 * 1024 * 1024, '轮转后当前文件回到小体积');
+
+      // 轮转永久失败（.1 被目录占用）→ 连续失败达上限后截断重开，体积有上界
+      await fs.rm(`${logP}.1`, { recursive: true, force: true });
+      await fs.mkdir(`${logP}.1`);
+      await fs.writeFile(logP, 'y'.repeat(2 * 1024 * 1024 + 100), 'utf-8');
+      let truncatedOk = false;
+      for (let i = 0; i < SIZE_CHECK_INTERVAL * 8; i++) {
+        fl.info('f' + i);
+        if ((await fs.stat(logP)).size < 2 * 1024 * 1024) {
+          truncatedOk = true;
+          break;
+        }
+      }
+      assert(truncatedOk, '轮转连续失败后截断重开（体积有上界，不再无界增长）');
+      const tail = await fs.readFile(logP, 'utf-8');
+      assert(tail.includes('f') && tail.length < 2 * 1024 * 1024, '截断后继续写入正常');
+    } finally {
+      await fs.rm(tmpF2, { recursive: true, force: true }).catch(() => {});
     }
   }
 

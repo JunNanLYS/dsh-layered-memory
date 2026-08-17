@@ -7,7 +7,7 @@
  * 上线、下线、替换实例三种迁移都会正确释放/重挂 RPC 注册。
  */
 import { createRequire } from 'node:module';
-import { readFileSync, statSync } from 'node:fs';
+import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveDataDir } from './config.js';
 const require = createRequire(import.meta.url);
@@ -290,14 +290,47 @@ function hitToUiRecord(r) {
         score: r.score ?? null,
     };
 }
-/** 读日志尾部（文件有 2MB 轮转上限，全量读后取尾部即可）。 */
+/**
+ * 从文件尾反向分块读取最后 N 行：不整读全文件（轮转上限 2MB，整读会
+ * 阻塞事件循环数毫秒）。原始 Buffer 拼接后再解码——分块边界可能切在
+ * UTF-8 多字节字符中间，先 toString 再拼接会产生乱码替换符。
+ */
 function readLogTail(logPath, maxLines) {
+    let fd;
     try {
-        void statSync(logPath);
-        const lines = readFileSync(logPath, 'utf8').split('\n').filter((l) => l.length > 0);
+        fd = openSync(logPath, 'r');
+        const { size } = statSync(logPath);
+        const CHUNK = 64 * 1024;
+        const bufs = [];
+        let newlines = 0;
+        let pos = size;
+        while (pos > 0) {
+            const read = Math.min(CHUNK, pos);
+            pos -= read;
+            const buf = Buffer.alloc(read);
+            readSync(fd, buf, 0, read, pos);
+            bufs.unshift(buf);
+            // \n 是完整单字节，绝不会出现在 UTF-8 续字节里——按字节计数跨块安全
+            for (let i = 0; i < buf.length; i++)
+                if (buf[i] === 0x0a)
+                    newlines++;
+            if (newlines > maxLines)
+                break;
+        }
+        const lines = Buffer.concat(bufs).toString('utf8').split('\n').filter((l) => l.length > 0);
         return lines.slice(-maxLines);
     }
     catch {
         return [];
+    }
+    finally {
+        if (fd !== undefined) {
+            try {
+                closeSync(fd);
+            }
+            catch {
+                /* ignore */
+            }
+        }
     }
 }

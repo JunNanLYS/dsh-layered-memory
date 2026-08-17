@@ -3,9 +3,13 @@
  * 这里镜像 warn/error/info 到数据目录 memory.log，供事后诊断蒸馏管线。
  * 写入失败静默忽略——诊断日志绝不能反过来拖垮管线。
  */
-import { appendFileSync, existsSync, renameSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const MAX_LOG_BYTES = 2 * 1024 * 1024;
+/** 轮转 rename 连续失败多少次后放弃归档、直接截断重开（Windows 文件占用兜底）。 */
+const ROTATE_FAIL_LIMIT = 5;
+/** 体积检查抽样间隔：每 N 条写检查一次，减少同步 stat 系统调用（超限误差 ≤ N 条日志）。 */
+export const SIZE_CHECK_INTERVAL = 32;
 /** 错误对象转带堆栈的单行描述（诊断日志用，非 Error 直接字符串化）。 */
 export function errDetail(err) {
     if (err instanceof Error)
@@ -14,10 +18,23 @@ export function errDetail(err) {
 }
 export function withFileLog(dataDir, logger) {
     const logPath = join(dataDir, 'memory.log');
+    let rotateFailures = 0;
+    let writesSinceCheck = 0;
     const write = (level, msg) => {
         try {
-            if (existsSync(logPath) && statSync(logPath).size > MAX_LOG_BYTES) {
-                renameSync(logPath, `${logPath}.1`);
+            if (writesSinceCheck++ % SIZE_CHECK_INTERVAL === 0 && existsSync(logPath) && statSync(logPath).size > MAX_LOG_BYTES) {
+                try {
+                    renameSync(logPath, `${logPath}.1`);
+                    rotateFailures = 0;
+                }
+                catch {
+                    // rename 可能因文件被占用失败（Windows EBUSY）：连续失败达上限后
+                    // 截断重开，保住"日志体积有上界"的底线（放弃 .1 归档，保当前日志可用）
+                    if (++rotateFailures >= ROTATE_FAIL_LIMIT) {
+                        writeFileSync(logPath, '');
+                        rotateFailures = 0;
+                    }
+                }
             }
             appendFileSync(logPath, `${new Date().toISOString()} [${level}] ${msg}\n`);
         }
