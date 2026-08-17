@@ -28,14 +28,17 @@ export declare class RuntimeInstaller {
     private readonly target;
     private readonly logger?;
     private readonly spawnImpl;
+    /** 随包 lockfile 路径（测试可注入；默认取 dist 根下构建期拷入的资产）。 */
+    private readonly lockfileSource;
     private progress;
     private child;
     private current;
-    /** 安装超时（npm 卡死不罕见：registry 停滞即永挂，applyBusy 会被锁死）。 */
+    /** 安装超时（npm 卡死不罕见：registry 停滞即永挂，applyBusy 会被锁死）。每次 spawn 独立计时。 */
     private static INSTALL_TIMEOUT_MS;
     constructor(dataDir: string, targetVersion: string, opts?: {
         logger?: MemoryLogger;
         spawnImpl?: SpawnImpl;
+        lockfileSource?: string;
     });
     /** 包内模块名（与钉死版本一起构成安装目标）。 */
     static packageName: string;
@@ -56,5 +59,7 @@ export declare class RuntimeInstaller {
     /** 从 runtime 目录解析已安装的 transformers 模块（LocalEmbeddingService 用）。 */
     resolveModule(): unknown;
     private pushLine;
+    /** 跑一次 npm 子进程（采集尾行 + 超时 kill），返回退出码（null = 被杀死/启动失败）。 */
+    private runNpm;
     private installOnce;
 }

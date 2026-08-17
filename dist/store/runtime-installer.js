@@ -4,7 +4,11 @@
  * 插件 npm 包本体不带重依赖，不用本地嵌入的用户零成本。
  *
  * - 安装位置：数据目录 runtime/（自带 package.json 锚定，防 npm 向上层目录逃逸安装）；
- * - 子进程 npm install --ignore-scripts --no-audit --no-fund，钉死精确版本；
+ * - 子进程 npm ci --ignore-scripts --no-audit --no-fund，钉死精确版本 + 随包 lockfile
+ *   （resources/runtime-package-lock.json，构建期拷入 dist/）锁定完整传递依赖树——
+ *   纯 install 只锁直接依赖的精确版本，传递依赖按 semver 浮动解析，registry 端
+ *   后续发布/投毒会随安装时间漂移；lockfile 把树冻结在作者侧。ci 失败（lock 与
+ *   package.json 漂移等）自动回退 npm install 精确版本（可用性优先，树不再受锁）；
  * - 进度（用户硬性要求：不能傻等）：npm 非交互模式无百分比 API，采用不确定进度——
  *   已耗时 + 子进程 stdout/stderr 尾行实时流出 + 可 kill；
  * - 幂等：已装版本 == 目标版本直接就绪；版本漂移（插件升级换了钉死版本）重装覆盖。
@@ -13,6 +17,7 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 /** 钉死的 transformers.js 版本（D8：精确版本，升级插件时在此变更并重装运行时）。 */
 export const PINNED_TRANSFORMERS_VERSION = '4.2.0';
 export class RuntimeInstaller {
@@ -20,15 +25,19 @@ export class RuntimeInstaller {
     target;
     logger;
     spawnImpl;
+    /** 随包 lockfile 路径（测试可注入；默认取 dist 根下构建期拷入的资产）。 */
+    lockfileSource;
     progress;
     child = null;
     current = null;
-    /** 安装超时（npm 卡死不罕见：registry 停滞即永挂，applyBusy 会被锁死）。 */
+    /** 安装超时（npm 卡死不罕见：registry 停滞即永挂，applyBusy 会被锁死）。每次 spawn 独立计时。 */
     static INSTALL_TIMEOUT_MS = 10 * 60_000;
     constructor(dataDir, targetVersion, opts) {
         this.runtimeDir = path.join(dataDir, 'runtime');
         this.target = targetVersion;
         this.logger = opts?.logger;
+        this.lockfileSource =
+            opts?.lockfileSource ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'runtime-package-lock.json');
         this.spawnImpl =
             opts?.spawnImpl ??
                 ((command, args, cwd) => {
@@ -127,25 +136,9 @@ export class RuntimeInstaller {
         if (lines.length > 5)
             lines.splice(0, lines.length - 5);
     }
-    async installOnce() {
-        // 锚定 package.json：没有它 npm 会向上层目录找最近的 package.json 安装（逃逸事故）
-        await fs.mkdir(this.runtimeDir, { recursive: true });
-        const manifestPath = path.join(this.runtimeDir, 'package.json');
-        try {
-            await fs.access(manifestPath);
-        }
-        catch {
-            await fs.writeFile(manifestPath, JSON.stringify({ name: 'dsh-memory-runtime', private: true }, null, 2));
-        }
-        this.progress = {
-            phase: 'installing',
-            targetVersion: this.target,
-            installedVersion: await this.installedVersion(),
-            startedAt: Date.now(),
-            elapsedMs: 0,
-            lastLines: [`npm install ${RuntimeInstaller.packageName}@${this.target}（--ignore-scripts）`],
-        };
-        const child = this.spawnImpl('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--loglevel', 'notice', `${RuntimeInstaller.packageName}@${this.target}`], this.runtimeDir);
+    /** 跑一次 npm 子进程（采集尾行 + 超时 kill），返回退出码（null = 被杀死/启动失败）。 */
+    async runNpm(args) {
+        const child = this.spawnImpl('npm', args, this.runtimeDir);
         this.child = child;
         child.onStdout((l) => this.pushLine(l));
         child.onStderr((l) => this.pushLine(l));
@@ -153,15 +146,61 @@ export class RuntimeInstaller {
             this.pushLine('安装超时（10 分钟），终止子进程');
             child.kill();
         }, RuntimeInstaller.INSTALL_TIMEOUT_MS);
-        this.logger?.info(`[memory] 运行时安装开始: ${RuntimeInstaller.packageName}@${this.target} → ${this.runtimeDir}`);
-        const code = await new Promise((resolve) => {
-            void child.exited.then((c) => {
-                clearTimeout(timeout);
-                resolve(c);
-            });
-        });
-        this.progress.elapsedMs = Date.now() - this.progress.startedAt;
+        const code = await child.exited;
+        clearTimeout(timeout);
         this.child = null;
+        return code;
+    }
+    async installOnce() {
+        // 锚定 package.json（带精确依赖）：没有它 npm 会向上层目录找最近的 package.json 安装（逃逸事故）；
+        // npm ci 还要求它与 lockfile 根条目一致——每次安装都写规范化形状，覆盖历史遗留/被 npm 改写的副本。
+        await fs.mkdir(this.runtimeDir, { recursive: true });
+        const manifest = {
+            name: 'dsh-memory-runtime',
+            private: true,
+            dependencies: { [RuntimeInstaller.packageName]: this.target },
+        };
+        await fs.writeFile(path.join(this.runtimeDir, 'package.json'), JSON.stringify(manifest, null, 2));
+        this.progress = {
+            phase: 'installing',
+            targetVersion: this.target,
+            installedVersion: await this.installedVersion(),
+            startedAt: Date.now(),
+            elapsedMs: 0,
+            lastLines: [],
+        };
+        this.logger?.info(`[memory] 运行时安装开始: ${RuntimeInstaller.packageName}@${this.target} → ${this.runtimeDir}`);
+        // 首选 npm ci + 随包 lockfile（传递依赖树冻结在作者侧）；lockfile 资产缺失（npm 包被裁剪等）
+        // 或 ci 失败（lock 与锚定版本漂移等）回退 npm install 精确版本——可用性优先。
+        let code = null;
+        let usedCi = false;
+        try {
+            const lock = await fs.readFile(this.lockfileSource, 'utf8');
+            await fs.writeFile(path.join(this.runtimeDir, 'package-lock.json'), lock);
+            this.pushLine(`npm ci（随包 lockfile 锁定依赖树，@${this.target}，--ignore-scripts）`);
+            usedCi = true;
+            code = await this.runNpm(['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--loglevel', 'notice']);
+        }
+        catch {
+            /* 无随包 lockfile，直接走 install 回退 */
+        }
+        if (!usedCi || code !== 0) {
+            if (usedCi) {
+                this.pushLine('npm ci 失败（lockfile 与钉死版本漂移？），回退 npm install');
+                this.logger?.warn('[memory] 运行时 npm ci 失败，回退 npm install（传递依赖不再受随包 lockfile 锁定）');
+            }
+            this.pushLine(`npm install ${RuntimeInstaller.packageName}@${this.target}（--ignore-scripts）`);
+            code = await this.runNpm([
+                'install',
+                '--ignore-scripts',
+                '--no-audit',
+                '--no-fund',
+                '--loglevel',
+                'notice',
+                `${RuntimeInstaller.packageName}@${this.target}`,
+            ]);
+        }
+        this.progress.elapsedMs = Date.now() - this.progress.startedAt;
         const version = await this.installedVersion();
         this.progress.installedVersion = version;
         if (this.progress.phase === 'cancelled') {

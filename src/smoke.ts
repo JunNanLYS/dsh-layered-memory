@@ -26,7 +26,7 @@ import { L1Store } from './store/l1.js';
 import { LocalEmbeddingService } from './store/local-embedding.js';
 import { catalogById, catalogTotalBytes, MODEL_CATALOG, type CatalogEntry } from './store/model-catalog.js';
 import { PersonaStore } from './store/persona.js';
-import { RuntimeInstaller } from './store/runtime-installer.js';
+import { RuntimeInstaller, type SpawnImpl } from './store/runtime-installer.js';
 import { SceneStore, sanitizeFilename } from './store/scenes.js';
 import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
@@ -1997,6 +1997,70 @@ async function main(): Promise<void> {
       db24.close();
     } finally {
       await fs.rm(tmp24, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  // ── 25. 运行时安装器：随包 lockfile → npm ci；ci 失败/资产缺失回退 npm install ──
+  console.log('== 25. 运行时安装器 lockfile 链 ==');
+  {
+    const tmp25 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-rt-'));
+    try {
+      const fakeModule = async (cwd: string, version: string) => {
+        const pkgDir = path.join(cwd, 'node_modules', '@huggingface', 'transformers');
+        await fs.mkdir(pkgDir, { recursive: true });
+        await fs.writeFile(path.join(pkgDir, 'package.json'), JSON.stringify({ name: '@huggingface/transformers', version }));
+      };
+      /** 假 spawn：记录调用；"安装成功"副作用 = 落盘假模块（exited resolve 前完成，保证顺序）。 */
+      const mkFakeSpawn = (exitCodes: number[], installVersion: string) => {
+        const calls: Array<{ cmd: string; args: string[]; cwd: string }> = [];
+        let i = 0;
+        const impl = ((cmd: string, args: string[], cwd: string) => {
+          calls.push({ cmd, args, cwd });
+          const code = exitCodes[Math.min(i++, exitCodes.length - 1)];
+          return {
+            onStdout: () => {},
+            onStderr: () => {},
+            kill: () => {},
+            exited: (async () => {
+              if (code === 0) await fakeModule(cwd, installVersion);
+              return code;
+            })(),
+          };
+        }) as SpawnImpl;
+        return { calls, impl };
+      };
+      const lockSrc = path.join(tmp25, 'bundled-lock.json');
+      const lockBody = JSON.stringify({ lockfileVersion: 3, packages: { '': {}, 'node_modules/@huggingface/transformers': { version: '1.0.0' } } });
+      await fs.writeFile(lockSrc, lockBody);
+
+      // a. lockfile 就位且 ci 成功：单次 npm ci、lockfile 拷入 runtime、锚定 package.json 带精确依赖
+      const a = mkFakeSpawn([0], '1.0.0');
+      const insA = new RuntimeInstaller(path.join(tmp25, 'a'), '1.0.0', { logger: silentLogger, spawnImpl: a.impl, lockfileSource: lockSrc });
+      assert(await insA.ensure(), 'lockfile + ci 成功 → ready');
+      assert(a.calls.length === 1 && a.calls[0].args[0] === 'ci', `走 npm ci（实际 ${a.calls.map((c) => c.args[0]).join(',')}）`);
+      assert(a.calls[0].args.includes('--ignore-scripts'), 'ci 带 --ignore-scripts');
+      const copiedLock = await fs.readFile(path.join(tmp25, 'a', 'runtime', 'package-lock.json'), 'utf8');
+      assert(copiedLock === lockBody, '随包 lockfile 原样拷入 runtime');
+      const anchor = JSON.parse(await fs.readFile(path.join(tmp25, 'a', 'runtime', 'package.json'), 'utf8')) as {
+        dependencies?: Record<string, string>;
+      };
+      assert(anchor.dependencies?.['@huggingface/transformers'] === '1.0.0', '锚定 package.json 带精确依赖（npm ci 前置条件）');
+
+      // b. ci 失败（lock 漂移）→ 回退 npm install 精确版本
+      const b = mkFakeSpawn([1, 0], '1.0.0');
+      const insB = new RuntimeInstaller(path.join(tmp25, 'b'), '1.0.0', { logger: silentLogger, spawnImpl: b.impl, lockfileSource: lockSrc });
+      assert(await insB.ensure(), 'ci 失败回退 install 后 ready');
+      assert(b.calls.length === 2 && b.calls[0].args[0] === 'ci' && b.calls[1].args[0] === 'install', 'ci → install 两次调用');
+      assert(b.calls[1].args[b.calls[1].args.length - 1] === '@huggingface/transformers@1.0.0', '回退 install 钉精确版本');
+
+      // c. 随包 lockfile 缺失（资产被裁剪）→ 直接 npm install，不尝试 ci
+      const c = mkFakeSpawn([0], '1.0.0');
+      const missingLock = path.join(tmp25, 'no-such-lock.json');
+      const insC = new RuntimeInstaller(path.join(tmp25, 'c'), '1.0.0', { logger: silentLogger, spawnImpl: c.impl, lockfileSource: missingLock });
+      assert(await insC.ensure(), '无 lockfile 直装 ready');
+      assert(c.calls.length === 1 && c.calls[0].args[0] === 'install', '无 lockfile 只走 install');
+    } finally {
+      await fs.rm(tmp25, { recursive: true, force: true }).catch(() => {});
     }
   }
 
