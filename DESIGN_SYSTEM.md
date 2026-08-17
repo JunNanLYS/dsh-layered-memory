@@ -175,7 +175,8 @@ primitives 里**没有** Switch/Tabs/Card/Badge/Select（官方消费方同样�
 滑动选择器（ModeSlider）：粗滑轨 22px **包裹** 14px 可视圆球（THUMB=16 含描边）；
 滑轨填充从滑轨左端铺到**圆球右缘**（`width = thumbLeft + THUMB`，整球落在填充末端上与其
 重合无割裂；auto 档恰好全轨蓝、任何档位不超出轨道），品牌蓝左浅右深（球侧最深）
-`--dsh-mem-fill-1/2` 渐变；**关闭档不渲染填充**（活跃停点为 off 时无填充，拖拽预览与气泡档名同源）；
+`--dsh-mem-fill-1/2` 渐变；**静态关闭档不渲染填充，拖拽中无论预览到哪档恒显示**
+（`activeIdx > 0 || drag !== null`，松手落 off 才随提交消失）；
 4 个停点刻度在轨内；拖拽交互（Pointer capture / EMA 速度 / 动量投影 ±半档）不变。
 
 交互态约定：**pointer 按压必有反馈**（`scale(0.98)`，80ms）；键盘可达

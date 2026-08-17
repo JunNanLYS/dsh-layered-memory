@@ -1495,7 +1495,7 @@ async function main(): Promise<void> {
     assert(clientSrc.includes('width: thumbLeft + THUMB'), '填充右缘=圆球右缘（整球落在填充末端上）');
     assert(!clientSrc.includes('width: thumbLeft + THUMB / 2'), '旧半程重合公式已移除');
     assert(!clientSrc.includes('right: 0,'), '右侧填充锚定公式已移除');
-    assert(clientSrc.includes('activeIdx > 0'), '关闭档不渲染填充（活跃停点为 off 时无填充）');
+    assert(clientSrc.includes('activeIdx > 0 || drag !== null'), '静态关闭档不渲染填充，拖拽中恒显示');
     // 浮层对称内边距：滑轨垂直居中，气泡经 overflow: visible 溢出到浮层上方
     assert(clientSrc.includes('padding: "14px 16px"'), '浮层上下内边距对称（紧凑尺寸）');
     assert(!clientSrc.includes('38px 16px'), '气泡预留顶部内边距已移除');
