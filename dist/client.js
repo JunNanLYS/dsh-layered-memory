@@ -602,16 +602,23 @@ window.__ModuleLoader__.load({
       var open = openState[0];
       var setOpen = openState[1];
       var wrapRef = react.useRef(null);
+      // 请求序列号：快速切换会话时丢弃旧会话的过期响应（慢响应不得覆盖新会话档位）
+      var seqRef = react.useRef(0);
 
       var load = react.useCallback(function () {
         if (!sessionId || !rpc) return;
+        var token = ++seqRef.current;
         setError(null);
         rpc("dsh-memory/session-mode-get", { sessionId: sessionId })
           .then(function (r) {
+            if (token !== seqRef.current) return;
             if (r && r.ok && r.value) setMode(r.value.mode);
             else setError(r && r.error ? r.error.message : "RPC error");
           })
-          .catch(function (e) { setError(String((e && e.message) || e)); });
+          .catch(function (e) {
+            if (token !== seqRef.current) return;
+            setError(String((e && e.message) || e));
+          });
       }, [sessionId, rpc]);
 
       react.useEffect(function () { load(); }, [load]);
@@ -1114,15 +1121,20 @@ window.__ModuleLoader__.load({
       var last = lastState[0];
       var setLast = lastState[1];
 
+      // 请求序列号：快速连续搜索/翻页时丢弃过期响应（慢的旧响应不得覆盖新结果）
+      var seqRef = react.useRef(0);
+
       var fetchPage = react.useCallback(function (conds, offset, append) {
         setLoading(true);
         setError(null);
+        var token = ++seqRef.current;
         var payload = { limit: limit, offset: offset };
         if (conds.query) payload.query = conds.query;
         if (conds.type) payload.type = conds.type;
         if (conds.scene) payload.scene = conds.scene;
         rpc("dsh-memory/list-records", payload)
           .then(function (r) {
+            if (token !== seqRef.current) return;
             setLoading(false);
             if (!r || !r.ok) {
               setError(r && r.error ? r.error.message : "RPC error");
@@ -1135,6 +1147,7 @@ window.__ModuleLoader__.load({
             if (v.scenes) setSceneOptions(v.scenes);
           })
           .catch(function (e) {
+            if (token !== seqRef.current) return;
             setLoading(false);
             setError(String((e && e.message) || e));
           });
@@ -1256,7 +1269,10 @@ window.__ModuleLoader__.load({
               react.createElement("div", { style: S.grow }),
               react.createElement("button", {
                 style: S.button,
-                onClick: function () { fetchPage(last, items.length, true); },
+                disabled: loading,
+                onClick: function () {
+                  if (!loading) fetchPage(last, items.length, true);
+                },
               }, loading ? "加载中…" : "加载更多"),
             )
           : null,
