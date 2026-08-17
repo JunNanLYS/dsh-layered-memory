@@ -7,6 +7,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { SessionEvent } from '@deepseek-ai/dsh-session';
+import { memorySchema } from './config.js';
 import { Bm25Index } from './store/bm25.js';
 import type { EmbeddingService } from './store/embedding.js';
 import { L0Store } from './store/l0.js';
@@ -1262,6 +1263,58 @@ async function main(): Promise<void> {
       assert(tail.includes('f') && tail.length < 2 * 1024 * 1024, '截断后继续写入正常');
     } finally {
       await fs.rm(tmpF2, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  console.log('== 19. 配置数值边界 + pending 持久化截断（T13） ==');
+  {
+    // 19a. Standard Schema 校验：非法数值拒绝，默认值通过
+    const tryValidate = (input: unknown): boolean => {
+      try {
+        const r = (memorySchema as unknown as { '~standard': { validate: (i: unknown) => unknown } })['~standard'].validate(input);
+        if (r && typeof r === 'object' && 'issues' in (r as object)) return false;
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    assert(tryValidate({}), '全默认配置校验通过');
+    assert(!tryValidate({ recall: { scoreThreshold: -0.5 } }), '负 scoreThreshold 被拒');
+    assert(!tryValidate({ recall: { scoreThreshold: 1.5 } }), '超 1 的 scoreThreshold 被拒');
+    assert(!tryValidate({ llm: { timeoutMs: 0 } }), '零 timeoutMs 被拒');
+    assert(!tryValidate({ capture: { maxMessageChars: 10 } }), '低于下限的 maxMessageChars 被拒');
+    assert(!tryValidate({ embedding: { dimensions: -8 } }), '负 dimensions 被拒');
+    assert(tryValidate({ embedding: { dimensions: 0 } }), 'dimensions=0（纯 FTS）合法');
+  }
+
+  // 19b. pending 持久化前按桶截断（非重建轮）/ 重建轮豁免 —— 挂在 §14 的 runner2 之后
+  {
+    const tmpT13 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-pend-'));
+    try {
+      const liveT13 = { supported: true, get: () => ({ enabled: true, capture: true, distill: true, reasoningEffort: '' }) };
+      const runner3 = new MemoryRunner(
+        { effect: (f: () => (() => void)) => f() } as never,
+        { dataDir: tmpT13, extract: { enabled: false }, l2: { enabled: false }, l3: { enabled: false } } as never,
+        { state: new StateStore(StateStore.pathFor(tmpT13)) } as never,
+        silentLogger,
+        liveT13 as never,
+      );
+      await runner3.init();
+      const rp = runner3 as unknown as {
+        pending: { chat: Array<{ id: string; role: string; content: string; timestamp: number }> };
+        pendingFile: string;
+        persistPending: (noBufferCap?: boolean) => Promise<void>;
+      };
+      rp.pending.chat = Array.from({ length: 260 }, (_, i) => ({ id: `p${i}`, role: 'user', content: 'x', timestamp: i }));
+      await rp.persistPending(false);
+      const loadedA = await loadPending(rp.pendingFile, silentLogger);
+      assert(loadedA.chat.length === 200 && loadedA.chat[0].id === 'p60', `非重建轮持久化前按桶截断保尾部（${loadedA.chat.length} 条，首条 ${loadedA.chat[0]?.id}）`);
+      rp.pending.chat = Array.from({ length: 260 }, (_, i) => ({ id: `q${i}`, role: 'user', content: 'x', timestamp: i }));
+      await rp.persistPending(true);
+      const loadedB = await loadPending(rp.pendingFile, silentLogger);
+      assert(loadedB.chat.length === 260, `重建轮（noBufferCap）豁免截断（${loadedB.chat.length} 条）`);
+    } finally {
+      await fs.rm(tmpT13, { recursive: true, force: true }).catch(() => {});
     }
   }
 

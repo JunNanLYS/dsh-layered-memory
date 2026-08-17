@@ -135,9 +135,18 @@ export class MemoryRunner {
             this.draining = false;
         }
     }
-    /** 缓冲落盘（每次蒸馏尝试后调用；失败只告警不阻断管线）。 */
-    async persistPending() {
+    /** 缓冲落盘（每次蒸馏尝试后调用；失败只告警不阻断管线）。
+     *  非重建轮持久化前按桶截断到上限：重建取消后的大桶不至于在后续每次
+     *  蒸馏尝试时反复整量序列化落盘（多 MB 级 IO）；重建轮豁免维持。 */
+    async persistPending(noBufferCap = false) {
         try {
+            if (!noBufferCap) {
+                for (const key of PENDING_MODES) {
+                    const bucket = this.pending[key];
+                    if (bucket.length > PENDING_BUCKET_CAP)
+                        this.pending[key] = bucket.slice(-PENDING_BUCKET_CAP);
+                }
+            }
             await savePending(this.pendingFile, this.pending);
         }
         catch (err) {
@@ -173,7 +182,7 @@ export class MemoryRunner {
                 this.logger.warn(`[memory] L1 抽取失败（mode=${mode}，pending=${this.pending[mode].length}）: ${errDetail(err)}`);
             }
             // 缓冲每次尝试后立即落盘：进程中途退出不丢待重试/攒阈值状态
-            await this.persistPending();
+            await this.persistPending(opts?.noBufferCap);
             // L1 计数推进后立即落盘：L2/L3 失败或进程中途退出不得回滚阈值进度
             // （记录已入库但计数丢失会让该族 L2 永远差一截，state 与 DB 脱节）
             try {

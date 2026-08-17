@@ -92,9 +92,14 @@ export class MemoryDb {
             try {
                 const sqliteVec = require('sqlite-vec');
                 this.db.enableLoadExtension(true);
-                sqliteVec.load(this.db);
-                this.db.enableLoadExtension(false);
-                this.vecLoaded = true;
+                try {
+                    sqliteVec.load(this.db);
+                    this.vecLoaded = true;
+                }
+                finally {
+                    // 加载失败也必须复位扩展开关，不留常开的扩展加载面
+                    this.db.enableLoadExtension(false);
+                }
             }
             catch (err) {
                 const message = err instanceof Error ? err.message : String(err);

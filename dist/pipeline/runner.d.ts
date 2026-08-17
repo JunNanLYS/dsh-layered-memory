@@ -74,7 +74,9 @@ export declare class MemoryRunner {
     stop(): void;
     private pushTask;
     private drain;
-    /** 缓冲落盘（每次蒸馏尝试后调用；失败只告警不阻断管线）。 */
+    /** 缓冲落盘（每次蒸馏尝试后调用；失败只告警不阻断管线）。
+     *  非重建轮持久化前按桶截断到上限：重建取消后的大桶不至于在后续每次
+     *  蒸馏尝试时反复整量序列化落盘（多 MB 级 IO）；重建轮豁免维持。 */
     private persistPending;
     private runTurn;
 }
