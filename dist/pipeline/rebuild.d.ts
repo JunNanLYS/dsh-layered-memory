@@ -59,6 +59,8 @@ export declare class RebuildController {
     constructor(ctx: Context, cfg: MemoryConfig, stores: RebuildStores, db: MemoryDb, runner: Pick<MemoryRunner, 'enqueueRebuildTask' | 'runRebuildTurn' | 'states'>, logger: MemoryLogger, live: LiveSettingsHandle);
     /** 状态快照（idle 时附带实时 L0 预估，供确认弹窗显示成本）。 */
     getStatus(): RebuildStatus;
+    /** 内存中尚未处理的会话快照块数（收尾后应为 0——快照即弃，诊断/冒烟用）。 */
+    get chunkCount(): number;
     /** 启动重建（校验后入队准备任务；真正的清库/归档在管线队列里串行执行，避开并发竞态）。 */
     start(): RebuildStatus;
     /** 请求取消：当前块完成后停止，已重建部分保留并照常收尾 L2/L3。 */

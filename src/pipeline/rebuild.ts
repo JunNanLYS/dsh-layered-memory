@@ -145,6 +145,11 @@ export class RebuildController {
     return { ...this.status };
   }
 
+  /** 内存中尚未处理的会话快照块数（收尾后应为 0——快照即弃，诊断/冒烟用）。 */
+  get chunkCount(): number {
+    return this.chunks.length;
+  }
+
   /** 启动重建（校验后入队准备任务；真正的清库/归档在管线队列里串行执行，避开并发竞态）。 */
   start(): RebuildStatus {
     if (this.status.running) throw new Error('重建已在进行中');
@@ -306,6 +311,9 @@ export class RebuildController {
     this.status.phase = phase;
     this.status.error = error;
     this.status.finishedAt = Date.now();
+    // 快照即弃：全量 L0 消息（可能几十 MB）在重建结束/取消/失败后必须释放，
+    // 不能滞留到下一次 start() 覆盖（M6——宿主长跑内存只增不减）
+    this.chunks = [];
     const cost = this.status.finishedAt - (this.status.startedAt ?? this.status.finishedAt);
     this.logger.info(
       `[memory] 重建结束（${phase}）：${this.status.done}/${this.status.total} 会话，产出 ${this.status.recordsBuilt} 条记录，耗时 ${Math.round(cost / 1000)}s` +

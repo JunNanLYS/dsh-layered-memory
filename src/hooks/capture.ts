@@ -30,6 +30,41 @@ export function isCaptureRelevant(type: string): boolean {
 
 const MAX_BUFFER = 500;
 
+/**
+ * 按会话缓冲轮次事件。turn 被消费后剩余前缀为空即删除 Map 条目——
+ * 条目随会话数累积是慢泄漏（每会话残留一个数组引用，宿主长跑不释放）。
+ */
+export class CaptureBuffers {
+  private readonly map = new Map<string, SessionEvent[]>();
+
+  /** 活跃缓冲条目数（诊断/冒烟用）。 */
+  get size(): number {
+    return this.map.size;
+  }
+
+  push(sid: string, event: SessionEvent): void {
+    let buf = this.map.get(sid);
+    if (!buf) {
+      buf = [];
+      this.map.set(sid, buf);
+    }
+    buf.push(event);
+    trimBuffer(buf);
+  }
+
+  /** 取出该 turn 的全部事件（不含 turn/start 自身）；无匹配 start 时返回整个缓冲。 */
+  takeTurn(sid: string, turn: number): SessionEvent[] {
+    const buf = this.map.get(sid);
+    if (!buf) return [];
+    const startIdx = findTurnStart(buf, turn);
+    const turnEvents = startIdx === -1 ? buf : buf.slice(startIdx + 1);
+    const rest = startIdx === -1 ? [] : buf.slice(0, startIdx);
+    if (rest.length === 0) this.map.delete(sid);
+    else this.map.set(sid, rest);
+    return turnEvents;
+  }
+}
+
 export function registerCapture(
   ctx: Context,
   cfg: MemoryConfig,
@@ -41,7 +76,7 @@ export function registerCapture(
 ): void {
   if (!cfg.capture.enabled) return;
   const startFloor = Date.now();
-  const buffers = new Map<string, SessionEvent[]>();
+  const buffers = new CaptureBuffers();
   // L0 即时落盘链：turn/end 立刻写，不被蒸馏队列（慢 LLM 调用）阻塞；
   // 串行化保证同轮次顺序与单次写入（进程退出时排队中的 L0 不再依赖蒸馏完成）
   let l0Queue: Promise<void> = Promise.resolve();
@@ -63,19 +98,11 @@ export function registerCapture(
         }
         return;
       }
-      let buf = buffers.get(sid);
-      if (!buf) {
-        buf = [];
-        buffers.set(sid, buf);
-      }
-      buf.push(event);
-      trimBuffer(buf);
+      buffers.push(sid, event);
 
       if (event.type === 'turn/end') {
         const turn = event.data.turn;
-        const startIdx = findTurnStart(buf, turn);
-        const turnEvents = startIdx === -1 ? buf : buf.slice(startIdx + 1);
-        buffers.set(sid, startIdx === -1 ? [] : buf.slice(0, startIdx));
+        const turnEvents = buffers.takeTurn(sid, turn);
         const messages = turnEventsToMessages(turnEvents, cfg, logger);
         if (messages.length > 0) {
           const roles = messages.reduce<Record<string, number>>((acc, m) => {

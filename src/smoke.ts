@@ -21,7 +21,7 @@ import { registerMemoryRpc } from './stats.js';
 import { StateStore } from './store/state.js';
 import { dayKey } from './store/io.js';
 import { familyForType } from './types.js';
-import { isCaptureRelevant, trimBuffer } from './hooks/capture.js';
+import { CaptureBuffers, isCaptureRelevant, trimBuffer } from './hooks/capture.js';
 import { sanitizeText, shouldCaptureL0, stripCodeBlocks } from './util/sanitize.js';
 import { parseJson } from './llm.js';
 import { chunkByCharBudget } from './pipeline/l1.js';
@@ -676,6 +676,26 @@ async function main(): Promise<void> {
     const buf3 = [ev('turn/start', 1), ev('user/message'), ev('turn/end', 1)];
     trimBuffer(buf3);
     assert(buf3.length === 3, '未超限不裁剪');
+
+    // 12e. CaptureBuffers：turn 消费后空前缀即释放条目（M5 慢泄漏修复）
+    const cbuf = new CaptureBuffers();
+    cbuf.push('s1', ev('turn/start', 1));
+    cbuf.push('s1', ev('user/message'));
+    cbuf.push('s1', ev('assistant/message'));
+    assert(cbuf.size === 1, '进行中轮次保留缓冲条目');
+    const ev1 = cbuf.takeTurn('s1', 1);
+    assert(ev1.length === 2 && ev1[0].type === 'user/message', 'takeTurn 返回轮内事件（不含 turn/start）');
+    assert(cbuf.size === 0, 'turn 消费后空前缀 → 条目释放（不随会话数累积）');
+    // 无匹配 turn/start（turn/start 事件缺失）→ 整缓冲作为轮次事件，条目同样释放
+    cbuf.push('s3', ev('user/message'));
+    cbuf.takeTurn('s3', 9);
+    assert(cbuf.size === 0, '无 start 匹配时整缓冲消费后释放');
+    // turn/start 之前的游离事件按设计保留（归下一轮），条目留驻但受 MAX_BUFFER 约束
+    cbuf.push('s2', ev('user/message'));
+    cbuf.push('s2', ev('turn/start', 5));
+    cbuf.push('s2', ev('user/message'));
+    cbuf.takeTurn('s2', 5);
+    assert(cbuf.size === 1, '带游离前缀的会话保留条目（事件不丢，受裁剪上限约束）');
   }
 
   console.log('== 13. 未蒸馏缓冲持久化 + 优先级调度 + 重建 ==');
@@ -815,12 +835,14 @@ async function main(): Promise<void> {
       assert(tasks1.length === 1, '准备任务已入队');
       await tasks1.shift()!();
       assert(ctl1.getStatus().phase === 'distilling' && ctl1.getStatus().total === 2, '快照完成 → distilling');
+      assert(ctl1.chunkCount === 2, '蒸馏中快照块驻留（2 会话）');
       ctl1.requestCancel();
       assert(ctl1.getStatus().cancelRequested === true, '取消请求已记录');
       let guard = 0;
       while (tasks1.length > 0 && guard++ < 50) await tasks1.shift()!();
       const stCancelled = ctl1.getStatus();
       assert(!stCancelled.running && stCancelled.phase === 'cancelled' && stCancelled.done === 0, `取消后收尾 → cancelled（done=${stCancelled.done}）`);
+      assert(ctl1.chunkCount === 0, '取消收尾后快照块清空（全量消息引用释放，M6）');
       assert(dbR.countL1() === 0 && dbR.countL0() === 3, '清库只清 L1，L0 原样');
       assert(liveRef.totalExtracted === 0, 'checkpoint 原地重置');
       assert(dbR.searchL1Fts('归档', 5).length === 0, 'FTS 一并清空');
@@ -870,6 +892,7 @@ async function main(): Promise<void> {
         const stDone = ctl2.getStatus();
         assert(!stDone.running && stDone.phase === 'done' && stDone.done === 2 && stDone.total === 2, `链跑完 → done（${stDone.done}/${stDone.total}）`);
         assert(stDone.recordsBuilt === 4, `产出计数累加（${stDone.recordsBuilt}）`);
+        assert(ctl2.chunkCount === 0, 'done 收尾后快照块清空（引用释放）');
         dbR2.close();
       } finally {
         await fs.rm(tmpRb2, { recursive: true, force: true }).catch(() => {});

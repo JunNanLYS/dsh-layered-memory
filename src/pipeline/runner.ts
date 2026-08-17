@@ -212,8 +212,7 @@ export class MemoryRunner {
         newRecords = result.newRecords;
         this.logger.info(`[memory] L1 阶段完成（${Date.now() - t}ms）`);
       } catch (err) {
-        // 保留 pending，下次重试；但防止无限堆积（重建轮不限，量被会话规模天然约束）
-        if (!opts?.noBufferCap && this.pending[mode].length > PENDING_BUCKET_CAP) this.pending[mode] = [];
+        // 保留 pending 下次重试（runTurn 入口已裁到 ≤200，防无限堆积；重建轮不裁，量被会话规模约束）
         this.logger.warn(`[memory] L1 抽取失败（mode=${mode}，pending=${this.pending[mode].length}）: ${errDetail(err)}`);
       }
       // 缓冲每次尝试后立即落盘：进程中途退出不丢待重试/攒阈值状态
