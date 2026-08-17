@@ -21,106 +21,44 @@ window.__ModuleLoader__.load({
 
     var inject = ["slots", "connection"];
 
-    // ── 通用样式 ──
+    // ── 通用样式：颜色一律走 --dsh-mem-* 令牌（随 Light/Dark 主题自动切换）；
+    // 视觉与交互态（hover/active/focus）在注入样式表的类里，这里只留布局 ──
     var S = {
       section: { padding: "0 4px" },
-      heading: { fontSize: 15, fontWeight: 600, margin: "0 0 4px" },
-      intro: { fontSize: 13, color: "var(--dsw-alias-label-tertiary, #888)", margin: "0 0 12px" },
-      badge: {
-        display: "inline-block",
-        padding: "2px 10px",
-        borderRadius: 10,
-        fontSize: 12,
-        fontWeight: 600,
-        marginLeft: 8,
-        verticalAlign: "middle",
-      },
-      badgeOk: { background: "var(--dsw-alias-interactive-bg-primary, #1a7f37)", color: "#fff" },
-      badgeErr: { background: "var(--dsw-alias-state-error-primary, #cf222e)", color: "#fff" },
-      tabbar: { display: "flex", gap: 4, borderBottom: "1px solid var(--dsw-alias-border-secondary, #e0e0e0)", marginBottom: 12 },
-      tab: {
-        padding: "6px 14px",
-        fontSize: 13,
-        border: "none",
-        background: "none",
-        cursor: "pointer",
-        color: "var(--dsw-alias-label-secondary, #666)",
-        borderBottom: "2px solid transparent",
-        marginBottom: -1,
-      },
-      tabActive: {
-        fontWeight: 600,
-        color: "var(--dsw-alias-label-primary, #111)",
-        borderBottom: "2px solid var(--dsw-alias-interactive-bg-primary, #1a7f37)",
-      },
-      table: {
-        width: "100%",
-        borderCollapse: "collapse",
-        fontSize: 13,
-        fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
-      },
-      td: { padding: "6px 10px", borderBottom: "1px solid var(--dsw-alias-border-secondary, #eee)" },
-      tdKey: { width: 180, color: "var(--dsw-alias-label-tertiary, #888)", whiteSpace: "nowrap" },
+      heading: { fontSize: 16, fontWeight: 600, margin: "0 0 4px", color: "var(--dsh-mem-text-1)" },
+      intro: { fontSize: 13, color: "var(--dsh-mem-text-3)", margin: "0 0 12px" },
+      tabbar: { display: "flex", gap: 2, borderBottom: "1px solid var(--dsh-mem-border)", marginBottom: 14 },
       error: {
         marginTop: 10,
         fontSize: 13,
-        color: "var(--dsh-alias-state-error-primary, #cf222e)",
+        color: "var(--dsh-mem-danger)",
         whiteSpace: "pre-wrap",
       },
-      hint: { marginTop: 12, fontSize: 12, color: "var(--dsw-alias-label-tertiary, #999)" },
+      hint: { marginTop: 12, fontSize: 12, color: "var(--dsh-mem-text-3)" },
       toolbar: { display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" },
-      input: {
-        flex: 1,
-        minWidth: 160,
-        padding: "5px 10px",
-        fontSize: 13,
-        borderRadius: 6,
-        border: "1px solid var(--dsw-alias-border-secondary, #ccc)",
-        background: "var(--dsw-alias-bg-primary, #fff)",
-        color: "var(--dsw-alias-label-primary, #111)",
-      },
-      select: { padding: "5px 6px", fontSize: 13, borderRadius: 6, border: "1px solid var(--dsw-alias-border-secondary, #ccc)" },
-      button: {
-        padding: "5px 14px",
-        fontSize: 13,
-        borderRadius: 6,
-        border: "1px solid var(--dsw-alias-border-secondary, #ccc)",
-        background: "var(--dsw-alias-bg-primary, #fff)",
-        cursor: "pointer",
-      },
       card: {
-        border: "1px solid var(--dsw-alias-border-secondary, #e5e5e5)",
-        borderRadius: 8,
         padding: "10px 12px",
         marginBottom: 8,
         fontSize: 13,
       },
       cardHead: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 },
-      tag: {
-        display: "inline-block",
-        padding: "1px 8px",
-        borderRadius: 8,
-        fontSize: 11,
-        fontWeight: 600,
-        color: "#fff",
-        whiteSpace: "nowrap",
-      },
-      muted: { color: "var(--dsw-alias-label-tertiary, #999)", fontSize: 12 },
-      content: { lineHeight: 1.5, wordBreak: "break-word" },
+      muted: { color: "var(--dsh-mem-text-3)", fontSize: 12 },
+      content: { lineHeight: 1.5, wordBreak: "break-word", color: "var(--dsh-mem-text-1)" },
       detail: {
         marginTop: 8,
         paddingTop: 8,
-        borderTop: "1px dashed var(--dsw-alias-border-secondary, #ddd)",
+        borderTop: "1px dashed var(--dsh-mem-border)",
         fontSize: 12,
         fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
-        color: "var(--dsw-alias-label-secondary, #666)",
+        color: "var(--dsh-mem-text-2)",
         whiteSpace: "pre-wrap",
       },
       pre: {
         margin: 0,
         padding: "10px 12px",
-        background: "var(--dsw-alias-bg-secondary, #f6f8fa)",
-        borderRadius: 8,
+        background: "var(--dsh-mem-bg-inset)",
+        border: "1px solid var(--dsh-mem-border)",
+        borderRadius: 10,
         fontSize: 12,
         fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
         whiteSpace: "pre-wrap",
@@ -130,19 +68,19 @@ window.__ModuleLoader__.load({
         overflow: "auto",
       },
       switchRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 0" },
-      switchLabel: { fontSize: 13, fontWeight: 600, minWidth: 72 },
-      switchDesc: { fontSize: 12, color: "var(--dsw-alias-label-tertiary, #999)" },
+      switchLabel: { fontSize: 13, fontWeight: 600, minWidth: 72, color: "var(--dsh-mem-text-1)" },
+      switchDesc: { fontSize: 12, color: "var(--dsh-mem-text-3)" },
       switch: {
         width: 36,
         height: 20,
-        borderRadius: 10,
+        borderRadius: 999,
         position: "relative",
         cursor: "pointer",
         transition: "background .15s",
         flexShrink: 0,
       },
-      switchOn: { background: "var(--dsw-alias-interactive-bg-primary, #1a7f37)" },
-      switchOff: { background: "var(--dsw-alias-border-secondary, #ccc)" },
+      switchOn: { background: "var(--dsh-mem-accent-fill)" },
+      switchOff: { background: "var(--dsh-mem-border-strong)" },
       switchDisabled: { opacity: 0.4, cursor: "not-allowed" },
       knob: {
         position: "absolute",
@@ -150,22 +88,56 @@ window.__ModuleLoader__.load({
         width: 16,
         height: 16,
         borderRadius: "50%",
-        background: "#fff",
+        background: "var(--dsh-mem-thumb)",
         transition: "left .15s",
-        boxShadow: "0 1px 2px rgba(0,0,0,.2)",
+        boxShadow: "0 1px 2px rgba(0,0,0,.25)",
       },
       switchPanel: {
-        border: "1px solid var(--dsw-alias-border-secondary, #e5e5e5)",
-        borderRadius: 8,
-        padding: "4px 12px",
+        border: "1px solid var(--dsh-mem-border)",
+        borderRadius: 10,
+        background: "var(--dsh-mem-bg-card)",
+        boxShadow: "var(--dsh-mem-shadow-card)",
+        padding: "4px 14px",
         marginBottom: 14,
+      },
+      panelLabel: {
+        fontSize: 12,
+        fontWeight: 600,
+        color: "var(--dsh-mem-text-3)",
+        margin: "12px 0 2px",
+      },
+      statGrid: {
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+        gap: 8,
+        marginBottom: 14,
+      },
+      statTile: { padding: "10px 12px" },
+      statNum: { fontSize: 20, fontWeight: 650, lineHeight: "28px", color: "var(--dsh-mem-text-1)" },
+      statLabel: { fontSize: 12, color: "var(--dsh-mem-text-3)", marginTop: 2 },
+      infoRow: {
+        display: "flex",
+        alignItems: "baseline",
+        gap: 12,
+        padding: "5px 0",
+        borderBottom: "1px solid var(--dsh-mem-border)",
+      },
+      infoKey: { fontSize: 12.5, color: "var(--dsh-mem-text-3)", whiteSpace: "nowrap", minWidth: 96 },
+      infoVal: {
+        fontSize: 12.5,
+        color: "var(--dsh-mem-text-1)",
+        fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+        wordBreak: "break-all",
+        textAlign: "right",
+        flex: 1,
       },
       seg: {
         display: "inline-flex",
-        border: "1px solid var(--dsw-alias-border-secondary, #e5e5e5)",
+        border: "1px solid var(--dsh-mem-border)",
         borderRadius: 8,
         overflow: "hidden",
         flexShrink: 0,
+        background: "var(--dsh-mem-bg-inset)",
       },
       segBtn: {
         padding: "4px 12px",
@@ -173,33 +145,21 @@ window.__ModuleLoader__.load({
         lineHeight: "16px",
         cursor: "pointer",
         background: "transparent",
-        color: "inherit",
+        color: "var(--dsh-mem-text-2)",
         border: "none",
-        borderRight: "1px solid var(--dsw-alias-border-secondary, #e5e5e5)",
+        borderRight: "1px solid var(--dsh-mem-border)",
       },
       segBtnOn: {
-        background: "var(--dsw-alias-interactive-bg-primary, #1a7f37)",
+        background: "var(--dsh-mem-accent-fill)",
         color: "#fff",
         fontWeight: 600,
-      },
-      segBtnOff: {
-        background: "var(--dsw-alias-bg-secondary, #f6f8fa)",
       },
       flexRow: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
       grow: { flex: 1 },
       sceneHead: { display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" },
-      sceneTitle: { fontSize: 13, fontWeight: 600, fontFamily: "ui-monospace, Consolas, monospace" },
+      sceneTitle: { fontSize: 13, fontWeight: 600, fontFamily: "ui-monospace, Consolas, monospace", color: "var(--dsh-mem-text-1)" },
     };
 
-    var TYPE_COLORS = {
-      persona: "#8250df",
-      episodic: "#0969da",
-      instruction: "#bf8700",
-      work_fact: "#0969da",
-      work_task: "#1a7f37",
-      work_method: "#8250df",
-      work_artifact: "#bf8700",
-    };
     var TYPE_LABELS = {
       persona: "画像偏好",
       episodic: "客观事件",
@@ -211,7 +171,7 @@ window.__ModuleLoader__.load({
     };
 
     function fmtTime(iso) {
-      if (!iso) return "—";
+      if (!iso) return "-";
       try {
         return new Date(iso).toLocaleString();
       } catch (e) {
@@ -269,7 +229,7 @@ window.__ModuleLoader__.load({
               style: Object.assign(
                 {},
                 S.segBtn,
-                on ? S.segBtnOn : S.segBtnOff,
+                on ? S.segBtnOn : null,
                 i === props.options.length - 1 ? { borderRight: "none" } : null,
                 disabled ? { cursor: "not-allowed" } : null,
               ),
@@ -285,11 +245,12 @@ window.__ModuleLoader__.load({
 
     // ── 会话记忆档位控件（输入栏 pill + macOS 风格滑动选择器） ──
     // 档位顺序即滑轨顺序：关闭 → chat → work → 自动（默认档"自动"居右）
+    // 档位色是 CSS 变量引用（--dsh-mem-mode-*，Light/Dark 各一组值，注入样式表定义）
     var MODES = [
-      { key: "off", label: "关闭", color: "#6e7781" },
-      { key: "chat", label: "chat", color: "#1a7f37" },
-      { key: "work", label: "work", color: "#bf8700" },
-      { key: "auto", label: "自动", color: "#0969da" },
+      { key: "off", label: "关闭", color: "var(--dsh-mem-mode-off)" },
+      { key: "chat", label: "chat", color: "var(--dsh-mem-mode-chat)" },
+      { key: "work", label: "work", color: "var(--dsh-mem-mode-work)" },
+      { key: "auto", label: "自动", color: "var(--dsh-mem-mode-auto)" },
     ];
     var TRACK_W = 200;
     var THUMB = 16;
@@ -314,7 +275,7 @@ window.__ModuleLoader__.load({
 
     /** 滑动选择器浮层（参考 macOS 滑动器：拖拽圆头 1:1 连续跟手，松手按动量投影吸附最近档）。 */
     function ModeSlider(props) {
-      ensureFlowStyle(); // 玻璃材质 class 与流光共用同一张注入样式表
+      ensureThemeStyle(); // 主题令牌与玻璃材质 class 共用同一张注入样式表
       var trackRef = react.useRef(null);
       // 拖拽状态：{ x: 圆头连续位置 px, lastX: 上次指针 clientX, t: 时间戳, v: 速度 px/ms（EMA 平滑） }
       var dragState = react.useState(null);
@@ -365,50 +326,50 @@ window.__ModuleLoader__.load({
       var stops = [];
       for (var i = 0; i < MODES.length; i++) {
         (function (i) {
-          var stopLeft = (i / (MODES.length - 1)) * INNER_W + THUMB / 2;
-          var active = i === activeIdx;
-          stops.push(
-            react.createElement(
-              "div",
-              {
-                key: "stop" + i,
-                style: {
-                  position: "absolute",
-                  left: stopLeft - 3,
-                  top: 6,
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: active ? MODES[i].color : "rgba(128,140,150,0.55)",
-                  zIndex: 2,
+            var stopLeft = (i / (MODES.length - 1)) * INNER_W + THUMB / 2;
+            var active = i === activeIdx;
+            stops.push(
+              react.createElement(
+                "div",
+                {
+                  key: "stop" + i,
+                  style: {
+                    position: "absolute",
+                    left: stopLeft - 3,
+                    top: 6,
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: active ? MODES[i].color : "var(--dsh-mem-dot)",
+                    zIndex: 2,
+                  },
                 },
-              },
-            ),
-            react.createElement(
-              "button",
-              {
-                key: "label" + i,
-                style: {
-                  position: "absolute",
-                  left: stopLeft,
-                  top: 26,
-                  transform: "translateX(-50%)",
-                  fontSize: 11,
-                  lineHeight: "16px",
-                  padding: "0 4px",
-                  border: "none",
-                  background: "none",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                  fontWeight: active ? 600 : 400,
-                  // 未激活标签走主题 caption 令牌（浅色 #400 灰蓝 / 暗色 #600），玻璃面上保持可读
-                  color: active ? MODES[i].color : "var(--dsw-alias-label-caption, #888)",
+              ),
+              react.createElement(
+                "button",
+                {
+                  key: "label" + i,
+                  style: {
+                    position: "absolute",
+                    left: stopLeft,
+                    top: 26,
+                    transform: "translateX(-50%)",
+                    fontSize: 11,
+                    lineHeight: "16px",
+                    padding: "0 4px",
+                    border: "none",
+                    background: "none",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    fontWeight: active ? 600 : 400,
+                    // 未激活标签走 caption 令牌（玻璃面上保持可读，双主题各一档）
+                    color: active ? MODES[i].color : "var(--dsw-alias-label-caption, var(--dsh-mem-text-3))",
+                  },
+                  onClick: function () { if (drag === null) props.onCommit(MODES[i].key); },
                 },
-                onClick: function () { if (drag === null) props.onCommit(MODES[i].key); },
-              },
-              MODES[i].label,
-            ),
-          );
+                MODES[i].label,
+              ),
+            );
         })(i);
       }
 
@@ -461,7 +422,7 @@ window.__ModuleLoader__.load({
               top: 7,
               height: 4,
               borderRadius: 999,
-              background: "rgba(128,140,150,0.32)",
+              background: "var(--dsh-mem-track)",
               pointerEvents: "none",
               zIndex: 1,
             },
@@ -475,10 +436,10 @@ window.__ModuleLoader__.load({
               width: THUMB,
               height: THUMB,
               borderRadius: "50%",
-              // 微透白 + 上缘高光：与浮层玻璃材质同语言
-              background: "rgba(255,255,255,0.94)",
+              // 档位色描边 + 主题化圆头底（暗色非纯白）+ 上缘高光：与浮层玻璃材质同语言
+              background: "var(--dsh-mem-thumb)",
               border: "1px solid " + info.color,
-              boxShadow: "0 1px 4px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.9)",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.55)",
               pointerEvents: "none",
               transition: drag === null ? "left 120ms ease" : "none",
               zIndex: 3,
@@ -486,42 +447,151 @@ window.__ModuleLoader__.load({
           }),
           ),
           props.error
-            ? react.createElement("div", { style: { fontSize: 11, color: "#cf222e", marginTop: 20, whiteSpace: "nowrap" } }, props.error)
+            ? react.createElement("div", { style: { fontSize: 11, color: "var(--dsh-mem-danger)", marginTop: 20, whiteSpace: "nowrap" } }, props.error)
             : null,
         ),
       );
     }
 
-    // ── auto 档边缘流光 + 浮层玻璃材质 + 重建面板样式：inline style 放不了
-    // @keyframes/@property/媒体查询，惰性注入一次性样式表（id 防重复）。
-    // dsw 主题变量参考其前端令牌：暗色走 body[data-ds-dark-theme]。 ──
-    var FLOW_STYLE_ID = "dsh-mem-flow-style";
-    function ensureFlowStyle() {
-      if (document.getElementById(FLOW_STYLE_ID)) return;
+    // ── 主题令牌层 + 组件样式：inline style 放不了 @keyframes/@property/伪类/媒体查询，
+    // 惰性注入一次性样式表（id 防重复）。
+    // 主题机制：dsh 前端在 body[data-ds-dark-theme] 切暗色并重定义 --dsw-alias-* 令牌；
+    // 我们的中性色链真实 dsw 令牌（缺省时用自带 fallback），强调色是 DeepSeek 品牌蓝体系：
+    //   accent（图形：下划线/边框/光晕，非文字，3:1 即可）
+    //   accent-text（表面上的强调文字，双主题 ≥4.5:1）
+    //   accent-fill（实底填充 + 白字，双主题 ≥4.5:1）
+    // 设置页挂载即注入（ensureThemeStyle），输入栏 pill / 浮层 / 重建面板共用。 ──
+    var THEME_STYLE_ID = "dsh-mem-theme-style";
+    function ensureThemeStyle() {
+      if (document.getElementById(THEME_STYLE_ID)) return;
       var el = document.createElement("style");
-      el.id = FLOW_STYLE_ID;
+      el.id = THEME_STYLE_ID;
       el.textContent = [
-        // conic 角度动画需要 @property 注册才能插值；不支持的浏览器优雅降级为静态渐变边框
+        // conic 角度动画需要 @property 注册才能插值；不支持 @property 的浏览器里
+        // var(--dsh-mem-angle) 无定义 → conic 层失效 → 整条 background 退化为无背景
+        // （光带边框与内底一并消失，仅剩文字色）。2026 常青浏览器均已支持，仅作记录。
         "@property --dsh-mem-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }",
         "@keyframes dshMemFlow { to { --dsh-mem-angle: 360deg; } }",
-        // 边缘流光（双层背景）：border 区画旋转 conic 冷蓝光带；内部必须是【不透明】底色盖住
-        // 光带（半透明内层会让 conic 透进按钮内部，文字被光斑干扰——实测事故）。
-        // 不透明底 = 主题底混 12% 冷蓝（color-mix 出来 alpha=1），静态、随主题
+        // ── 令牌（浅色） ──
+        ":root {",
+        "  --dsh-mem-accent: #4d6bfe;",
+        "  --dsh-mem-accent-text: #3d5be0;",
+        "  --dsh-mem-accent-fill: #3d5be0;",
+        "  --dsh-mem-accent-weak: rgba(77,107,254,0.10);",
+        "  --dsh-mem-bg-card: var(--dsw-alias-bg-layer-2, #ffffff);",
+        "  --dsh-mem-bg-inset: var(--dsw-alias-bg-secondary, #f6f7fb);",
+        "  --dsh-mem-bg-hover: rgba(77,107,254,0.07);",
+        "  --dsh-mem-border: var(--dsw-alias-border-secondary, #e3e6ee);",
+        "  --dsh-mem-border-strong: #c9cede;",
+        "  --dsh-mem-text-1: var(--dsw-alias-label-primary, #1f2328);",
+        "  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #59626e);",
+        "  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #6e7781);",
+        "  --dsh-mem-danger: #d0403f;",
+        "  --dsh-mem-mode-off: #6e7781;",
+        "  --dsh-mem-mode-chat: #1a7f37;",
+        "  --dsh-mem-mode-work: #9a6700;",
+        "  --dsh-mem-mode-auto: #3d5be0;",
+        "  --dsh-mem-thumb: #ffffff;",
+        "  --dsh-mem-track: rgba(128,140,150,0.32);",
+        "  --dsh-mem-dot: rgba(128,140,150,0.55);",
+        "  --dsh-mem-shadow-card: 0 1px 2px rgba(20,24,40,0.05);",
+        "}",
+        // ── 令牌（暗色：body[data-ds-dark-theme] 是 dsh 前端的暗色开关） ──
+        "body[data-ds-dark-theme] {",
+        "  --dsh-mem-accent: #6e85ff;",
+        "  --dsh-mem-accent-text: #7b90ff;",
+        "  --dsh-mem-accent-fill: #465ce8;",
+        "  --dsh-mem-accent-weak: rgba(110,133,255,0.14);",
+        "  --dsh-mem-bg-card: var(--dsw-alias-bg-layer-2, #232734);",
+        "  --dsh-mem-bg-inset: var(--dsw-alias-bg-secondary, #1a1e29);",
+        "  --dsh-mem-bg-hover: rgba(110,133,255,0.10);",
+        "  --dsh-mem-border: var(--dsw-alias-border-secondary, #333950);",
+        "  --dsh-mem-border-strong: #454c68;",
+        "  --dsh-mem-text-1: var(--dsw-alias-label-primary, #e6e9f2);",
+        "  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #a8b0c2);",
+        "  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #8892a6);",
+        "  --dsh-mem-danger: #f4707b;",
+        "  --dsh-mem-mode-off: #98a2ad;",
+        "  --dsh-mem-mode-chat: #3fb950;",
+        "  --dsh-mem-mode-work: #d29922;",
+        "  --dsh-mem-mode-auto: #7b90ff;",
+        "  --dsh-mem-thumb: #e8ebf5;",
+        "  --dsh-mem-track: rgba(148,160,180,0.30);",
+        "  --dsh-mem-dot: rgba(148,160,180,0.5);",
+        "  --dsh-mem-shadow-card: 0 1px 2px rgba(0,0,0,0.3);",
+        "}",
+        // ── 主题切换过渡：只挂颜色/阴影（不碰 transform），让明暗翻转不生硬 ──
+        ".dsh-mem-root, .dsh-mem-root * { transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease; }",
+        // ── 控件：按钮（次级）── 圆角体系：控件 8 / 卡片 10 / 浮层 12 / 胶囊 999
+        ".dsh-mem-btn {",
+        "  padding: 5px 14px; font-size: 13px; line-height: 20px; border-radius: 8px; cursor: pointer;",
+        "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card); color: var(--dsh-mem-text-1);",
+        "  transition: background-color .15s ease, border-color .15s ease, transform .08s ease;",
+        "}",
+        ".dsh-mem-btn:hover:not(:disabled) { border-color: var(--dsh-mem-border-strong); background: var(--dsh-mem-bg-hover); }",
+        ".dsh-mem-btn:active:not(:disabled) { transform: scale(0.98); }",
+        ".dsh-mem-btn:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
+        ".dsh-mem-btn:disabled { opacity: 0.45; cursor: not-allowed; }",
+        // ── 控件：输入框 / 下拉 ──
+        ".dsh-mem-input, .dsh-mem-select {",
+        "  padding: 5px 10px; font-size: 13px; border-radius: 8px; color: var(--dsh-mem-text-1);",
+        "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card);",
+        "  transition: border-color .15s ease, box-shadow .15s ease;",
+        "}",
+        ".dsh-mem-input:focus, .dsh-mem-select:focus {",
+        "  outline: none; border-color: var(--dsh-mem-accent);",
+        "  box-shadow: 0 0 0 3px var(--dsh-mem-accent-weak);",
+        "}",
+        // ── Tab（下划线式）：active 品牌蓝下划线 + 主文字色 ──
+        ".dsh-mem-tab {",
+        "  padding: 6px 12px; font-size: 13px; cursor: pointer; background: none; border: none;",
+        "  color: var(--dsh-mem-text-2); border-bottom: 2px solid transparent; margin-bottom: -1px;",
+        "}",
+        ".dsh-mem-tab:hover { color: var(--dsh-mem-text-1); }",
+        ".dsh-mem-tab-on { font-weight: 600; color: var(--dsh-mem-text-1); border-bottom-color: var(--dsh-mem-accent); }",
+        ".dsh-mem-tab:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: -2px; }",
+        // ── 卡片：悬浮微抬 + 边框加深（只在可交互卡片上用 hover） ──
+        ".dsh-mem-card {",
+        "  border: 1px solid var(--dsh-mem-border); border-radius: 10px; background: var(--dsh-mem-bg-card);",
+        "  box-shadow: var(--dsh-mem-shadow-card);",
+        "}",
+        ".dsh-mem-card-hover:hover { border-color: var(--dsh-mem-border-strong); }",
+        // ── 记忆类型标签：tint 风格（彩底淡色 + 彩字），--dsh-mem-tag-c 由类型类给定 ──
+        ".dsh-mem-tag {",
+        "  display: inline-block; padding: 1px 8px; border-radius: 999px;",
+        "  font-size: 11px; font-weight: 600; line-height: 18px; white-space: nowrap;",
+        "  color: var(--dsh-mem-tag-c, var(--dsh-mem-text-2));",
+        "  background: color-mix(in srgb, var(--dsh-mem-tag-c, #8a93a1) 12%, transparent);",
+        "  border: 1px solid color-mix(in srgb, var(--dsh-mem-tag-c, #8a93a1) 28%, transparent);",
+        "}",
+        ".dsh-mem-tag-persona   { --dsh-mem-tag-c: #6f42c1; }",
+        ".dsh-mem-tag-episodic  { --dsh-mem-tag-c: #0757b4; }",
+        ".dsh-mem-tag-instruction, .dsh-mem-tag-work-artifact { --dsh-mem-tag-c: #8a5a00; }",
+        ".dsh-mem-tag-work-fact { --dsh-mem-tag-c: #0757b4; }",
+        ".dsh-mem-tag-work-task { --dsh-mem-tag-c: #116629; }",
+        ".dsh-mem-tag-work-method { --dsh-mem-tag-c: #6f42c1; }",
+        "body[data-ds-dark-theme] .dsh-mem-tag-persona   { --dsh-mem-tag-c: #c297ff; }",
+        "body[data-ds-dark-theme] .dsh-mem-tag-episodic  { --dsh-mem-tag-c: #6cb2ff; }",
+        "body[data-ds-dark-theme] .dsh-mem-tag-instruction, body[data-ds-dark-theme] .dsh-mem-tag-work-artifact { --dsh-mem-tag-c: #e3b341; }",
+        "body[data-ds-dark-theme] .dsh-mem-tag-work-fact { --dsh-mem-tag-c: #6cb2ff; }",
+        "body[data-ds-dark-theme] .dsh-mem-tag-work-task { --dsh-mem-tag-c: #6fca74; }",
+        "body[data-ds-dark-theme] .dsh-mem-tag-work-method { --dsh-mem-tag-c: #c297ff; }",
+        // ── auto 档边缘流光（品牌蓝族）：border 区画旋转 conic 光带；内部必须是【不透明】
+        // 底色盖住光带（半透明内层会让 conic 透进按钮内部，文字被光斑干扰——实测事故）。
+        // 不透明底 = 主题底混 12% 品牌蓝（color-mix 出来 alpha=1），静态、随主题
         ".dsh-mem-flow {",
         "  border: 1px solid transparent;",
         "  background:",
         "    linear-gradient(",
-        "      color-mix(in srgb, var(--dsw-alias-bg-layer-2, #ffffff) 88%, #3b82f6),",
-        "      color-mix(in srgb, var(--dsw-alias-bg-layer-2, #ffffff) 88%, #3b82f6)",
+        "      color-mix(in srgb, var(--dsh-mem-bg-card, #ffffff) 88%, #4d6bfe),",
+        "      color-mix(in srgb, var(--dsh-mem-bg-card, #ffffff) 88%, #4d6bfe)",
         "    ) padding-box,",
         "    conic-gradient(from var(--dsh-mem-angle),",
-        "      rgba(8,145,178,0.9), rgba(59,130,246,0.9), rgba(125,211,252,1),",
-        "      rgba(99,102,241,0.9), rgba(8,145,178,0.9)) border-box;",
+        "      rgba(61,91,224,0.9), rgba(77,107,254,0.95), rgba(147,168,255,1),",
+        "      rgba(110,133,255,0.9), rgba(61,91,224,0.9)) border-box;",
         "  animation: dshMemFlow 3s linear infinite;",
-        "  color: #0284c7;",
+        "  color: var(--dsh-mem-accent-text);",
         "}",
-        "body[data-ds-dark-theme] .dsh-mem-flow { color: #7dd3fc; }",
-        "@media (prefers-reduced-motion: reduce) { .dsh-mem-flow { animation: none; } }",
         // 浮层玻璃材质（Apple 菜单配方）：材质层必须是【无 transform 的独立元素】——
         // Chromium 中 transform 元素上的 backdrop-filter 采样异常（玻璃失效，实测）。
         // 低不透明度基底让底下内容透出 + 顶部光泽渐变 + blur/saturate + 亮缘 + 分主题阴影
@@ -547,43 +617,36 @@ window.__ModuleLoader__.load({
         "    inset 0 1px 0 rgba(255,255,255,0.12);",
         "}",
         "@media (prefers-reduced-transparency: reduce) {",
-        "  .dsh-mem-glass { background: var(--dsw-alias-bg-layer-2, #ffffff); backdrop-filter: none; -webkit-backdrop-filter: none; }",
+        "  .dsh-mem-glass { background: var(--dsh-mem-bg-card, #ffffff); backdrop-filter: none; -webkit-backdrop-filter: none; }",
         "}",
-        // ── 重建面板（Light/Dark 双主题：基底用 dsw 真实令牌 bg-layer-2/border-l2，
-        //    暗色由 body[data-ds-dark-theme] 切换；强调红/进度蓝紫双主题各调一档） ──
+        // ── 重建面板 ──
         ".dsh-mem-rb-card {",
-        "  border: 1px solid var(--dsw-alias-border-l2, #e5e7eb);",
-        "  border-radius: 10px;",
-        "  background: var(--dsw-alias-bg-layer-2, #ffffff);",
-        "  padding: 12px 14px;",
-        "  margin-bottom: 14px;",
-        "  font-size: 13px;",
+        "  border: 1px solid var(--dsh-mem-border); border-radius: 10px; background: var(--dsh-mem-bg-card);",
+        "  box-shadow: var(--dsh-mem-shadow-card); padding: 12px 14px; margin-bottom: 14px; font-size: 13px;",
         "}",
         ".dsh-mem-rb-btn {",
-        "  padding: 5px 14px; font-size: 13px; border-radius: 6px; cursor: pointer;",
-        "  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);",
-        "  background: var(--dsw-alias-bg-layer-2, #ffffff);",
-        "  color: inherit;",
+        "  padding: 5px 14px; font-size: 13px; border-radius: 8px; cursor: pointer;",
+        "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card); color: var(--dsh-mem-text-1);",
         "}",
         ".dsh-mem-rb-btn:disabled { opacity: 0.45; cursor: not-allowed; }",
-        ".dsh-mem-rb-danger { border-color: rgba(207,34,46,0.45); color: #cf222e; background: transparent; }",
-        "body[data-ds-dark-theme] .dsh-mem-rb-danger { color: #f4707b; border-color: rgba(244,112,123,0.5); }",
+        ".dsh-mem-rb-danger { border-color: color-mix(in srgb, var(--dsh-mem-danger) 45%, transparent); color: var(--dsh-mem-danger); background: transparent; }",
         ".dsh-mem-rb-primary { background: #cf222e; border-color: #cf222e; color: #fff; }",
         "body[data-ds-dark-theme] .dsh-mem-rb-primary { background: #b62324; border-color: #b62324; }",
-        ".dsh-mem-rb-bar { height: 8px; border-radius: 4px; overflow: hidden; flex: 1;",
-        "  background: var(--dsw-alias-border-l2, #e8ebef); }",
-        "body[data-ds-dark-theme] .dsh-mem-rb-bar { background: rgba(255,255,255,0.12); }",
-        ".dsh-mem-rb-fill { height: 100%; border-radius: 4px;",
-        "  background: linear-gradient(90deg, #0969da, #8250df); transition: width .4s ease; }",
+        ".dsh-mem-rb-bar { height: 8px; border-radius: 4px; overflow: hidden; flex: 1; background: var(--dsh-mem-track); }",
+        ".dsh-mem-rb-fill { height: 100%; border-radius: 4px; background: var(--dsh-mem-accent-fill); transition: width .4s ease; }",
         ".dsh-mem-rb-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);",
         "  display: flex; align-items: center; justify-content: center; z-index: 2000; }",
         ".dsh-mem-rb-modal { width: 440px; max-width: calc(100vw - 48px); border-radius: 12px;",
         "  padding: 18px 20px; font-size: 13px; line-height: 1.6;",
-        "  border: 1px solid var(--dsw-alias-border-l2, #e5e7eb);",
-        "  background: var(--dsw-alias-bg-layer-2, #ffffff);",
+        "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card); color: var(--dsh-mem-text-1);",
         "  box-shadow: 0 16px 48px rgba(0,0,0,0.24); }",
         "body[data-ds-dark-theme] .dsh-mem-rb-modal { box-shadow: 0 16px 48px rgba(0,0,0,0.6); }",
-        ".dsh-mem-rb-muted { font-size: 12px; color: var(--dsw-alias-label-caption, #6e7781); }",
+        ".dsh-mem-rb-muted { font-size: 12px; color: var(--dsh-mem-text-3); }",
+        // reduced-motion 兜底放样式表末尾：同特异性下后置声明才能压过上面的组件类
+        "@media (prefers-reduced-motion: reduce) {",
+        "  .dsh-mem-root, .dsh-mem-root *, .dsh-mem-btn, .dsh-mem-input, .dsh-mem-select, .dsh-mem-rb-btn, .dsh-mem-rb-fill { transition: none; }",
+        "  .dsh-mem-flow { animation: none; }",
+        "}",
       ].join("\n");
       document.head.appendChild(el);
     }
@@ -663,7 +726,7 @@ window.__ModuleLoader__.load({
       var loaded = mode !== null;
       var isAuto = loaded && mode === "auto";
 
-      if (isAuto) ensureFlowStyle();
+      ensureThemeStyle();
 
       // auto 档的边框/背景/文字色均由 .dsh-mem-flow 提供（双层背景画流光边 + 分主题文字），
       // inline 不能设置这些——inline 优先级会盖掉 class 里的流光
@@ -680,11 +743,12 @@ window.__ModuleLoader__.load({
         cursor: "pointer",
       };
       if (isAuto) {
-        pillStyle.boxShadow = "0 0 12px rgba(56,189,248,0.30)";
+        pillStyle.boxShadow = "0 0 12px rgba(77,107,254,0.30)";
       } else {
-        pillStyle.border = "1px solid " + (loaded ? info.color + "66" : "var(--dsw-alias-border-secondary, #ccc)");
-        pillStyle.background = loaded ? info.color + "14" : "var(--dsw-alias-bg-secondary, #f6f8fa)";
-        pillStyle.color = loaded ? info.color : "var(--dsh-alias-label-tertiary, #888)";
+        // 档位色是 var() 引用，透明度混色用 color-mix（老式 hex+alpha 拼接对 var 无效）
+        pillStyle.border = "1px solid " + (loaded ? "color-mix(in srgb, " + info.color + " 45%, transparent)" : "var(--dsh-mem-border)");
+        pillStyle.background = loaded ? "color-mix(in srgb, " + info.color + " 10%, transparent)" : "var(--dsh-mem-bg-inset)";
+        pillStyle.color = loaded ? info.color : "var(--dsh-mem-text-3)";
       }
 
       return react.createElement(
@@ -756,7 +820,7 @@ window.__ModuleLoader__.load({
       }, [running, refresh]);
 
       if (!rb || rb.supported === false) return null;
-      ensureFlowStyle();
+      ensureThemeStyle();
 
       var start = function () {
         setBusy(true);
@@ -799,7 +863,7 @@ window.__ModuleLoader__.load({
       } else if (!running && rb.phase === "cancelled") {
         lastNote = "上次重建：已取消（完成 " + rb.done + "/" + rb.total + " 会话，已重建部分保留）";
       } else if (!running && rb.phase === "failed") {
-        lastNote = "上次重建：失败 — " + (rb.error || "未知错误");
+        lastNote = "上次重建：失败：" + (rb.error || "未知错误");
       }
 
       return react.createElement(
@@ -845,7 +909,7 @@ window.__ModuleLoader__.load({
           ? react.createElement("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 } }, lastNote)
           : null,
         rbError
-          ? react.createElement("div", { style: { marginTop: 8, fontSize: 12, color: "#cf222e" } }, rbError)
+          ? react.createElement("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsh-mem-danger)" } }, rbError)
           : null,
         confirmOpen
           ? react.createElement(
@@ -953,22 +1017,25 @@ window.__ModuleLoader__.load({
           });
       };
 
-      var rows = [];
+      // 统计分两段：计数瓦片（一眼可读）+ 明细行（目录/版本/时间线/队列）
+      var tiles = [];
+      var infos = [];
       if (stats) {
         var th = stats.thresholds || {};
-        rows.push(["数据目录", stats.dataDir]);
-        rows.push(["插件版本", "v" + stats.version]);
-        rows.push(["默认档", modeLabel(stats.family)]);
-        rows.push(["L0 今日消息", String(stats.l0Today)]);
-        rows.push(["L1 原子记忆", stats.l1Count + " 条（累计抽取 " + stats.l1TotalExtracted + "）"]);
-        rows.push(["L2 场景块", String(stats.sceneCount)]);
-        rows.push(["L3 画像", stats.personaChars > 0 ? stats.personaChars + " 字符" : "未生成"]);
-        rows.push(["上次 L1 抽取", fmtTime(stats.lastExtractAt)]);
-        rows.push(["上次 L2 整合", fmtTime(stats.lastL2At)]);
-        rows.push(["上次 L3 蒸馏", fmtTime(stats.lastL3At)]);
-        rows.push(["待 L2 新记忆", stats.memoriesSinceL2 + " / " + (th.l2MinNewMemories != null ? th.l2MinNewMemories : 5)]);
-        rows.push(["待 L3 新记忆", stats.memoriesSinceL3 + " / " + (th.l3Interval != null ? th.l3Interval : 20)]);
-        rows.push(["待重试消息", String(stats.pendingExtract)]);
+        tiles.push({ num: String(stats.l0Today), label: "L0 今日消息" });
+        tiles.push({ num: String(stats.l1Count), label: "L1 原子记忆" });
+        tiles.push({ num: String(stats.sceneCount), label: "L2 场景块" });
+        tiles.push({ num: String(stats.pendingExtract), label: "待重试消息" });
+        infos.push(["数据目录", stats.dataDir]);
+        infos.push(["插件版本", "v" + stats.version]);
+        infos.push(["默认档", modeLabel(stats.family)]);
+        infos.push(["L1 累计抽取", String(stats.l1TotalExtracted)]);
+        infos.push(["L3 画像", stats.personaChars > 0 ? stats.personaChars + " 字符" : "未生成"]);
+        infos.push(["上次 L1 抽取", fmtTime(stats.lastExtractAt)]);
+        infos.push(["上次 L2 整合", fmtTime(stats.lastL2At)]);
+        infos.push(["上次 L3 蒸馏", fmtTime(stats.lastL3At)]);
+        infos.push(["待 L2 新记忆", stats.memoriesSinceL2 + " / " + (th.l2MinNewMemories != null ? th.l2MinNewMemories : 5)]);
+        infos.push(["待 L3 新记忆", stats.memoriesSinceL3 + " / " + (th.l3Interval != null ? th.l3Interval : 20)]);
       }
       var degraded = stats && stats.message && stats.message !== "running";
 
@@ -1051,7 +1118,7 @@ window.__ModuleLoader__.load({
           ? react.createElement(
               "div",
               { style: Object.assign({}, S.error, { marginBottom: 10 }) },
-              "⚠ " + stats.message + "——上方数据为最后一次成功读取的值，记忆功能当前未工作。",
+              "⚠ " + stats.message + "。上方数据为最后一次成功读取的值，记忆功能当前未工作。",
             )
           : null,
         error
@@ -1059,18 +1126,27 @@ window.__ModuleLoader__.load({
           : !stats
             ? react.createElement("p", { style: S.intro }, "正在读取记忆状态…")
             : react.createElement(
-                "table",
-                { style: S.table },
+                "div", null,
+                react.createElement("div", { style: S.panelLabel }, "记忆概况"),
                 react.createElement(
-                  "tbody", null,
-                  rows.map(function (row) {
+                  "div", { style: S.statGrid },
+                  tiles.map(function (t) {
                     return react.createElement(
-                      "tr", { key: row[0] },
-                      react.createElement("td", { style: S.tdKey }, row[0]),
-                      react.createElement("td", { style: S.td }, row[1]),
+                      "div",
+                      { key: t.label, className: "dsh-mem-card", style: S.statTile },
+                      react.createElement("div", { style: S.statNum }, t.num),
+                      react.createElement("div", { style: S.statLabel }, t.label),
                     );
                   }),
                 ),
+                react.createElement("div", { style: S.panelLabel }, "运行状态"),
+                infos.map(function (row) {
+                  return react.createElement(
+                    "div", { key: row[0], style: S.infoRow },
+                    react.createElement("span", { style: S.infoKey }, row[0]),
+                    react.createElement("span", { style: S.infoVal }, row[1]),
+                  );
+                }),
               ),
         react.createElement(
           "p", { style: S.hint },
@@ -1180,7 +1256,8 @@ window.__ModuleLoader__.load({
         react.createElement(
           "div", { style: S.toolbar },
           react.createElement("input", {
-            style: S.input,
+            className: "dsh-mem-input",
+            style: { flex: 1, minWidth: 160 },
             placeholder: "搜索记忆内容（BM25 关键词）…",
             value: query,
             onChange: function (e) { setQuery(e.target.value); },
@@ -1189,7 +1266,7 @@ window.__ModuleLoader__.load({
           react.createElement(
             "select",
             {
-              style: S.select,
+              className: "dsh-mem-select",
               value: typeFilter,
               onChange: function (e) { setTypeFilter(e.target.value); },
             },
@@ -1201,7 +1278,7 @@ window.__ModuleLoader__.load({
           react.createElement(
             "select",
             {
-              style: S.select,
+              className: "dsh-mem-select",
               value: sceneFilter,
               onChange: function (e) { setSceneFilter(e.target.value); },
             },
@@ -1210,14 +1287,14 @@ window.__ModuleLoader__.load({
               return react.createElement("option", { key: s, value: s }, s.length > 24 ? s.slice(0, 24) + "…" : s);
             }),
           ),
-          react.createElement("button", { style: S.button, onClick: search }, "搜索"),
+          react.createElement("button", { className: "dsh-mem-btn", onClick: search }, "搜索"),
         ),
         react.createElement(
           "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
           react.createElement("span", { style: S.muted }, loading ? "加载中…" : countText),
           react.createElement("div", { style: S.grow }),
           react.createElement("button", {
-            style: S.button,
+            className: "dsh-mem-btn",
             onClick: function () { fetchPage(last, 0, false); },
           }, "刷新"),
         ),
@@ -1226,7 +1303,7 @@ window.__ModuleLoader__.load({
           ? react.createElement(
               "div",
               { style: S.hint },
-              "搜索分页已达检索上限（200 条），更早的结果未显示——请用更精确的关键词或类型/情境过滤。",
+              "搜索分页已达检索上限（200 条），更早的结果未显示。请用更精确的关键词或类型/情境过滤。",
             )
           : null,
         items.length === 0 && !loading && !error
@@ -1237,18 +1314,15 @@ window.__ModuleLoader__.load({
                 "div",
                 {
                   key: m.id,
-                  style: S.card,
+                  className: "dsh-mem-card dsh-mem-card-hover",
+                  style: Object.assign({}, S.card, { cursor: "pointer" }),
                   onClick: function () { setExpandedId(open ? null : m.id); },
                 },
                 react.createElement(
                   "div", { style: S.cardHead },
                   react.createElement(
                     "span",
-                    {
-                      style: Object.assign({}, S.tag, {
-                        background: TYPE_COLORS[m.type] || "#666",
-                      }),
-                    },
+                    { className: "dsh-mem-tag dsh-mem-tag-" + m.type },
                     TYPE_LABELS[m.type] || m.type,
                   ),
                   react.createElement("span", { style: S.muted }, "优先级 " + m.priority),
@@ -1263,13 +1337,13 @@ window.__ModuleLoader__.load({
                   ? react.createElement(
                       "div", { style: S.detail },
                       "id: " + m.id + "\n" +
-                      "情境: " + (m.scene || "—") + "\n" +
+                      "情境: " + (m.scene || "-") + "\n" +
                       "版本: v" + m.version + "（去重合并次数 " + m.version + "）\n" +
                       "创建: " + fmtTime(m.createdAt) + "\n" +
-                      "活跃时间: " + (m.timestamps && m.timestamps.length > 0 ? m.timestamps.map(fmtTime).join(" → ") : "—") + "\n" +
+                      "活跃时间: " + (m.timestamps && m.timestamps.length > 0 ? m.timestamps.map(fmtTime).join(" → ") : "-") + "\n" +
                       (m.sourceMessageIds && m.sourceMessageIds.length > 0
                         ? "来源消息: " + m.sourceMessageIds.join(", ")
-                        : "来源消息: —"),
+                        : "来源消息: -"),
                     )
                   : null,
               );
@@ -1279,7 +1353,7 @@ window.__ModuleLoader__.load({
               "div", { style: S.flexRow },
               react.createElement("div", { style: S.grow }),
               react.createElement("button", {
-                style: S.button,
+                className: "dsh-mem-btn",
                 disabled: loading,
                 onClick: function () {
                   if (!loading) fetchPage(last, items.length, true);
@@ -1317,7 +1391,7 @@ window.__ModuleLoader__.load({
           "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
           react.createElement("span", { style: S.muted }, items ? items.length + " 个场景块" : "加载中…"),
           react.createElement("div", { style: S.grow }),
-          react.createElement("button", { style: S.button, onClick: load }, "刷新"),
+          react.createElement("button", { className: "dsh-mem-btn", onClick: load }, "刷新"),
         ),
         error ? react.createElement("div", { style: S.error }, error) : null,
         items && items.length === 0
@@ -1325,7 +1399,7 @@ window.__ModuleLoader__.load({
           : null,
         (items || []).map(function (s) {
           return react.createElement(
-            "div", { key: s.path, style: S.card },
+            "div", { key: s.path, className: "dsh-mem-card", style: S.card },
             react.createElement(
               "div", { style: S.sceneHead },
               react.createElement("span", { style: S.sceneTitle }, s.path),
@@ -1375,7 +1449,7 @@ window.__ModuleLoader__.load({
           react.createElement("span", { style: S.muted },
             error ? "加载失败" : content === null ? "加载中…" : content ? content.length + " 字符" : "未生成画像"),
           react.createElement("div", { style: S.grow }),
-          react.createElement("button", { style: S.button, onClick: load }, "刷新"),
+          react.createElement("button", { className: "dsh-mem-btn", onClick: load }, "刷新"),
         ),
         error
           ? react.createElement(
@@ -1420,7 +1494,7 @@ window.__ModuleLoader__.load({
           "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
           react.createElement("span", { style: S.muted }, error ? "加载失败" : lines === null ? "加载中…" : "最近 " + lines.length + " 行（memory.log）"),
           react.createElement("div", { style: S.grow }),
-          react.createElement("button", { style: S.button, onClick: load }, "刷新"),
+          react.createElement("button", { className: "dsh-mem-btn", onClick: load }, "刷新"),
         ),
         error
           ? react.createElement(
@@ -1447,6 +1521,8 @@ window.__ModuleLoader__.load({
       var tab = tabState[0];
       var setTab = tabState[1];
 
+      ensureThemeStyle(); // 设置页挂载即注入主题令牌与组件样式
+
       var body;
       if (tab === "overview") body = react.createElement(OverviewTab, { rpc: rpc });
       else if (tab === "records") body = react.createElement(RecordsTab, { rpc: rpc });
@@ -1456,7 +1532,7 @@ window.__ModuleLoader__.load({
 
       return react.createElement(
         "div",
-        { style: S.section },
+        { className: "dsh-mem-root", style: S.section },
         react.createElement("h2", { style: S.heading }, "记忆 (Memory)"),
         react.createElement(
           "p", { style: S.intro },
@@ -1469,7 +1545,7 @@ window.__ModuleLoader__.load({
               "button",
               {
                 key: t[0],
-                style: Object.assign({}, S.tab, tab === t[0] ? S.tabActive : null),
+                className: tab === t[0] ? "dsh-mem-tab dsh-mem-tab-on" : "dsh-mem-tab",
                 onClick: function () { setTab(t[0]); },
               },
               t[1],

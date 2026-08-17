@@ -1442,6 +1442,45 @@ async function main(): Promise<void> {
     }
   }
 
+  // ── 21. client bundle 主题化静态断言（#15-#18 验收） ──
+  {
+    const clientSrc = await fs.readFile(new URL('../client/client.js', import.meta.url), 'utf8');
+    // 令牌层：双主题变量块 + DeepSeek 品牌蓝
+    assert(clientSrc.includes(':root {') && clientSrc.includes('--dsh-mem-accent:'), '浅色令牌块存在');
+    assert(clientSrc.includes('body[data-ds-dark-theme] {') && clientSrc.includes('--dsh-mem-accent-text:'), '暗色令牌块存在');
+    assert(clientSrc.includes('--dsh-mem-accent: #4d6bfe'), 'DeepSeek 品牌蓝 #4D6BFE 是浅色 accent 令牌');
+    // 修复的 typo：--dsh-alias-*（应为 dsw）不得再出现
+    assert(!clientSrc.includes('var(--dsh-alias'), '无 --dsh-alias typo');
+    // 旧注入函数已更名（令牌与组件样式统一入口）
+    assert(!clientSrc.includes('ensureFlowStyle') && clientSrc.includes('ensureThemeStyle'), '样式注入函数已更名');
+    // 7 类记忆类型标签全部有 tint 类 + 暗色覆盖（类型类可能是合并选择器，查前缀即可）
+    for (const t of ['persona', 'episodic', 'instruction', 'work-fact', 'work-task', 'work-method', 'work-artifact']) {
+      assert(clientSrc.includes(`.dsh-mem-tag-${t}`), `标签类 .dsh-mem-tag-${t}`);
+    }
+    const tagDark = clientSrc.match(/body\[data-ds-dark-theme\] \.dsh-mem-tag-/g) ?? [];
+    assert(tagDark.length >= 7, `标签暗色覆盖 ≥7（实际 ${tagDark.length}）`);
+    // 无障碍：reduced-motion / reduced-transparency / focus-visible（btn/tab 键盘焦点环；输入框用 :focus 即时环）
+    assert(clientSrc.includes('prefers-reduced-motion'), 'reduced-motion 降级');
+    assert(clientSrc.includes('prefers-reduced-transparency'), 'reduced-transparency 降级');
+    assert((clientSrc.match(/:focus-visible/g) ?? []).length >= 2, 'focus-visible 焦点环（btn/tab）');
+    // 圆角体系锁定：inline borderRadius 与 CSS border-radius 只允许 {4,8,10,12,999,50%}
+    //（4px 仅限重建进度条内轨，8=控件，10=卡片，12=浮层，999=胶囊）
+    const inlineR = [...clientSrc.matchAll(/borderRadius: ([^,}]+)/g)].map((m) => m[1].trim().replace(/^"|"$/g, ''));
+    assert(inlineR.length > 0, '圆角断言取样非空');
+    for (const r of inlineR) {
+      assert(r === '50%' || ['4', '8', '10', '12', '999'].includes(r), `inline 圆角合规：${r}`);
+    }
+    const cssR = [...clientSrc.matchAll(/border-radius: (\d+)px/g)].map((m) => m[1]);
+    for (const r of cssR) assert(['4', '8', '10', '12', '999'].includes(r), `CSS 圆角合规：${r}px`);
+    // 可见文案零 em-dash（design-taste 铁律；代码注释除外）
+    const emDashInString = clientSrc.match(/"[^"\n]*—[^"\n]*"/);
+    assert(!emDashInString, `字符串内出现 em-dash：${emDashInString?.[0] ?? ''}`);
+    // 组件类接线：按钮/输入/Tab/卡片类在 JSX 侧被引用
+    for (const cls of ['dsh-mem-btn', 'dsh-mem-input', 'dsh-mem-select', 'dsh-mem-tab', 'dsh-mem-card', 'dsh-mem-root']) {
+      assert(clientSrc.includes(`"${cls}`), `组件类被引用：${cls}`);
+    }
+  }
+
   console.log(failures === 0 ? '\n全部通过 ✅' : `\n${failures} 个失败 ❌`);
   process.exit(failures === 0 ? 0 : 1);
 }
