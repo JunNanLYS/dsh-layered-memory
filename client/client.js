@@ -676,17 +676,31 @@ window.__ModuleLoader__.load({
         "  box-shadow: var(--dsh-mem-shadow-pop);",
         "  color: var(--dsh-mem-text-1);",
         "}",
-        // ── 拖动气泡：拖拽时显示当前档位名，随圆球移动，下尖角指向圆球 ──
+        // ── 拖动气泡：拖拽时显示当前档位名，随圆球移动，下倒三角尖角贴近圆球 ──
+        // 底色走浮层同材质令牌（浅色白底深字 / 暗色深底浅字，随主题翻转；
+        // tooltip-bg 令牌在浅色下仍是深色，不随材质走，已弃用）。
+        // 悬停 8px（尖角尖端距圆球顶约 5px）；气泡 zIndex 4 高于浮层（同层叠上下文内
+        // 数值比较），跨过浮层上缘时盖在其上；描边 + 投影让同材质不融合
         ".dsh-mem-bubble {",
-        "  position: absolute; bottom: calc(100% + 10px); transform: translateX(-50%);",
+        "  position: absolute; bottom: calc(100% + 8px); transform: translateX(-50%);",
         "  padding: 3px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; line-height: 18px;",
-        "  background: var(--dsw-alias-tooltip-bg, #2c2c2e); color: #ffffff; white-space: nowrap;",
+        "  border: 1px solid var(--dsh-mem-border);",
+        "  background: var(--dsh-mem-bg-pop); color: var(--dsh-mem-text-1); white-space: nowrap;",
         "  box-shadow: 0 2px 8px rgba(0,0,0,0.18);",
         "}",
+        // 尖角：clip-path 倒三角（旋转方块会露出上半截成菱形，实测视觉缺陷）。
+        // 双三角叠画：外层描边色大一圈、内层填充色，压在浮层上缘也有轮廓可读
+        ".dsh-mem-bubble::before {",
+        "  content: ''; position: absolute; top: 100%; left: 50%; margin-left: -6px;",
+        "  width: 12px; height: 7px;",
+        "  clip-path: polygon(0 0, 100% 0, 50% 100%);",
+        "  background: var(--dsh-mem-border);",
+        "}",
         ".dsh-mem-bubble::after {",
-        "  content: ''; position: absolute; top: 100%; left: 50%; margin-left: -4px;",
-        "  width: 8px; height: 8px; transform: rotate(45deg);",
-        "  background: var(--dsw-alias-tooltip-bg, #2c2c2e);",
+        "  content: ''; position: absolute; top: 100%; left: 50%; margin-left: -5px;",
+        "  width: 10px; height: 6px;",
+        "  clip-path: polygon(0 0, 100% 0, 50% 100%);",
+        "  background: var(--dsh-mem-bg-pop);",
         "}",
         // ── 重建面板 ──（模态本体走 NModal：原生 Modal 优先，回退 rb-overlay/rb-modal）
         ".dsh-mem-rb-card {",

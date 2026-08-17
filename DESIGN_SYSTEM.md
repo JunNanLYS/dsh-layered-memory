@@ -169,7 +169,7 @@ primitives 里**没有** Switch/Tabs/Card/Badge/Select（官方消费方同样�
 | `.dsh-mem-flow` | pill 边缘流光（日常/工作/智能共用；关闭无） | 品牌蓝族 conic 旋转光带；内层必须**不透明**底（`color-mix(bg-card 97%, var(--dsh-mem-pill-tint) 3%)`，`--dsh-mem-pill-tint` 由 pill inline 按档位给定）盖住光带防文字被光斑干扰（实测事故）；不支持 `@property` 的浏览器整条 background 退化（2026 常青浏览器均已支持） |
 | `.dsh-mem-pill-off` | off 档 pill | dsh 透明按钮：`border: none; background: transparent` 显式压掉 button UA 默认灰底/描边（实测事故：裸 button 在宿主页露出默认 chrome），hover 才出 `--dsh-mem-bg-hover` 淡底，带 `:focus-visible` 环；加载态（档位未加载）同款 |
 | `.dsh-mem-popover` | 滑动选择器浮层 | **dsh 原生菜单同配方**：不透明 `--dsh-mem-bg-pop`（dsw-specific-menu）+ inverted 描边 + lv3 阴影 + 圆角 12；上下内边距对称（14px，滑轨垂直居中、尺寸紧凑）；旧玻璃材质已废 |
-| `.dsh-mem-bubble` | 拖动气泡 | 拖拽时在圆球上方显示当前档位（tooltip-bg 底 + 白字 + 下尖角 `::after`），随圆球移动，松手消失；经浮层 `overflow: visible` **溢出到浮层上方**（不再用顶部预留内边距撑高浮层） |
+| `.dsh-mem-bubble` | 拖动气泡 | 拖拽时在圆球上方显示当前档位（**浮层同材质**：`--dsh-mem-bg-pop` 底 + `--dsh-mem-text-1` 字 + `--dsh-mem-border` 描边，随主题翻转；tooltip-bg 在浅色下仍是深色，已弃用），下**倒三角**尖角贴近圆球（悬停 8px，尖端距球顶约 5px；`::before` 描边 + `::after` 填充**双 clip-path 三角**叠画——旋转方块会露出上半截成菱形，同材质单三角压浮层边缘会融合），随圆球移动松手消失；zIndex 4 高于浮层（跨浮层上缘时盖在其上），经 `overflow: visible` 溢出 |
 | `.dsh-mem-rb-*` | 重建面板族 | card/bar/fill/muted + NModal 回退用 overlay/modal |
 
 滑动选择器（ModeSlider）：粗滑轨 22px **包裹** 14px 可视圆球（THUMB=16 含描边）；

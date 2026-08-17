@@ -1488,6 +1488,12 @@ async function main(): Promise<void> {
     assert(clientSrc.includes('.dsh-mem-popover'), '浮层类（dsw 原生菜单配方）');
     assert(clientSrc.includes('--dsh-mem-bg-pop: var(--dsw-specific-menu'), '浮层底链 dsw-specific-menu');
     assert(clientSrc.includes('.dsh-mem-bubble'), '拖动气泡类');
+    // 气泡材质与尖角：浮层同材质（随主题翻转）+ 描边 + 双 clip-path 倒三角（外描边内填充）
+    assert(clientSrc.includes('background: var(--dsh-mem-bg-pop); color: var(--dsh-mem-text-1);'), '气泡浮层同材质（浅白深字/暗深浅字）');
+    assert(clientSrc.includes('width: 12px; height: 7px;'), '尖角外层描边三角（大内三角一圈）');
+    assert((clientSrc.match(/clip-path: polygon\(0 0, 100% 0, 50% 100%\)/g) ?? []).length >= 2, '气泡下尖角为双 clip-path 倒三角');
+    assert(clientSrc.includes('bottom: calc(100% + 8px)'), '气泡贴近圆球（悬停 8px）');
+    assert(!clientSrc.includes('--dsw-alias-tooltip-bg, #2c2c2e'), '不随主题的 tooltip-bg 硬底已弃用');
     assert(clientSrc.includes('var RAIL_H = 22') && clientSrc.includes('var THUMB = 16'), '粗滑轨（RAIL_H 22 > THUMB 16）');
     assert(clientSrc.includes('linear-gradient(90deg, var(--dsh-mem-fill-1), var(--dsh-mem-fill-2))'), '滑轨填充左浅右深渐变（球侧最深）');
     assert(!clientSrc.includes('var(--dsh-mem-fill-2), var(--dsh-mem-fill-1)'), '渐变端色序未被反转');
