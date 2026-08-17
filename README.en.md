@@ -38,20 +38,6 @@ tools: `memory_search` / `conversation_search` / `memory_read_scene`.
        alt="Four memory layers refining from top-left to bottom-right: L0 raw conversation (chat bubbles) → L1 atomic memories (glowing fact particles) → L2 scene blocks (glass document slabs) → L3 core persona (radiant crystal core); stages connected by LLM extract/consolidate/distill light beams, shrinking width shows progressive refinement">
 </p>
 
-- **Pending buffer persistence**: messages awaiting retry after a failed extraction, and
-  messages accumulating toward the next trigger threshold, are held in mode-bucketed
-  buffers (`pending.json`, atomically persisted after every distillation attempt) —
-  nothing is lost on restart; a catch-up run happens 20s after startup, and on failure
-  the buffer simply waits for the next same-mode conversation;
-- **Rebuild** (Settings → Memory → Overview → Rebuild): re-derives all derived layers
-  from the L0 raw conversations as the source of truth. Old `records/`, `scenes/`,
-  `persona-*.md` are archived as a whole (renamed `*.bak.<timestamp>`, never deleted),
-  the retrieval DB is cleared, checkpoints reset, then L1→L2→L3 are re-distilled
-  session-by-session in unified `auto` mode. Rebuild chunks run on a low-priority
-  queue — distillation for live conversations always goes first; the UI includes a
-  confirmation dialog (session/message/estimated-call counts), a progress bar, and
-  cancellation (completed parts are kept).
-
 ## Per-Session Memory Modes
 
 <p align="center">
@@ -111,18 +97,10 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 
 ## UI Preview
 
-The "Memory" browser in settings (Overview tab): a status card with the version,
-capture/distill/recall switches, retrieval capabilities (FTS/vectors) and counters,
-plus runtime switches and stat tiles below. The whole UI follows the dsh host's
-light/dark theme automatically, no reload needed.
-
 <p align="center">
-  <img src="./assets/img/ui-dark.jpg" width="100%"
+  <img src="./assets/img/ui-dark.jpg" width="49.5%"
        alt="Settings memory browser overview in dark theme: status card (plugin version, capture/distill/recall switch states, FTS and vector capabilities, L1 memory count, distillation model) and stat tiles, glassy controls with a cold-blue accent">
-</p>
-
-<p align="center">
-  <img src="./assets/img/ui-light.jpg" width="100%"
+  <img src="./assets/img/ui-light.jpg" width="49.5%"
        alt="The same settings memory browser overview in light theme: identical layout and information on light card backgrounds with the same accent family, theme switch without reload">
 </p>
 
