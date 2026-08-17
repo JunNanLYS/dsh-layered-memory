@@ -109,6 +109,23 @@ npm run smoke                         # smoke test (rebuild first: see command b
 npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution nodenext --target es2022 --strict --skipLibCheck --esModuleInterop
 ```
 
+## UI Preview
+
+The "Memory" browser in settings (Overview tab): a status card with the version,
+capture/distill/recall switches, retrieval capabilities (FTS/vectors) and counters,
+plus runtime switches and stat tiles below. The whole UI follows the dsh host's
+light/dark theme automatically, no reload needed.
+
+<p align="center">
+  <img src="./assets/img/ui-dark.jpg" width="100%"
+       alt="Settings memory browser overview in dark theme: status card (plugin version, capture/distill/recall switch states, FTS and vector capabilities, L1 memory count, distillation model) and stat tiles, glassy controls with a cold-blue accent">
+</p>
+
+<p align="center">
+  <img src="./assets/img/ui-light.jpg" width="100%"
+       alt="The same settings memory browser overview in light theme: identical layout and information on light card backgrounds with the same accent family, theme switch without reload">
+</p>
+
 ## Configuration
 
 Override configs go into the profile's own `cordis.patch.yml` as a **top-level bare

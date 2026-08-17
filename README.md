@@ -93,6 +93,22 @@ npm run smoke                         # 冒烟测试（先重编：见下方命�
 npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution nodenext --target es2022 --strict --skipLibCheck --esModuleInterop
 ```
 
+## 界面预览
+
+设置页"记忆"浏览器（概览 Tab）：状态卡展示版本与捕获/蒸馏/召回开关、检索能力
+（FTS/向量）与计数，下方是运行时开关与统计瓦片。全 UI 跟随 dsh 宿主的亮暗主题
+自动切换，无需重载。
+
+<p align="center">
+  <img src="./assets/img/ui-dark.jpg" width="100%"
+       alt="深色主题下的设置页记忆浏览器概览：状态卡（插件版本、捕获/蒸馏/召回开关状态、FTS 与向量能力、L1 记忆计数、蒸馏模型）与统计瓦片，玻璃质感控件与冷蓝强调色">
+</p>
+
+<p align="center">
+  <img src="./assets/img/ui-light.jpg" width="100%"
+       alt="浅色主题下的同一设置页记忆浏览器概览：同款布局与信息，浅色卡片底与同套强调色，主题切换无需重载">
+</p>
+
 ## 配置
 
 覆盖配置写在 profile 自己的 `cordis.patch.yml`，用**顶层裸 patch 条目**（直接 `id:`，
