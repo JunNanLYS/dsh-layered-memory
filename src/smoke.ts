@@ -1473,10 +1473,36 @@ async function main(): Promise<void> {
     }
     const tagDark = clientSrc.match(/body\[data-ds-dark-theme\] \.dsh-mem-tag-/g) ?? [];
     assert(tagDark.length >= 7, `标签暗色覆盖 ≥7（实际 ${tagDark.length}）`);
-    // 无障碍：reduced-motion / reduced-transparency / focus-visible（btn/tab 键盘焦点环；输入框用 :focus 即时环）
+    // 无障碍：reduced-motion / focus-visible（btn/tab 键盘焦点环；输入框用 :focus 即时环）
     assert(clientSrc.includes('prefers-reduced-motion'), 'reduced-motion 降级');
-    assert(clientSrc.includes('prefers-reduced-transparency'), 'reduced-transparency 降级');
     assert((clientSrc.match(/:focus-visible/g) ?? []).length >= 2, 'focus-visible 焦点环（btn/tab）');
+    // 档位显示名中文化（配置键 off/chat/work/auto 保持英文——键值对并存断言）
+    for (const label of ['关闭', '日常', '工作', '智能']) {
+      assert(clientSrc.includes('label: "' + label + '"'), `档位显示名：${label}`);
+    }
+    for (const key of ['"off"', '"chat"', '"work"', '"auto"']) {
+      assert(clientSrc.includes('key: ' + key), `档位配置键保留：${key}`);
+    }
+    assert(clientSrc.includes('"记忆 · "'), 'pill 文本为"记忆 · 档位名"格式');
+    // 悬浮板：dsw 原生菜单同配方浮层 + 拖动气泡 + 粗滑轨包裹圆球
+    assert(clientSrc.includes('.dsh-mem-popover'), '浮层类（dsw 原生菜单配方）');
+    assert(clientSrc.includes('--dsh-mem-bg-pop: var(--dsw-specific-menu'), '浮层底链 dsw-specific-menu');
+    assert(clientSrc.includes('.dsh-mem-bubble'), '拖动气泡类');
+    assert(clientSrc.includes('var RAIL_H = 22') && clientSrc.includes('var THUMB = 16'), '粗滑轨（RAIL_H 22 > THUMB 16）');
+    assert(clientSrc.includes('linear-gradient(90deg, var(--dsh-mem-fill-1), var(--dsh-mem-fill-2))'), '滑轨填充左浅右深渐变');
+    assert(!clientSrc.includes('top: 26'), '滑轨下方档位标签已删除（改拖动气泡）');
+    // pill：off 档透明化、其余三档共用流光（--dsh-mem-pill-tint 混色通道）
+    assert(clientSrc.includes('var isFlow = loaded && !isOff'), 'off 档排除流光');
+    assert(clientSrc.includes('--dsh-mem-pill-tint'), '流光内底混色通道');
+    assert(!clientSrc.includes('.dsh-mem-glass'), '玻璃浮层类已移除（换原生实底浮层）');
+    // 原生组件复用：guarded require + 三个包装器（含回退）
+    assert(clientSrc.includes('require("@deepseek-ai/dsh-client-ui-primitives")'), '原生 primitives require');
+    assert(
+      clientSrc.includes('function NButton') && clientSrc.includes('function NInput') && clientSrc.includes('function NModal'),
+      '原生组件包装器 NButton/NInput/NModal',
+    );
+    // 侧边栏 icon 补丁（书本）
+    assert(clientSrc.includes('patchSidebarIcon') && clientSrc.includes('BOOK_ICON_SVG'), '侧边栏书本 icon 补丁');
     // 圆角体系锁定：inline borderRadius 与 CSS border-radius 只允许 {4,8,10,12,999,50%}
     //（4px 仅限重建进度条内轨，8=控件，10=卡片，12=浮层，999=胶囊）
     const inlineR = [...clientSrc.matchAll(/borderRadius: ([^,}]+)/g)].map((m) => m[1].trim().replace(/^"|"$/g, ''));

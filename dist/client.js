@@ -2,7 +2,7 @@
  * dsh-layered-memory — browser half（手写 plain-JS bundle，无打包器）。
  *
  * 1. 输入栏（conversation.input.left，模式选择器右侧）：会话记忆档位 pill
- *    （关闭/chat/自动/work 四态），点击展开 macOS 风格滑动选择器；
+ *    （关闭/日常/工作/智能 四态，配置键 off/chat/work/auto），点击展开滑动选择器；
  * 2. 设置 → 记忆：多 Tab 记忆浏览器（概览+开关 / L1 记忆 / L2 场景 / L3 画像 / 运行日志，
  *    两族混合视图）。
  * 数据通道：ctx.connection.rpc.call('/rpc', 'dsh-memory/*', payload) → Host 侧 RPC 端点。
@@ -18,6 +18,71 @@ window.__ModuleLoader__.load({
     var exports = module.exports;
     Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
     var react = require("react");
+
+    // ── dsh 原生 UI 组件（官方 seed 模块 @deepseek-ai/dsh-client-ui-primitives，
+    // 与宿主视觉完全一致）。宿主未注册该模块（老版本 dsh）时静默回退到
+    // 本 bundle 的等效实现——degrade-don't-crash，与插件整体降级哲学一致。 ──
+    var P = null;
+    try {
+      P = require("@deepseek-ai/dsh-client-ui-primitives");
+    } catch (e) {
+      P = null;
+    }
+
+    /** 原生 Button（size sm）优先；回退 .dsh-mem-btn 类按钮（剥离原生专属 props）。 */
+    function NButton(props) {
+      if (P && P.Button) return react.createElement(P.Button, Object.assign({ size: "sm" }, props));
+      var rest = Object.assign({}, props);
+      delete rest.variant;
+      delete rest.icon;
+      rest.className = "dsh-mem-btn" + (rest.className ? " " + rest.className : "");
+      return react.createElement("button", rest);
+    }
+
+    /** 原生 Input 优先；回退 .dsh-mem-input 类输入框。
+     * 原生 Input 是 span>input 结构且 rest 摊给内层 input——布局属性（flex/minWidth
+     * 等）必须路由到外层，否则搜索框在 flex 工具栏里不再撑满。 */
+    function NInput(props) {
+      if (P && P.Input) {
+        var inner = Object.assign({}, props);
+        var layoutStyle = inner.style;
+        delete inner.style;
+        return react.createElement("span", { style: layoutStyle }, react.createElement(P.Input, inner));
+      }
+      var rest = Object.assign({}, props);
+      rest.className = "dsh-mem-input" + (rest.className ? " " + rest.className : "");
+      return react.createElement("input", rest);
+    }
+
+    /** 原生 Modal 优先；回退 .dsh-mem-rb-overlay/.dsh-mem-rb-modal 模态。 */
+    function NModal(props) {
+      if (props.open === false) return null;
+      if (P && P.Modal) return react.createElement(P.Modal, Object.assign({ closeLabel: "关闭" }, props));
+      return react.createElement(
+        "div",
+        {
+          className: "dsh-mem-rb-overlay",
+          onClick: function (e) {
+            if (e.target === e.currentTarget && props.onClose) props.onClose();
+          },
+        },
+        react.createElement(
+          "div",
+          { className: "dsh-mem-rb-modal" },
+          props.title
+            ? react.createElement("div", { style: { fontSize: 15, fontWeight: 600, marginBottom: 10 } }, props.title)
+            : null,
+          props.children,
+          props.footer
+            ? react.createElement(
+                "div",
+                { style: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 } },
+                props.footer,
+              )
+            : null,
+        ),
+      );
+    }
 
     var inject = ["slots", "connection"];
 
@@ -245,17 +310,20 @@ window.__ModuleLoader__.load({
       );
     }
 
-    // ── 会话记忆档位控件（输入栏 pill + macOS 风格滑动选择器） ──
-    // 档位顺序即滑轨顺序：关闭 → chat → work → 自动（默认档"自动"居右）
-    // 档位色是 CSS 变量引用（--dsh-mem-mode-*，Light/Dark 各一组值，注入样式表定义）
+    // ── 会话记忆档位控件（输入栏 pill + 滑动选择器） ──
+    // 档位顺序即滑轨顺序：关闭 → 日常 → 工作 → 智能（默认档"智能"居右）。
+    // 显示名中文；配置键与英文层保持 off/chat/work/auto（session-modes.json 不变）。
+    // 档位色是 CSS 变量引用（--dsh-mem-mode-*，Light/Dark 各一组值，注入样式表定义），
+    // 取值 = 灰 → 品牌蓝 的渐变阶：off 灰、chat/work 过渡蓝、auto 品牌蓝。
     var MODES = [
-      { key: "off", label: "关闭", color: "var(--dsh-mem-mode-off)" },
-      { key: "chat", label: "chat", color: "var(--dsh-mem-mode-chat)" },
-      { key: "work", label: "work", color: "var(--dsh-mem-mode-work)" },
-      { key: "auto", label: "自动", color: "var(--dsh-mem-mode-auto)" },
+      { key: "off", label: "关闭", color: "var(--dsh-mem-text-2)" },
+      { key: "chat", label: "日常", color: "var(--dsh-mem-mode-chat)" },
+      { key: "work", label: "工作", color: "var(--dsh-mem-mode-work)" },
+      { key: "auto", label: "智能", color: "var(--dsh-mem-mode-auto)" },
     ];
     var TRACK_W = 200;
     var THUMB = 16;
+    var RAIL_H = 22; // 粗滑轨高度 > 圆球直径（圆球被滑轨包裹）
     var INNER_W = TRACK_W - THUMB;
 
     function modeInfo(key) {
@@ -264,10 +332,10 @@ window.__ModuleLoader__.load({
     }
 
     function modeLabel(key) {
-      if (key === "auto") return "自动（双族）";
-      if (key === "chat") return "chat（个人）";
-      if (key === "work") return "work（工作）";
-      return "off（关闭）";
+      if (key === "auto") return "智能（双族）";
+      if (key === "chat") return "日常（个人）";
+      if (key === "work") return "工作（团队）";
+      return "关闭";
     }
 
     function modeIndex(key) {
@@ -277,7 +345,7 @@ window.__ModuleLoader__.load({
 
     /** 滑动选择器浮层（参考 macOS 滑动器：拖拽圆头 1:1 连续跟手，松手按动量投影吸附最近档）。 */
     function ModeSlider(props) {
-      ensureThemeStyle(); // 主题令牌与玻璃材质 class 共用同一张注入样式表
+      ensureThemeStyle(); // 主题令牌与浮层/气泡 class 共用同一张注入样式表
       var trackRef = react.useRef(null);
       // 拖拽状态：{ x: 圆头连续位置 px, lastX: 上次指针 clientX, t: 时间戳, v: 速度 px/ms（EMA 平滑） }
       var dragState = react.useState(null);
@@ -325,77 +393,44 @@ window.__ModuleLoader__.load({
       var activeIdx = Math.min(MODES.length - 1, Math.max(0, Math.round((thumbLeft / INNER_W) * (MODES.length - 1))));
       var info = MODES[activeIdx];
 
+      // 停点刻度：轨道上的 4 个小点提示可吸附位置；档位名改由拖动气泡显示
       var stops = [];
       for (var i = 0; i < MODES.length; i++) {
-        (function (i) {
-            var stopLeft = (i / (MODES.length - 1)) * INNER_W + THUMB / 2;
-            var active = i === activeIdx;
-            stops.push(
-              react.createElement(
-                "div",
-                {
-                  key: "stop" + i,
-                  style: {
-                    position: "absolute",
-                    left: stopLeft - 3,
-                    top: 6,
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: active ? MODES[i].color : "var(--dsh-mem-dot)",
-                    zIndex: 2,
-                  },
-                },
-              ),
-              react.createElement(
-                "button",
-                {
-                  key: "label" + i,
-                  style: {
-                    position: "absolute",
-                    left: stopLeft,
-                    top: 26,
-                    transform: "translateX(-50%)",
-                    fontSize: 11,
-                    lineHeight: "16px",
-                    padding: "0 4px",
-                    border: "none",
-                    background: "none",
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                    fontWeight: active ? 600 : 400,
-                    // 未激活标签走 caption 令牌（玻璃面上保持可读，双主题各一档）
-                    color: active ? MODES[i].color : "var(--dsw-alias-label-caption, var(--dsh-mem-text-3))",
-                  },
-                  onClick: function () { if (drag === null) props.onCommit(MODES[i].key); },
-                },
-                MODES[i].label,
-              ),
-            );
-        })(i);
+        var stopLeft = (i / (MODES.length - 1)) * INNER_W + THUMB / 2;
+        stops.push(
+          react.createElement("div", {
+            key: "stop" + i,
+            style: {
+              position: "absolute",
+              left: stopLeft - 3,
+              top: (RAIL_H - 6) / 2,
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "var(--dsh-mem-dot)",
+              zIndex: 2,
+              pointerEvents: "none",
+            },
+          }),
+        );
       }
 
       return react.createElement(
         "div",
         {
-          // 外壳只负责定位（带 transform 居中）；玻璃材质拆到内层独立元素——
-          // Chromium 中 transform 元素上的 backdrop-filter 采样异常，玻璃会失效
+          // 外壳只负责定位（带 transform 居中悬浮在按钮上方，水平中轴对齐 pill 中心）
           style: {
             position: "absolute",
             bottom: "calc(100% + 8px)",
-            // 居中悬浮在按钮上方（水平中轴对齐 pill 中心）
             left: "50%",
             transform: "translateX(-50%)",
             zIndex: 1000,
           },
         },
-        react.createElement("div", {
-          className: "dsh-mem-glass",
-          style: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, pointerEvents: "none" },
-        }),
         react.createElement(
           "div",
-          { style: { position: "relative", padding: "12px 16px 30px" } },
+          // dsh 原生菜单同配方浮层：不透明实底（dsw-specific-menu）+ inverted 描边 + lv3 阴影
+          { className: "dsh-mem-popover", style: { position: "relative", padding: "38px 16px 14px" } },
           react.createElement(
             "div",
             {
@@ -404,52 +439,62 @@ window.__ModuleLoader__.load({
                 position: "relative",
                 // 容器宽 = thumb 活动范围（0..INNER_W + THUMB），点击映射与视觉两端严格对齐
                 width: TRACK_W,
-                height: 16,
+                height: RAIL_H,
+                borderRadius: 999,
+                background: "var(--dsh-mem-track)",
                 touchAction: "none",
                 cursor: drag === null ? "pointer" : "grabbing",
+              },
+              onPointerDown: onPointerDown,
+              onPointerMove: onPointerMove,
+              onPointerUp: onPointerUp,
+              onPointerCancel: onPointerUp,
             },
-            onPointerDown: onPointerDown,
-            onPointerMove: onPointerMove,
-            onPointerUp: onPointerUp,
-            onPointerCancel: onPointerUp,
-          },
-          // 线条（底层）：只连首尾停点的中心，两端不再露出停点外；
-          // thumb（当前档定位球）压最上层，不再被线条与停点穿过。
-          // 中性半透明灰在玻璃材质上深浅主题都可辨
-          react.createElement("div", {
-            style: {
-              position: "absolute",
-              left: THUMB / 2,
-              width: INNER_W,
-              top: 7,
-              height: 4,
-              borderRadius: 999,
-              background: "var(--dsh-mem-track)",
-              pointerEvents: "none",
-              zIndex: 1,
-            },
-          }),
-          stops,
-          react.createElement("div", {
-            style: {
-              position: "absolute",
-              left: thumbLeft,
-              top: 1,
-              width: THUMB,
-              height: THUMB,
-              borderRadius: "50%",
-              // 档位色描边 + 主题化圆头底（暗色非纯白）+ 上缘高光：与浮层玻璃材质同语言
-              background: "var(--dsh-mem-thumb)",
-              border: "1px solid " + info.color,
-              boxShadow: "0 1px 4px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.55)",
-              pointerEvents: "none",
-              transition: drag === null ? "left 120ms ease" : "none",
-              zIndex: 3,
-            },
-          }),
+            // 填充：从左到圆球当前位置，品牌蓝左浅右深渐变
+            react.createElement("div", {
+              style: {
+                position: "absolute",
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: thumbLeft + THUMB / 2,
+                borderRadius: 999,
+                background: "linear-gradient(90deg, var(--dsh-mem-fill-1), var(--dsh-mem-fill-2))",
+                pointerEvents: "none",
+                zIndex: 1,
+              },
+            }),
+            stops,
+            // 圆球：被粗滑轨包裹（RAIL_H > THUMB），品牌蓝描边，拖拽时阴影加重
+            react.createElement("div", {
+              style: {
+                position: "absolute",
+                left: thumbLeft,
+                top: (RAIL_H - THUMB) / 2,
+                width: THUMB,
+                height: THUMB,
+                borderRadius: "50%",
+                background: "var(--dsh-mem-thumb)",
+                border: "1px solid var(--dsh-mem-accent)",
+                boxShadow: drag !== null
+                  ? "0 2px 8px rgba(0,0,0,0.35)"
+                  : "0 1px 4px rgba(0,0,0,0.25)",
+                pointerEvents: "none",
+                transition: drag === null ? "left 120ms ease" : "none",
+                zIndex: 3,
+              },
+            }),
+            // 拖动气泡：仅拖拽期间显示当前档位名，下尖角指向圆球，松手即消失
+            drag !== null
+              ? react.createElement(
+                  "div",
+                  { className: "dsh-mem-bubble", style: { left: thumbLeft + THUMB / 2, zIndex: 4 } },
+                  info.label,
+                )
+              : null,
           ),
           props.error
-            ? react.createElement("div", { style: { fontSize: 11, color: "var(--dsh-mem-danger)", marginTop: 20, whiteSpace: "nowrap" } }, props.error)
+            ? react.createElement("div", { style: { fontSize: 11, color: "var(--dsh-mem-danger)", marginTop: 10, whiteSpace: "nowrap" } }, props.error)
             : null,
         ),
       );
@@ -474,29 +519,38 @@ window.__ModuleLoader__.load({
         // （光带边框与内底一并消失，仅剩文字色）。2026 常青浏览器均已支持，仅作记录。
         "@property --dsh-mem-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }",
         "@keyframes dshMemFlow { to { --dsh-mem-angle: 360deg; } }",
-        // ── 令牌（浅色） ──
+        // ── 令牌（浅色）。中性色链【真实存在的】dsw 令牌（design-platform.css 校对）：
+        //    bg-layer-2/3、bg-overlay、border-l1/l2/l3、border-inverted、label-*、
+        //    interactive-bg-hover、state-error-primary、tooltip-bg、dsw-shadow-lv1/lv3 ──
         ":root {",
         "  --dsh-mem-accent: #4d6bfe;",
         "  --dsh-mem-accent-text: #3d5be0;",
         "  --dsh-mem-accent-fill: #3d5be0;",
         "  --dsh-mem-accent-weak: rgba(77,107,254,0.10);",
         "  --dsh-mem-bg-card: var(--dsw-alias-bg-layer-2, #ffffff);",
-        "  --dsh-mem-bg-inset: var(--dsw-alias-bg-secondary, #f6f7fb);",
-        "  --dsh-mem-bg-hover: rgba(77,107,254,0.07);",
-        "  --dsh-mem-border: var(--dsw-alias-border-secondary, #e3e6ee);",
-        "  --dsh-mem-border-strong: #c9cede;",
-        "  --dsh-mem-text-1: var(--dsw-alias-label-primary, #1f2328);",
-        "  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #59626e);",
+        "  --dsh-mem-bg-inset: var(--dsw-alias-bg-overlay, #e9ecf2);",
+        "  --dsh-mem-bg-hover: var(--dsw-alias-interactive-bg-hover, rgba(38,49,72,0.06));",
+        "  --dsh-mem-bg-pop: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-3, #ffffff));",
+        "  --dsh-mem-border: var(--dsw-alias-border-l2, rgba(0,0,0,0.10));",
+        "  --dsh-mem-border-strong: var(--dsw-alias-border-l3, rgba(0,0,0,0.12));",
+        "  --dsh-mem-border-pop: var(--dsw-alias-border-inverted, rgba(0,0,0,0));",
+        "  --dsh-mem-text-1: var(--dsw-alias-label-primary, #0f1115);",
+        "  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #61666b);",
         "  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #6e7781);",
-        "  --dsh-mem-danger: #d0403f;",
-        "  --dsh-mem-mode-off: #6e7781;",
-        "  --dsh-mem-mode-chat: #1a7f37;",
-        "  --dsh-mem-mode-work: #9a6700;",
+        "  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #d0403f);",
+        // 档位色 = 灰 → 品牌蓝 的渐变阶（chat/work 过渡蓝 / auto 品牌蓝）；
+        // 文字对比度按 pill 真实底色（流光内底 = bg-card 95% + 档位色 5%）复算 AA 达标
+        "  --dsh-mem-mode-chat: #5a69b0;",
+        "  --dsh-mem-mode-work: #5263ca;",
         "  --dsh-mem-mode-auto: #3d5be0;",
+        // 滑轨填充渐变（左浅右深）
+        "  --dsh-mem-fill-1: #93a8ff;",
+        "  --dsh-mem-fill-2: #3d5be0;",
         "  --dsh-mem-thumb: #ffffff;",
         "  --dsh-mem-track: rgba(128,140,150,0.32);",
         "  --dsh-mem-dot: rgba(128,140,150,0.55);",
-        "  --dsh-mem-shadow-card: 0 1px 2px rgba(20,24,40,0.05);",
+        "  --dsh-mem-shadow-card: var(--dsw-shadow-lv1, 0 2px 4px 0 rgba(0,0,0,0.05));",
+        "  --dsh-mem-shadow-pop: var(--dsw-shadow-lv3, 0 0 1px 0 rgba(0,0,0,.2), 0 0 4px 0 rgba(0,0,0,.02), 0 12px 32px 0 rgba(0,0,0,.08));",
         "}",
         // ── 令牌（暗色：body[data-ds-dark-theme] 是 dsh 前端的暗色开关） ──
         "body[data-ds-dark-theme] {",
@@ -504,23 +558,27 @@ window.__ModuleLoader__.load({
         "  --dsh-mem-accent-text: #7b90ff;",
         "  --dsh-mem-accent-fill: #465ce8;",
         "  --dsh-mem-accent-weak: rgba(110,133,255,0.14);",
-        "  --dsh-mem-bg-card: var(--dsw-alias-bg-layer-2, #232734);",
-        "  --dsh-mem-bg-inset: var(--dsw-alias-bg-secondary, #1a1e29);",
-        "  --dsh-mem-bg-hover: rgba(110,133,255,0.10);",
-        "  --dsh-mem-border: var(--dsw-alias-border-secondary, #333950);",
-        "  --dsh-mem-border-strong: #454c68;",
-        "  --dsh-mem-text-1: var(--dsw-alias-label-primary, #e6e9f2);",
-        "  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #a8b0c2);",
+        "  --dsh-mem-bg-card: var(--dsw-alias-bg-layer-2, #2c2c2e);",
+        "  --dsh-mem-bg-inset: var(--dsw-alias-bg-layer-1, #232324);",
+        "  --dsh-mem-bg-hover: var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,0.08));",
+        "  --dsh-mem-bg-pop: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-3, #353638));",
+        "  --dsh-mem-border: var(--dsw-alias-border-l2, rgba(255,255,255,0.12));",
+        "  --dsh-mem-border-strong: var(--dsw-alias-border-l3, rgba(255,255,255,0.16));",
+        "  --dsh-mem-border-pop: var(--dsw-alias-border-inverted, rgba(255,255,255,0.06));",
+        "  --dsh-mem-text-1: var(--dsw-alias-label-primary, #f9fafb);",
+        "  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #cfd3d6);",
         "  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #8892a6);",
-        "  --dsh-mem-danger: #f4707b;",
-        "  --dsh-mem-mode-off: #98a2ad;",
-        "  --dsh-mem-mode-chat: #3fb950;",
-        "  --dsh-mem-mode-work: #d29922;",
+        "  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #f4707b);",
+        "  --dsh-mem-mode-chat: #97a4ff;",
+        "  --dsh-mem-mode-work: #8295ff;",
         "  --dsh-mem-mode-auto: #7b90ff;",
+        "  --dsh-mem-fill-1: #8fa0ff;",
+        "  --dsh-mem-fill-2: #465ce8;",
         "  --dsh-mem-thumb: #e8ebf5;",
         "  --dsh-mem-track: rgba(148,160,180,0.30);",
         "  --dsh-mem-dot: rgba(148,160,180,0.5);",
-        "  --dsh-mem-shadow-card: 0 1px 2px rgba(0,0,0,0.3);",
+        "  --dsh-mem-shadow-card: var(--dsw-shadow-lv1, 0 2px 4px 0 rgba(0,0,0,0.3));",
+        "  --dsh-mem-shadow-pop: var(--dsw-shadow-lv3, 0 0 1px 0 rgba(0,0,0,.2), 0 0 4px 0 rgba(0,0,0,.02), 0 12px 32px 0 rgba(0,0,0,.08));",
         "}",
         // ── 主题切换过渡：只挂颜色/阴影（不碰 transform），让明暗翻转不生硬 ──
         ".dsh-mem-root, .dsh-mem-root * { transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease; }",
@@ -578,62 +636,47 @@ window.__ModuleLoader__.load({
         "body[data-ds-dark-theme] .dsh-mem-tag-work-fact { --dsh-mem-tag-c: #6cb2ff; }",
         "body[data-ds-dark-theme] .dsh-mem-tag-work-task { --dsh-mem-tag-c: #6fca74; }",
         "body[data-ds-dark-theme] .dsh-mem-tag-work-method { --dsh-mem-tag-c: #c297ff; }",
-        // ── auto 档边缘流光（品牌蓝族）：border 区画旋转 conic 光带；内部必须是【不透明】
-        // 底色盖住光带（半透明内层会让 conic 透进按钮内部，文字被光斑干扰——实测事故）。
-        // 不透明底 = 主题底混 12% 品牌蓝（color-mix 出来 alpha=1），静态、随主题
+        // ── pill 边缘流光（品牌蓝族，chat/work/auto 三档共用；off 无）：border 区画旋转
+        // conic 光带；内部必须是【不透明】底色盖住光带（半透明内层会让 conic 透进按钮
+        // 内部，文字被光斑干扰——实测事故）。不透明底 = 主题底混 3% 档位色
+        // （--dsh-mem-pill-tint 由 pill inline 给定；3% 保证档位色文字 AA，暗色智能档余量 4.63:1）
         ".dsh-mem-flow {",
         "  border: 1px solid transparent;",
         "  background:",
         "    linear-gradient(",
-        "      color-mix(in srgb, var(--dsh-mem-bg-card, #ffffff) 88%, #4d6bfe),",
-        "      color-mix(in srgb, var(--dsh-mem-bg-card, #ffffff) 88%, #4d6bfe)",
+        "      color-mix(in srgb, var(--dsh-mem-bg-card, #ffffff) 97%, var(--dsh-mem-pill-tint, #4d6bfe)),",
+        "      color-mix(in srgb, var(--dsh-mem-bg-card, #ffffff) 97%, var(--dsh-mem-pill-tint, #4d6bfe))",
         "    ) padding-box,",
         "    conic-gradient(from var(--dsh-mem-angle),",
         "      rgba(61,91,224,0.9), rgba(77,107,254,0.95), rgba(147,168,255,1),",
         "      rgba(110,133,255,0.9), rgba(61,91,224,0.9)) border-box;",
         "  animation: dshMemFlow 3s linear infinite;",
-        "  color: var(--dsh-mem-accent-text);",
         "}",
-        // 浮层玻璃材质（Apple 菜单配方）：材质层必须是【无 transform 的独立元素】——
-        // Chromium 中 transform 元素上的 backdrop-filter 采样异常（玻璃失效，实测）。
-        // 低不透明度基底让底下内容透出 + 顶部光泽渐变 + blur/saturate + 亮缘 + 分主题阴影
-        ".dsh-mem-glass {",
+        // ── 浮层（dsh 原生菜单同配方：不透明实底 + inverted 描边（浅色不可见）+ lv3 阴影） ──
+        ".dsh-mem-popover {",
         "  border-radius: 12px;",
-        "  background:",
-        "    linear-gradient(rgba(255,255,255,0.34), rgba(255,255,255,0.05)),",
-        "    rgba(248,249,251,0.55);",
-        "  -webkit-backdrop-filter: blur(32px) saturate(180%);",
-        "  backdrop-filter: blur(32px) saturate(180%);",
-        "  border: 1px solid rgba(255,255,255,0.55);",
-        "  box-shadow:",
-        "    0 12px 40px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.07),",
-        "    inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -1px 0 rgba(0,0,0,0.03);",
+        "  border: 1px solid var(--dsh-mem-border-pop);",
+        "  background: var(--dsh-mem-bg-pop);",
+        "  box-shadow: var(--dsh-mem-shadow-pop);",
+        "  color: var(--dsh-mem-text-1);",
         "}",
-        "body[data-ds-dark-theme] .dsh-mem-glass {",
-        "  background:",
-        "    linear-gradient(rgba(255,255,255,0.09), rgba(255,255,255,0.015)),",
-        "    rgba(30,32,40,0.55);",
-        "  border-color: rgba(255,255,255,0.14);",
-        "  box-shadow:",
-        "    0 16px 48px rgba(0,0,0,0.55), 0 3px 12px rgba(0,0,0,0.35),",
-        "    inset 0 1px 0 rgba(255,255,255,0.12);",
+        // ── 拖动气泡：拖拽时显示当前档位名，随圆球移动，下尖角指向圆球 ──
+        ".dsh-mem-bubble {",
+        "  position: absolute; bottom: calc(100% + 10px); transform: translateX(-50%);",
+        "  padding: 3px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; line-height: 18px;",
+        "  background: var(--dsw-alias-tooltip-bg, #2c2c2e); color: #ffffff; white-space: nowrap;",
+        "  box-shadow: 0 2px 8px rgba(0,0,0,0.18);",
         "}",
-        "@media (prefers-reduced-transparency: reduce) {",
-        "  .dsh-mem-glass { background: var(--dsh-mem-bg-card, #ffffff); backdrop-filter: none; -webkit-backdrop-filter: none; }",
+        ".dsh-mem-bubble::after {",
+        "  content: ''; position: absolute; top: 100%; left: 50%; margin-left: -4px;",
+        "  width: 8px; height: 8px; transform: rotate(45deg);",
+        "  background: var(--dsw-alias-tooltip-bg, #2c2c2e);",
         "}",
-        // ── 重建面板 ──
+        // ── 重建面板 ──（模态本体走 NModal：原生 Modal 优先，回退 rb-overlay/rb-modal）
         ".dsh-mem-rb-card {",
         "  border: 1px solid var(--dsh-mem-border); border-radius: 10px; background: var(--dsh-mem-bg-card);",
         "  box-shadow: var(--dsh-mem-shadow-card); padding: 12px 14px; margin-bottom: 14px; font-size: 13px;",
         "}",
-        ".dsh-mem-rb-btn {",
-        "  padding: 5px 14px; font-size: 13px; border-radius: 8px; cursor: pointer;",
-        "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card); color: var(--dsh-mem-text-1);",
-        "}",
-        ".dsh-mem-rb-btn:disabled { opacity: 0.45; cursor: not-allowed; }",
-        ".dsh-mem-rb-danger { border-color: color-mix(in srgb, var(--dsh-mem-danger) 45%, transparent); color: var(--dsh-mem-danger); background: transparent; }",
-        ".dsh-mem-rb-primary { background: #cf222e; border-color: #cf222e; color: #fff; }",
-        "body[data-ds-dark-theme] .dsh-mem-rb-primary { background: #b62324; border-color: #b62324; }",
         ".dsh-mem-rb-bar { height: 8px; border-radius: 4px; overflow: hidden; flex: 1; background: var(--dsh-mem-track); }",
         ".dsh-mem-rb-fill { height: 100%; border-radius: 4px; background: var(--dsh-mem-accent-fill); transition: width .4s ease; }",
         ".dsh-mem-rb-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);",
@@ -646,7 +689,7 @@ window.__ModuleLoader__.load({
         ".dsh-mem-rb-muted { font-size: 12px; color: var(--dsh-mem-text-3); }",
         // reduced-motion 兜底放样式表末尾：同特异性下后置声明才能压过上面的组件类
         "@media (prefers-reduced-motion: reduce) {",
-        "  .dsh-mem-root, .dsh-mem-root *, .dsh-mem-btn, .dsh-mem-input, .dsh-mem-select, .dsh-mem-rb-btn, .dsh-mem-rb-fill { transition: none; }",
+        "  .dsh-mem-root, .dsh-mem-root *, .dsh-mem-btn, .dsh-mem-input, .dsh-mem-select, .dsh-mem-rb-fill { transition: none; }",
         "  .dsh-mem-flow { animation: none; }",
         "}",
       ].join("\n");
@@ -688,6 +731,10 @@ window.__ModuleLoader__.load({
 
       react.useEffect(function () { load(); }, [load]);
 
+      // 侧边栏书本 icon 补丁由常驻 pill 驱动（MemoryPanel 只在记忆分节激活时挂载，
+      // 覆盖不了"打开设置第一眼"的场景）；body 级观察器全局单例，多实例幂等
+      react.useEffect(function () { watchSidebarIcon(); }, []);
+
       react.useEffect(function () {
         if (!open) return;
         var onDown = function (e) {
@@ -726,12 +773,13 @@ window.__ModuleLoader__.load({
       if (!sessionId || !rpc) return null;
       var info = modeInfo(mode);
       var loaded = mode !== null;
-      var isAuto = loaded && mode === "auto";
+      // 关闭档与其余三档二分：关闭 = dsh 透明按钮（无边框无底无光晕）；
+      // 日常/工作/智能 = 同款流光 + 光晕，档位区分靠蓝阶文字色与流光内底混色深度
+      var isOff = loaded && mode === "off";
+      var isFlow = loaded && !isOff;
 
       ensureThemeStyle();
 
-      // auto 档的边框/背景/文字色均由 .dsh-mem-flow 提供（双层背景画流光边 + 分主题文字），
-      // inline 不能设置这些——inline 优先级会盖掉 class 里的流光
       var pillStyle = {
         display: "inline-flex",
         alignItems: "center",
@@ -743,14 +791,13 @@ window.__ModuleLoader__.load({
         fontWeight: 500,
         lineHeight: "20px",
         cursor: "pointer",
+        // 流光档的边框/背景由 .dsh-mem-flow 的双层背景提供（流光边 + 不透明内底），
+        // inline 只给文字色 / 光晕 / 流光内底混色通道（--dsh-mem-pill-tint）
+        color: isFlow ? info.color : "var(--dsh-mem-text-2)",
       };
-      if (isAuto) {
-        pillStyle.boxShadow = "0 0 12px rgba(77,107,254,0.30)";
-      } else {
-        // 档位色是 var() 引用，透明度混色用 color-mix（老式 hex+alpha 拼接对 var 无效）
-        pillStyle.border = "1px solid " + (loaded ? "color-mix(in srgb, " + info.color + " 45%, transparent)" : "var(--dsh-mem-border)");
-        pillStyle.background = loaded ? "color-mix(in srgb, " + info.color + " 10%, transparent)" : "var(--dsh-mem-bg-inset)";
-        pillStyle.color = loaded ? info.color : "var(--dsh-mem-text-3)";
+      if (isFlow) {
+        pillStyle.boxShadow = "0 0 12px color-mix(in srgb, " + info.color + " 30%, transparent)";
+        pillStyle["--dsh-mem-pill-tint"] = info.color;
       }
 
       return react.createElement(
@@ -765,10 +812,10 @@ window.__ModuleLoader__.load({
               if (error) load();
               setOpen(!open);
             },
-            className: isAuto ? "dsh-mem-flow" : null,
+            className: isFlow ? "dsh-mem-flow" : null,
             style: pillStyle,
           },
-          "记忆·",
+          "记忆 · ",
           react.createElement("span", null, loaded ? info.label : error ? "⚠" : "…"),
         ),
         open
@@ -880,17 +927,14 @@ window.__ModuleLoader__.load({
               : "从 L0 原始对话重新蒸馏 L1/L2/L3；旧数据先归档（不删除）",
           ),
           running
-            ? react.createElement("button", {
-                type: "button",
-                className: "dsh-mem-rb-btn",
+            ? react.createElement(NButton, {
                 disabled: busy || rb.cancelRequested,
                 onClick: cancel,
               }, rb.cancelRequested ? "取消中…" : "取消重建")
-            : react.createElement("button", {
-                type: "button",
-                className: "dsh-mem-rb-btn dsh-mem-rb-danger",
+            : react.createElement(NButton, {
                 disabled: busy || empty,
                 title: empty ? "L0 无消息，无可重建内容" : "重新蒸馏全部记忆",
+                style: { color: "var(--dsh-mem-danger)" },
                 onClick: function () { setConfirmOpen(true); },
               }, busy ? "…" : "开始重建"),
         ),
@@ -915,48 +959,33 @@ window.__ModuleLoader__.load({
           : null,
         confirmOpen
           ? react.createElement(
-              "div", {
-                className: "dsh-mem-rb-overlay",
-                onClick: function (e) {
-                  if (e.target === e.currentTarget) setConfirmOpen(false);
-                },
+              NModal,
+              {
+                open: true,
+                onClose: function () { setConfirmOpen(false); },
+                title: "确认重建全部记忆？",
+                footer: [
+                  react.createElement(NButton, {
+                    key: "cancel",
+                    onClick: function () { setConfirmOpen(false); },
+                  }, "取消"),
+                  react.createElement(NButton, {
+                    key: "confirm",
+                    variant: "primary",
+                    disabled: busy,
+                    onClick: start,
+                  }, busy ? "启动中…" : "开始重建"),
+                ],
               },
               react.createElement(
-                "div", { className: "dsh-mem-rb-modal" },
-                react.createElement(
-                  "div", { style: { fontSize: 15, fontWeight: 600, marginBottom: 10 } },
-                  "确认重建全部记忆？",
-                ),
-                react.createElement(
-                  "div", null,
-                  "将以 L0 原始对话为事实源重新蒸馏：",
-                  react.createElement("b", null, rb.sessionCount + " 个会话 · " + rb.messageCount + " 条消息"),
-                  "，预计 ≥" + rb.estCalls + " 次蒸馏调用。",
-                ),
-                react.createElement(
-                  "div", { style: { marginTop: 8 } },
-                  "现有 L1 记忆 / L2 场景 / L3 画像会整体归档（*.bak.时间戳，可手工找回），随后清空重建；重建期间可正常对话，新对话的蒸馏优先进行；中途可取消，已重建部分保留。",
-                ),
-                react.createElement(
-                  "div", { style: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 } },
-                  react.createElement(
-                    "button", {
-                      type: "button",
-                      className: "dsh-mem-rb-btn",
-                      onClick: function () { setConfirmOpen(false); },
-                    },
-                    "取消",
-                  ),
-                  react.createElement(
-                    "button", {
-                      type: "button",
-                      className: "dsh-mem-rb-btn dsh-mem-rb-primary",
-                      disabled: busy,
-                      onClick: start,
-                    },
-                    busy ? "启动中…" : "开始重建",
-                  ),
-                ),
+                "div", null,
+                "将以 L0 原始对话为事实源重新蒸馏：",
+                react.createElement("b", null, rb.sessionCount + " 个会话 · " + rb.messageCount + " 条消息"),
+                "，预计 ≥" + rb.estCalls + " 次蒸馏调用。",
+              ),
+              react.createElement(
+                "div", { style: { marginTop: 8 } },
+                "现有 L1 记忆 / L2 场景 / L3 画像会整体归档（*.bak.时间戳，可手工找回），随后清空重建；重建期间可正常对话，新对话的蒸馏优先进行；中途可取消，已重建部分保留。",
               ),
             )
           : null,
@@ -1048,7 +1077,7 @@ window.__ModuleLoader__.load({
         return react.createElement(
           "div", { className: "dsh-mem-rb-card" },
           react.createElement("div", { className: "dsh-mem-rb-muted" }, err ? "嵌入状态读取失败：" + err : "嵌入状态读取中…"),
-          err ? react.createElement("button", { className: "dsh-mem-btn", style: { marginTop: 8 }, onClick: load }, "重试") : null,
+          err ? react.createElement(NButton, { style: { marginTop: 8 }, onClick: load }, "重试") : null,
         );
       }
 
@@ -1083,7 +1112,7 @@ window.__ModuleLoader__.load({
           react.createElement("div", { style: S.flexRow },
             react.createElement("span", null, "安装推理运行时中… 已耗时 " + Math.round(rt.elapsedMs / 1000) + "s（约 100~200MB，视网络）"),
             react.createElement("div", { style: S.grow }),
-            react.createElement("button", { className: "dsh-mem-btn", onClick: function () { call("dsh-memory/embedding-runtime-cancel", {}); } }, "取消"),
+            react.createElement(NButton, { onClick: function () { call("dsh-memory/embedding-runtime-cancel", {}); } }, "取消"),
           ),
           react.createElement(
             "pre",
@@ -1126,7 +1155,7 @@ window.__ModuleLoader__.load({
             react.createElement("span", { className: "dsh-mem-rb-muted" },
               "重嵌入中 L1 " + rj.l1Done + "/" + rj.l1Total + " · L0 " + rj.l0Done + "/" + rj.l0Total + "（" + rPct + "%）"),
             react.createElement("div", { style: S.grow }),
-            react.createElement("button", { className: "dsh-mem-btn", onClick: function () { call("dsh-memory/embedding-reindex-cancel", {}); } }, "取消"),
+            react.createElement(NButton, { onClick: function () { call("dsh-memory/embedding-reindex-cancel", {}); } }, "取消"),
           ),
           react.createElement(
             "div", { style: Object.assign({}, S.flexRow, { marginTop: 6 }) },
@@ -1149,7 +1178,7 @@ window.__ModuleLoader__.load({
                 fmtMB(dl.overallReceived) + " / " + fmtMB(dl.overallTotal) + "（文件 " + dl.fileIndex + "/" + dl.fileCount + "，" + pct + "%" +
                 (dl.speedBps > 0 && dl.phase === "downloading" ? "，" + fmtMB(dl.speedBps) + "/s" : "") + "）"),
               react.createElement("div", { style: S.grow }),
-              react.createElement("button", { className: "dsh-mem-btn", onClick: function () { call("dsh-memory/embedding-download-cancel", {}); } }, "取消"),
+              react.createElement(NButton, { onClick: function () { call("dsh-memory/embedding-download-cancel", {}); } }, "取消"),
             ),
             react.createElement(
               "div", { style: Object.assign({}, S.flexRow, { marginTop: 6 }) },
@@ -1169,16 +1198,15 @@ window.__ModuleLoader__.load({
         } else if (m.state === "downloaded") {
           action = react.createElement(
             "div", { style: S.flexRow },
-            react.createElement("button", { className: "dsh-mem-btn", disabled: ap.busy, onClick: function () {
+            react.createElement(NButton, { disabled: ap.busy, onClick: function () {
               call("dsh-memory/embedding-source-set", { source: "local", activeModel: m.id }, switchConfirm);
             } }, "启用"),
-            react.createElement("button", { className: "dsh-mem-btn", disabled: dlActive, onClick: function () {
+            react.createElement(NButton, { disabled: dlActive, onClick: function () {
               call("dsh-memory/embedding-model-delete", { modelId: m.id }, "删除已下载的 " + m.name + "（" + fmtMB(m.totalBytes) + "）？");
             } }, "删除"),
           );
         } else {
-          action = react.createElement("button", {
-            className: "dsh-mem-btn",
+          action = react.createElement(NButton, {
             disabled: dlActive || !st.ceilings.local,
             title: !st.ceilings.local ? "部署已禁用本地嵌入模型" : "",
             onClick: function () { call("dsh-memory/embedding-download-start", { modelId: m.id }); },
@@ -1530,8 +1558,7 @@ window.__ModuleLoader__.load({
         "div", null,
         react.createElement(
           "div", { style: S.toolbar },
-          react.createElement("input", {
-            className: "dsh-mem-input",
+          react.createElement(NInput, {
             style: { flex: 1, minWidth: 160 },
             placeholder: "搜索记忆内容（BM25 关键词）…",
             value: query,
@@ -1562,14 +1589,13 @@ window.__ModuleLoader__.load({
               return react.createElement("option", { key: s, value: s }, s.length > 24 ? s.slice(0, 24) + "…" : s);
             }),
           ),
-          react.createElement("button", { className: "dsh-mem-btn", onClick: search }, "搜索"),
+          react.createElement(NButton, { onClick: search }, "搜索"),
         ),
         react.createElement(
           "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
           react.createElement("span", { style: S.muted }, loading ? "加载中…" : countText),
           react.createElement("div", { style: S.grow }),
-          react.createElement("button", {
-            className: "dsh-mem-btn",
+          react.createElement(NButton, {
             onClick: function () { fetchPage(last, 0, false); },
           }, "刷新"),
         ),
@@ -1627,8 +1653,7 @@ window.__ModuleLoader__.load({
           ? react.createElement(
               "div", { style: S.flexRow },
               react.createElement("div", { style: S.grow }),
-              react.createElement("button", {
-                className: "dsh-mem-btn",
+              react.createElement(NButton, {
                 disabled: loading,
                 onClick: function () {
                   if (!loading) fetchPage(last, items.length, true);
@@ -1666,7 +1691,7 @@ window.__ModuleLoader__.load({
           "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
           react.createElement("span", { style: S.muted }, items ? items.length + " 个场景块" : "加载中…"),
           react.createElement("div", { style: S.grow }),
-          react.createElement("button", { className: "dsh-mem-btn", onClick: load }, "刷新"),
+          react.createElement(NButton, { onClick: load }, "刷新"),
         ),
         error ? react.createElement("div", { style: S.error }, error) : null,
         items && items.length === 0
@@ -1724,7 +1749,7 @@ window.__ModuleLoader__.load({
           react.createElement("span", { style: S.muted },
             error ? "加载失败" : content === null ? "加载中…" : content ? content.length + " 字符" : "未生成画像"),
           react.createElement("div", { style: S.grow }),
-          react.createElement("button", { className: "dsh-mem-btn", onClick: load }, "刷新"),
+          react.createElement(NButton, { onClick: load }, "刷新"),
         ),
         error
           ? react.createElement(
@@ -1769,7 +1794,7 @@ window.__ModuleLoader__.load({
           "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
           react.createElement("span", { style: S.muted }, error ? "加载失败" : lines === null ? "加载中…" : "最近 " + lines.length + " 行（memory.log）"),
           react.createElement("div", { style: S.grow }),
-          react.createElement("button", { className: "dsh-mem-btn", onClick: load }, "刷新"),
+          react.createElement(NButton, { onClick: load }, "刷新"),
         ),
         error
           ? react.createElement(
@@ -1790,6 +1815,57 @@ window.__ModuleLoader__.load({
       ["log", "日志"],
     ];
 
+    // ── 设置页侧边栏 icon：宿主 navIcon() 按 section id 硬编码白名单（slot 注册对象
+    // 无 icon 字段），"dsh-memory" 落齿轮兜底。受控 DOM 补丁：把侧边栏"记忆"按钮的
+    // 齿轮换成书本 icon。宿主只在分节激活时渲染我们的面板，所以补丁不能依赖
+    // MemoryPanel 挂载——由常驻的输入栏 pill 驱动一个 body 级防抖观察器（全局单例，
+    // 应用生命周期存续，观察 body 子树 childList）：设置页随时打开、侧边栏随时
+    // 重渲染都能打上/重打补丁。找不到或 DOM 结构变化时静默保持原生齿轮。 ──
+    var BOOK_ICON_SVG =
+      '<svg data-mem-icon="1" viewBox="0 0 16 16" width="16" height="16" fill="none" ' +
+      'xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0">' +
+      '<path d="M8 3.4C6.6 2.5 4.6 2.4 2.9 3.1v9.3c1.7-.7 3.7-.6 5.1.3 1.4-.9 3.4-1 5.1-.3V3.1C11.4 2.4 9.4 2.5 8 3.4Z" ' +
+      'stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>' +
+      '<path d="M8 3.4v9.3" stroke="currentColor" stroke-width="1.2"/></svg>';
+
+    function patchSidebarIcon() {
+      try {
+        var buttons = document.querySelectorAll("button");
+        for (var i = 0; i < buttons.length; i++) {
+          var b = buttons[i];
+          var span = b.querySelector("span");
+          var svg = b.querySelector("svg");
+          // 侧边栏导航项 = [svg 图标, span 标签文本]；输入栏 pill 的文本形态不同（"记忆 · X"）
+          if (span && svg && span.textContent.trim() === "记忆" && svg.getAttribute("data-mem-icon") !== "1") {
+            svg.outerHTML = BOOK_ICON_SVG;
+          }
+        }
+      } catch (e) {
+        /* best-effort：失败保持原生齿轮 */
+      }
+    }
+
+    // body 子树变更频繁（对话流式渲染），补丁扫描走 250ms 尾随防抖
+    var sidebarIconTimer = null;
+    function scheduleSidebarPatch() {
+      if (sidebarIconTimer !== null) return;
+      sidebarIconTimer = setTimeout(function () {
+        sidebarIconTimer = null;
+        patchSidebarIcon();
+      }, 250);
+    }
+
+    function watchSidebarIcon() {
+      patchSidebarIcon();
+      try {
+        if (document.body.getAttribute("data-mem-icon-bodywatch") === "1") return;
+        document.body.setAttribute("data-mem-icon-bodywatch", "1");
+        new MutationObserver(scheduleSidebarPatch).observe(document.body, { childList: true, subtree: true });
+      } catch (e) {
+        /* ignore */
+      }
+    }
+
     function MemoryPanel(props) {
       var rpc = props.rpc;
       var tabState = react.useState("overview");
@@ -1797,6 +1873,7 @@ window.__ModuleLoader__.load({
       var setTab = tabState[1];
 
       ensureThemeStyle(); // 设置页挂载即注入主题令牌与组件样式
+      react.useEffect(function () { watchSidebarIcon(); }, []);
 
       var body;
       if (tab === "overview") body = react.createElement(OverviewTab, { rpc: rpc });
