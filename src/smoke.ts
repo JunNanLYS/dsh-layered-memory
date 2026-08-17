@@ -1318,6 +1318,48 @@ async function main(): Promise<void> {
     }
   }
 
+  console.log('== 20. SQL 热路径：IN 分块 + L1 批量事务（T6） ==');
+  {
+    const tmpT6 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-sql-'));
+    try {
+      const dbT6 = new MemoryDb(path.join(tmpT6, 'memory.db'), 0, silentLogger);
+      dbT6.init();
+      const t6 = Date.now();
+      // 950 条单事务批量写入（> IN_CHUNK=900，跨块场景）
+      const bigBatch = Array.from({ length: 950 }, (_, i) => ({
+        id: `b${i}`,
+        content: `批量记录 ${i} 的内容`,
+        type: 'work_fact',
+        priority: 60,
+        scene_name: '批量',
+        timestamps: [t6 + i],
+        createdAt: t6 + i,
+        updatedAt: t6 + i,
+      }));
+      assert(dbT6.upsertL1Batch(bigBatch), '950 条单事务批量写入成功');
+      assert(dbT6.countL1() === 950, '批量写入计数正确');
+      const allIds = bigBatch.map((r) => r.id);
+      const gotAll = dbT6.getL1ByIds(allIds);
+      assert(gotAll.length === 950, `getL1ByIds 跨 900 分块返回全量（${gotAll.length}/950）`);
+      assert(dbT6.deleteL1Batch(allIds.slice(0, 400)) === 400, '分块批量删除返回条数');
+      assert(dbT6.countL1() === 550, `删除后计数正确（${dbT6.countL1()}）`);
+      const gotRest = dbT6.getL1ByIds(allIds.slice(400));
+      assert(gotRest.length === 550 && gotRest.every((r) => !r.id.startsWith('b3') || r.id >= 'b400'), '剩余记录可查');
+      const hitT6 = dbT6.searchL1Fts('批量记录 900', 5);
+      assert(hitT6.length >= 1 && hitT6[0].id === 'b900', '批量写入后 FTS 可检索');
+
+      // 批量事务保持 T2 的 FTS 失败整批回滚语义
+      const raw6 = (dbT6 as unknown as { db: DatabaseSync }).db;
+      raw6.exec('DROP TABLE l1_fts');
+      const before6 = dbT6.countL1();
+      assert(!dbT6.upsertL1Batch([{ id: 'bf1', content: '失败批一', type: 'work_fact', priority: 60, scene_name: 's', timestamps: [t6], createdAt: t6, updatedAt: t6 }, { id: 'bf2', content: '失败批二', type: 'work_fact', priority: 60, scene_name: 's', timestamps: [t6], createdAt: t6, updatedAt: t6 }]), 'FTS 失败 → 批量返回 false');
+      assert(dbT6.countL1() === before6, '批量整批回滚（无部分提交）');
+      dbT6.close();
+    } finally {
+      await fs.rm(tmpT6, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   console.log(failures === 0 ? '\n全部通过 ✅' : `\n${failures} 个失败 ❌`);
   process.exit(failures === 0 ? 0 : 1);
 }

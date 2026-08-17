@@ -41,6 +41,7 @@ export declare class MemoryDb {
     private stmtL1FtsSearch;
     private stmtL1FtsSearchFamily;
     private stmtUpsertL0;
+    private stmtGetL0;
     private stmtDeleteL0Vec?;
     private stmtInsertL0Vec?;
     private stmtSearchL0Vec?;
@@ -73,8 +74,18 @@ export declare class MemoryDb {
     markEmbeddingSynced(info: EmbeddingProviderInfo): void;
     /** upsert 一条 L1（元数据 + FTS 同步；embedding 非零时写向量）。失败返回 false 不抛。 */
     upsertL1(record: MemoryRecord, embedding?: Float32Array): boolean;
-    /** 批量删除 L1（元数据 + 向量 + FTS），返回删除条数。 */
+    /**
+     * 批量 upsert L1（单事务；与单条同语义：FTS 失败整批回滚）。
+     * 追加/导入热路径用它——逐条开事务在 WAL FULL 下每条一次 fsync。
+     */
+    upsertL1Batch(records: MemoryRecord[], embeddings?: Array<Float32Array | undefined>): boolean;
+    /** 事务内的单条写入体（upsertL1 / upsertL1Batch 共用；调用方负责 BEGIN/COMMIT）。 */
+    private upsertL1InTx;
+    /** 批量删除 L1（元数据 + 向量 + FTS），返回删除条数。IN 按 ≤900 分块（避变量数上限）。 */
     deleteL1Batch(ids: string[]): number;
+    /** 按块缓存的 IN 语句（表名/动作/尺寸 → 预编译语句）：热路径不再每次动态 prepare。 */
+    private readonly inStmts;
+    private inStatement;
     /**
      * 清空 L1 检索库全部数据（重建用）。records/FTS 直接 DELETE；
      * 向量表走 DROP + 重建（vec0 的全表 DELETE 语义不可靠，dropVectorTables

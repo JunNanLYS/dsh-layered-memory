@@ -42,13 +42,10 @@ export class L1Store {
             return;
         try {
             const records = await readJsonl(this.legacyFile);
+            const valid = records.filter((r) => r && typeof r.id === 'string' && r.content);
             let n = 0;
-            for (const r of records) {
-                if (r && typeof r.id === 'string' && r.content) {
-                    if (this.db.upsertL1(r))
-                        n++;
-                }
-            }
+            if (valid.length > 0 && this.db.upsertL1Batch(valid))
+                n = valid.length;
             // 只有确实导入成功（或文件为空）才改名，避免把未入库的数据改名带走
             if (n === records.length) {
                 const renamed = await fs
@@ -99,9 +96,8 @@ export class L1Store {
             await appendJsonl(path.join(this.recordsDir, `${day}.jsonl`), list);
         }
         const vecs = await this.helper.batch(records.map((r) => r.content));
-        for (let i = 0; i < records.length; i++) {
-            this.db.upsertL1(records[i], vecs[i]);
-        }
+        // 单事务批量写：逐条开事务在 WAL FULL 下每条一次 fsync
+        this.db.upsertL1Batch(records, vecs);
     }
     /** 去重 update/merge 产出的记录：只更新检索库（JSONL 事实源不改写，官方语义）。 */
     async upsert(record) {

@@ -69,6 +69,16 @@ interface StatementLike {
 /** vec0 KNN 对遗留零向量的补偿缓冲（官方同款）。 */
 const ZERO_VEC_BUFFER = 10;
 
+/** IN 查询/删除的分块大小（保守避开 SQLite 变量数上限：现代构建 32766，老版 999）。 */
+const IN_CHUNK = 900;
+
+/** 把 id 列表切成 ≤IN_CHUNK 的块（分块执行后合并语义等价于单次 IN）。 */
+function chunkIds(ids: string[]): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK) out.push(ids.slice(i, i + IN_CHUNK));
+  return out;
+}
+
 export class MemoryDb {
   private db!: DatabaseSync;
   private degraded = false;
@@ -89,6 +99,7 @@ export class MemoryDb {
   private stmtL1FtsSearchFamily!: StatementLike;
 
   private stmtUpsertL0!: StatementLike;
+  private stmtGetL0!: StatementLike;
   private stmtDeleteL0Vec?: StatementLike;
   private stmtInsertL0Vec?: StatementLike;
   private stmtSearchL0Vec?: StatementLike;
@@ -288,6 +299,9 @@ export class MemoryDb {
         recorded_at=excluded.recorded_at,
         timestamp=excluded.timestamp
     `);
+    this.stmtGetL0 = this.db.prepare(
+      'SELECT session_id, role, message_text, recorded_at, timestamp FROM l0_conversations WHERE record_id = ?',
+    );
     this.prepareL0VecStatements();
 
     // ── FTS5 全文索引（建表失败仅停用 FTS，不降级整个库） ──
@@ -539,52 +553,9 @@ export class MemoryDb {
   upsertL1(record: MemoryRecord, embedding?: Float32Array): boolean {
     if (this.degraded) return false;
     try {
-      const ts = timestampsToDb(record.timestamps);
       this.db.exec('BEGIN');
       try {
-        this.stmtUpsertL1.run(
-          record.id,
-          record.content,
-          record.type,
-          record.priority,
-          record.scene_name,
-          record.sessionId ?? 'default',
-          record.version ?? 0,
-          ts.str,
-          ts.start,
-          ts.end,
-          toIso(record.createdAt),
-          toIso(record.updatedAt),
-          JSON.stringify(record.metadata ?? {}),
-          record.family ?? familyForType(record.type),
-        );
-        // vec0 不支持 ON CONFLICT → 先删后插；零向量跳过（cosine 未定义）
-        if (this.stmtDeleteL1Vec && this.stmtInsertL1Vec) {
-          this.stmtDeleteL1Vec.run(record.id);
-          if (embedding && !isZeroVector(embedding)) {
-            this.stmtInsertL1Vec.run(record.id, vecToBuffer(embedding), toIso(record.updatedAt));
-          }
-        }
-        // FTS 删除/插入与元数据同事务：失败必须整体回滚——若只吞 FTS 错误照常 COMMIT，
-        // 已执行的 DELETE 会让该 id 的索引行被删未补，记录从此全文检索不可见（静默丢数据）。
-        if (this.ftsAvailable) {
-          this.stmtL1FtsDelete.run(record.id);
-          this.stmtL1FtsInsert.run(
-            tokenizeForFts(record.content),
-            record.content,
-            record.id,
-            record.type,
-            record.priority,
-            record.scene_name,
-            record.sessionId ?? 'default',
-            record.version ?? 0,
-            ts.str,
-            ts.start,
-            ts.end,
-            JSON.stringify(record.metadata ?? {}),
-            record.family ?? familyForType(record.type),
-          );
-        }
+        this.upsertL1InTx(record, embedding);
         this.db.exec('COMMIT');
       } catch (err) {
         try {
@@ -603,30 +574,128 @@ export class MemoryDb {
     }
   }
 
-  /** 批量删除 L1（元数据 + 向量 + FTS），返回删除条数。 */
+  /**
+   * 批量 upsert L1（单事务；与单条同语义：FTS 失败整批回滚）。
+   * 追加/导入热路径用它——逐条开事务在 WAL FULL 下每条一次 fsync。
+   */
+  upsertL1Batch(records: MemoryRecord[], embeddings?: Array<Float32Array | undefined>): boolean {
+    if (this.degraded || records.length === 0) return false;
+    try {
+      this.db.exec('BEGIN');
+      try {
+        for (let i = 0; i < records.length; i++) {
+          this.upsertL1InTx(records[i], embeddings?.[i]);
+        }
+        this.db.exec('COMMIT');
+      } catch (err) {
+        try {
+          this.db.exec('ROLLBACK');
+        } catch {
+          /* ignore */
+        }
+        throw err;
+      }
+      return true;
+    } catch (err) {
+      this.logger?.warn(`${TAG} L1 批量写入失败（非致命）: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  }
+
+  /** 事务内的单条写入体（upsertL1 / upsertL1Batch 共用；调用方负责 BEGIN/COMMIT）。 */
+  private upsertL1InTx(record: MemoryRecord, embedding?: Float32Array): void {
+    const ts = timestampsToDb(record.timestamps);
+    this.stmtUpsertL1.run(
+      record.id,
+      record.content,
+      record.type,
+      record.priority,
+      record.scene_name,
+      record.sessionId ?? 'default',
+      record.version ?? 0,
+      ts.str,
+      ts.start,
+      ts.end,
+      toIso(record.createdAt),
+      toIso(record.updatedAt),
+      JSON.stringify(record.metadata ?? {}),
+      record.family ?? familyForType(record.type),
+    );
+    // vec0 不支持 ON CONFLICT → 先删后插；零向量跳过（cosine 未定义）
+    if (this.stmtDeleteL1Vec && this.stmtInsertL1Vec) {
+      this.stmtDeleteL1Vec.run(record.id);
+      if (embedding && !isZeroVector(embedding)) {
+        this.stmtInsertL1Vec.run(record.id, vecToBuffer(embedding), toIso(record.updatedAt));
+      }
+    }
+    // FTS 删除/插入与元数据同事务：失败必须整体回滚——若只吞 FTS 错误照常 COMMIT，
+    // 已执行的 DELETE 会让该 id 的索引行被删未补，记录从此全文检索不可见（静默丢数据）。
+    if (this.ftsAvailable) {
+      this.stmtL1FtsDelete.run(record.id);
+      this.stmtL1FtsInsert.run(
+        tokenizeForFts(record.content),
+        record.content,
+        record.id,
+        record.type,
+        record.priority,
+        record.scene_name,
+        record.sessionId ?? 'default',
+        record.version ?? 0,
+        ts.str,
+        ts.start,
+        ts.end,
+        JSON.stringify(record.metadata ?? {}),
+        record.family ?? familyForType(record.type),
+      );
+    }
+  }
+
+  /** 批量删除 L1（元数据 + 向量 + FTS），返回删除条数。IN 按 ≤900 分块（避变量数上限）。 */
   deleteL1Batch(ids: string[]): number {
     if (this.degraded || ids.length === 0) return 0;
     try {
-      const placeholders = ids.map(() => '?').join(',');
       this.db.exec('BEGIN');
-      this.db.prepare(`DELETE FROM l1_records WHERE record_id IN (${placeholders})`).run(...ids);
-      if (this.stmtDeleteL1Vec) {
-        this.db.prepare(`DELETE FROM l1_vec WHERE record_id IN (${placeholders})`).run(...ids);
-      }
-      if (this.ftsAvailable) {
-        this.db.prepare(`DELETE FROM l1_fts WHERE record_id IN (${placeholders})`).run(...ids);
-      }
-      this.db.exec('COMMIT');
-      return ids.length;
-    } catch (err) {
       try {
-        this.db.exec('ROLLBACK');
-      } catch {
-        /* ignore */
+        for (const chunk of chunkIds(ids)) this.inStatement('l1_records', 'delete', chunk.length).run(...chunk);
+        if (this.stmtDeleteL1Vec) {
+          for (const chunk of chunkIds(ids)) this.inStatement('l1_vec', 'delete', chunk.length).run(...chunk);
+        }
+        if (this.ftsAvailable) {
+          for (const chunk of chunkIds(ids)) this.inStatement('l1_fts', 'delete', chunk.length).run(...chunk);
+        }
+        this.db.exec('COMMIT');
+        return ids.length;
+      } catch (err) {
+        try {
+          this.db.exec('ROLLBACK');
+        } catch {
+          /* ignore */
+        }
+        throw err;
       }
+    } catch (err) {
       this.logger?.warn(`${TAG} L1 批量删除失败: ${err instanceof Error ? err.message : String(err)}`);
       return 0;
     }
+  }
+
+  /** 按块缓存的 IN 语句（表名/动作/尺寸 → 预编译语句）：热路径不再每次动态 prepare。 */
+  private readonly inStmts = new Map<string, StatementLike>();
+
+  private inStatement(table: 'l1_records' | 'l1_vec' | 'l1_fts', action: 'delete' | 'select', size: number): StatementLike {
+    const key = `${table}:${action}:${size}`;
+    let stmt = this.inStmts.get(key);
+    if (!stmt) {
+      const ph = Array.from({ length: size }, () => '?').join(',');
+      stmt =
+        action === 'delete'
+          ? this.db.prepare(`DELETE FROM ${table} WHERE record_id IN (${ph})`)
+          : this.db.prepare(
+              `SELECT record_id, content, type, priority, scene_name, version, timestamp_str, created_time, updated_time, metadata_json, family FROM ${table} WHERE record_id IN (${ph})`,
+            );
+      this.inStmts.set(key, stmt);
+    }
+    return stmt;
   }
 
   /**
@@ -691,12 +760,10 @@ export class MemoryDb {
 
   getL1ByIds(ids: string[]): MemoryRecord[] {
     if (this.degraded || ids.length === 0) return [];
-    const placeholders = ids.map(() => '?').join(',');
-    const rows = this.db
-      .prepare(
-        `SELECT record_id, content, type, priority, scene_name, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records WHERE record_id IN (${placeholders})`,
-      )
-      .all(...ids) as unknown as L1MetaRow[];
+    const rows: L1MetaRow[] = [];
+    for (const chunk of chunkIds(ids)) {
+      rows.push(...(this.inStatement('l1_records', 'select', chunk.length).all(...chunk) as unknown as L1MetaRow[]));
+    }
     return rows.map(rowToRecord);
   }
 
@@ -978,9 +1045,7 @@ export class MemoryDb {
       const hits: L0SearchHit[] = [];
       for (const { record_id, distance } of rows) {
         if (distance == null || Number.isNaN(distance)) continue;
-        const row = this.db
-          .prepare('SELECT session_id, role, message_text, recorded_at, timestamp FROM l0_conversations WHERE record_id = ?')
-          .get(record_id) as
+        const row = this.stmtGetL0.get(record_id) as
           | { session_id: string; role: string; message_text: string; recorded_at: string; timestamp: number }
           | undefined;
         if (!row) continue;
