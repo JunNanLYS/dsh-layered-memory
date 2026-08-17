@@ -39,6 +39,8 @@ export class MemoryDb {
     degraded = false;
     ftsAvailable = false;
     vecLoaded = false;
+    vecLoadWarned = false;
+    /** 向量维度：活切换嵌入源（D5）时会变——vec0 表随维度重建。 */
     dimensions;
     logger;
     stmtUpsertL1;
@@ -99,25 +101,9 @@ export class MemoryDb {
         // 构造期已降级（开库失败）→ 直接短路
         if (this.degraded)
             return { needsReindex: false, reason: 'database open failed' };
-        // dimensions=0 是合法的"纯 FTS 模式"，不能因 sqlite-vec 缺失而降级（官方语义）
-        if (this.dimensions > 0) {
-            try {
-                const sqliteVec = require('sqlite-vec');
-                this.db.enableLoadExtension(true);
-                try {
-                    sqliteVec.load(this.db);
-                    this.vecLoaded = true;
-                }
-                finally {
-                    // 加载失败也必须复位扩展开关，不留常开的扩展加载面
-                    this.db.enableLoadExtension(false);
-                }
-            }
-            catch (err) {
-                const message = err instanceof Error ? err.message : String(err);
-                this.logger?.warn(`${TAG} sqlite-vec 加载失败，向量检索停用（降级为纯 FTS）: ${message}`);
-            }
-        }
+        // dimensions=0 是合法的"纯 FTS 模式"，不能因 sqlite-vec 缺失而降级（官方语义）；
+        // 后续活切换本地嵌入（维度 > 0）时由 swapProvider 补加载
+        this.ensureVecLoaded();
         try {
             return this.initSchema(providerInfo);
         }
@@ -126,6 +112,82 @@ export class MemoryDb {
             this.logger?.error(`${TAG} schema 初始化失败，存储进入降级模式: ${message}`);
             this.degraded = true;
             return { needsReindex: false, reason: `schema init failed: ${message}` };
+        }
+    }
+    /** 惰性加载 sqlite-vec（纯 FTS 起步后切本地嵌入时补加载）；失败只停用向量能力并告警一次。 */
+    ensureVecLoaded() {
+        if (this.vecLoaded || this.dimensions <= 0)
+            return;
+        try {
+            const sqliteVec = require('sqlite-vec');
+            this.db.enableLoadExtension(true);
+            try {
+                sqliteVec.load(this.db);
+                this.vecLoaded = true;
+            }
+            finally {
+                // 加载失败也必须复位扩展开关，不留常开的扩展加载面
+                this.db.enableLoadExtension(false);
+            }
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (!this.vecLoadWarned) {
+                this.vecLoadWarned = true;
+                this.logger?.warn(`${TAG} sqlite-vec 加载失败，向量检索停用（降级为纯 FTS）: ${message}`);
+            }
+        }
+    }
+    /**
+     * 活切换嵌入源（D5）：provider/model/维度任一变化 → drop 向量表按新维度重建，
+     * 返回 needsReindex=true（调用方后台重嵌，全部成功后 markEmbeddingSynced）；
+     * 配置未变化 → false（切回同一模型不重嵌）。
+     * 新维度 > 0 但 sqlite-vec 不可用 → ok=false（调用方向用户说明，维持 FTS）。
+     */
+    swapProvider(info) {
+        if (this.degraded)
+            return { ok: false, needsReindex: false, error: '数据库降级模式' };
+        if (info.dimensions <= 0) {
+            // 关闭档不走此路径（只换服务实例）；防御性兜底：不动表，无需重嵌
+            this.dimensions = 0;
+            return { ok: true, needsReindex: false };
+        }
+        // 先置新维度再懒加载（ensureVecLoaded 以 dimensions>0 为门）——0 维起步的库
+        // 在首次活切本地/远程嵌入时此处补加载 sqlite-vec
+        this.dimensions = info.dimensions;
+        this.ensureVecLoaded();
+        if (!this.vecLoaded) {
+            return { ok: false, needsReindex: false, error: 'sqlite-vec 扩展不可用，无法启用向量检索' };
+        }
+        // unchanged 判据不能只信 embedding_meta：取消/崩溃路径可能留下"meta=旧 provider、
+        // 物理表=新维度"的错位（切换已 drop 并按新维度重建，但重嵌取消/失败没写 meta）。
+        // 只比对 meta 会在切回旧源时跳过 drop → 旧维度服务往新维度表写向量 → vec0 抛错
+        // → upsert 整体回滚 → 记录从检索库静默消失。必须同时校验物理表的真实维度。
+        const saved = this.readEmbeddingMeta();
+        const physical = this.physicalVecDims();
+        const unchanged = saved &&
+            saved.provider === info.provider &&
+            saved.model === info.model &&
+            saved.dimensions === info.dimensions &&
+            physical === info.dimensions;
+        if (unchanged)
+            return { ok: true, needsReindex: false };
+        this.dropVectorTables();
+        return { ok: true, needsReindex: true };
+    }
+    /** l1_vec 物理表的向量维度（建表 DDL 里的 float[N]）；无表返回 null。 */
+    physicalVecDims() {
+        try {
+            const row = this.db
+                .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'l1_vec'")
+                .get();
+            if (!row?.sql)
+                return null;
+            const m = /float\[(\d+)\]/.exec(row.sql);
+            return m ? Number(m[1]) : null;
+        }
+        catch {
+            return null;
         }
     }
     initSchema(providerInfo) {
@@ -453,9 +515,10 @@ export class MemoryDb {
             .run('embedding_provider_info', JSON.stringify(info));
     }
     /**
-     * 标记当前向量与 embedding 配置同步完成（持久化 meta）。
-     * 只应在重嵌入成功（或空库无历史向量）后调用——过早写入会让下次启动
-     * 比对通过而跳过补齐，向量表永远空着（review P7）。
+     * 持久化 embedding meta（语义：物理向量表当前对应的 provider/维度）。
+     * 活切换在 swapProvider 成功后即写（表已是新维度）；启动/补齐链在
+     * 缺失向量补齐收敛（missing=0）后写——缺失行补齐判据是行数差，
+     * 不依赖 meta（review P7 语义在 backfill 计数判据下仍然收敛）。
      */
     markEmbeddingSynced(info) {
         if (this.degraded)

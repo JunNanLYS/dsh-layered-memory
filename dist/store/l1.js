@@ -106,6 +106,11 @@ export class L1Store {
         const vec = (await this.helper.batch([record.content]))[0];
         this.db.upsertL1(record, vec);
     }
+    /** 活切换嵌入源：同步换底层服务（嵌入源三态切换用）。 */
+    setEmbeddingService(svc) {
+        this.embedSvc = svc;
+        this.helper.setService(svc);
+    }
     async deleteBatch(ids) {
         this.db.deleteL1Batch(ids);
     }
@@ -186,17 +191,25 @@ export class L1Store {
      * 排除已判定"当前 provider 不可嵌入"的 skip 集。返回写入/失败/跳过数——
      * failed > 0 时调用方不应标记 meta 同步完成；skipped（零向量）不算失败、
      * 不阻塞同步标记（否则补齐判据永不收敛，每 30 分钟全量重嵌死循环）。
+     * onProgress/shouldCancel 供活切换（D5）的进度展示与取消。
      */
-    async reindex() {
+    async reindex(opts) {
         if (!this.helper.vectorReady())
             return { written: 0, failed: 0, skipped: 0 };
         const items = this.db.getL1ForReindex(this.db.getVecSkipSet('l1'));
+        const total = items.length;
+        let done = 0;
         let written = 0;
         let failed = 0;
         let skipped = 0;
+        let cancelled = false;
         const skippedNow = [];
         const CHUNK = 16;
         for (let i = 0; i < items.length; i += CHUNK) {
+            if (opts?.shouldCancel?.()) {
+                cancelled = true;
+                break;
+            }
             const chunk = items.slice(i, i + CHUNK);
             let vecs;
             try {
@@ -204,6 +217,8 @@ export class L1Store {
             }
             catch {
                 failed += chunk.length;
+                done += chunk.length;
+                opts?.onProgress?.(done, total);
                 continue;
             }
             chunk.forEach((c, j) => {
@@ -217,10 +232,12 @@ export class L1Store {
                 else
                     failed++;
             });
+            done += chunk.length;
+            opts?.onProgress?.(done, total);
         }
         if (skippedNow.length > 0)
             this.db.addVecSkippedIds('l1', skippedNow);
-        return { written, failed, skipped };
+        return { written, failed, skipped, cancelled };
     }
     postProcess(hits, type, limit) {
         const filtered = type ? hits.filter((h) => h.type === type) : hits;

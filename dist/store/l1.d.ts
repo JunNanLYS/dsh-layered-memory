@@ -17,7 +17,7 @@ export declare class L1Store {
     private readonly recordsDir;
     private readonly legacyFile;
     private readonly helper;
-    private readonly embedSvc;
+    private embedSvc;
     private readonly logger?;
     constructor(dataDir: string, db: MemoryDb, embed?: EmbeddingService, strategy?: RecallStrategy, logger?: MemoryLogger);
     init(): Promise<void>;
@@ -32,6 +32,8 @@ export declare class L1Store {
     appendNew(records: MemoryRecord[]): Promise<void>;
     /** 去重 update/merge 产出的记录：只更新检索库（JSONL 事实源不改写，官方语义）。 */
     upsert(record: MemoryRecord): Promise<void>;
+    /** 活切换嵌入源：同步换底层服务（嵌入源三态切换用）。 */
+    setEmbeddingService(svc: EmbeddingService): void;
     deleteBatch(ids: string[]): Promise<void>;
     /**
      * 三策略检索（自动召回与 memory_search 工具共用接缝）。
@@ -63,11 +65,16 @@ export declare class L1Store {
      * 排除已判定"当前 provider 不可嵌入"的 skip 集。返回写入/失败/跳过数——
      * failed > 0 时调用方不应标记 meta 同步完成；skipped（零向量）不算失败、
      * 不阻塞同步标记（否则补齐判据永不收敛，每 30 分钟全量重嵌死循环）。
+     * onProgress/shouldCancel 供活切换（D5）的进度展示与取消。
      */
-    reindex(): Promise<{
+    reindex(opts?: {
+        onProgress?: (done: number, total: number) => void;
+        shouldCancel?: () => boolean;
+    }): Promise<{
         written: number;
         failed: number;
         skipped: number;
+        cancelled?: boolean;
     }>;
     private postProcess;
 }

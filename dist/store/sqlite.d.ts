@@ -28,7 +28,9 @@ export declare class MemoryDb {
     private degraded;
     private ftsAvailable;
     private vecLoaded;
-    private readonly dimensions;
+    private vecLoadWarned;
+    /** 向量维度：活切换嵌入源（D5）时会变——vec0 表随维度重建。 */
+    private dimensions;
     private readonly logger?;
     private stmtUpsertL1;
     private stmtGetL1;
@@ -56,6 +58,21 @@ export declare class MemoryDb {
      * providerInfo 变化（provider/model/维度）时 drop 向量表并返回 needsReindex。
      */
     init(providerInfo?: EmbeddingProviderInfo): StoreInitResult;
+    /** 惰性加载 sqlite-vec（纯 FTS 起步后切本地嵌入时补加载）；失败只停用向量能力并告警一次。 */
+    private ensureVecLoaded;
+    /**
+     * 活切换嵌入源（D5）：provider/model/维度任一变化 → drop 向量表按新维度重建，
+     * 返回 needsReindex=true（调用方后台重嵌，全部成功后 markEmbeddingSynced）；
+     * 配置未变化 → false（切回同一模型不重嵌）。
+     * 新维度 > 0 但 sqlite-vec 不可用 → ok=false（调用方向用户说明，维持 FTS）。
+     */
+    swapProvider(info: EmbeddingProviderInfo): {
+        ok: boolean;
+        needsReindex: boolean;
+        error?: string;
+    };
+    /** l1_vec 物理表的向量维度（建表 DDL 里的 float[N]）；无表返回 null。 */
+    private physicalVecDims;
     private initSchema;
     private prepareL1VecStatements;
     private prepareL0VecStatements;
@@ -67,9 +84,10 @@ export declare class MemoryDb {
     private readEmbeddingMeta;
     private writeEmbeddingMeta;
     /**
-     * 标记当前向量与 embedding 配置同步完成（持久化 meta）。
-     * 只应在重嵌入成功（或空库无历史向量）后调用——过早写入会让下次启动
-     * 比对通过而跳过补齐，向量表永远空着（review P7）。
+     * 持久化 embedding meta（语义：物理向量表当前对应的 provider/维度）。
+     * 活切换在 swapProvider 成功后即写（表已是新维度）；启动/补齐链在
+     * 缺失向量补齐收敛（missing=0）后写——缺失行补齐判据是行数差，
+     * 不依赖 meta（review P7 语义在 backfill 计数判据下仍然收敛）。
      */
     markEmbeddingSynced(info: EmbeddingProviderInfo): void;
     /** upsert 一条 L1（元数据 + FTS 同步；embedding 非零时写向量）。失败返回 false 不抛。 */

@@ -6,7 +6,7 @@ export declare class L0Store {
     private readonly dir;
     private readonly legacyDir;
     private readonly helper;
-    private readonly embedSvc;
+    private embedSvc;
     private readonly logger?;
     constructor(dataDir: string, db: MemoryDb, embed?: EmbeddingService, logger?: MemoryLogger);
     init(): Promise<void>;
@@ -17,13 +17,20 @@ export declare class L0Store {
     countToday(): Promise<number>;
     /** 检索：FTS + 向量 hybrid（RRF 融合），返回按相关性排序的消息。 */
     search(query: string, limit: number): Promise<L0MessageRecord[]>;
+    /** 活切换嵌入源：同步换底层服务（嵌入源三态切换用）。 */
+    setEmbeddingService(svc: EmbeddingService): void;
     /**
      * 增量重嵌入（同 L1Store.reindex：只补缺失向量，零向量记 skipped 并入 skip 集，
-     * 不算失败、不阻塞同步标记——保证补齐判据收敛）。
+     * 不算失败、不阻塞同步标记——保证补齐判据收敛）。onProgress/shouldCancel
+     * 供活切换（D5）的进度展示与取消。
      */
-    reindex(): Promise<{
+    reindex(opts?: {
+        onProgress?: (done: number, total: number) => void;
+        shouldCancel?: () => boolean;
+    }): Promise<{
         written: number;
         failed: number;
         skipped: number;
+        cancelled?: boolean;
     }>;
 }

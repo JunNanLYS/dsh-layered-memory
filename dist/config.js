@@ -46,6 +46,8 @@ export const memorySchema = Schema.object({
         dimensions: Schema.number().min(0).max(8192).default(0),
         maxInputChars: Schema.number().min(100).max(100_000).default(5000),
         timeoutMs: Schema.number().min(1000).max(300_000).default(10_000),
+        allowLocalModels: Schema.boolean().default(true),
+        mirror: Schema.string().default('https://hf-mirror.com'),
     }),
     llm: Schema.object({
         provider: Schema.string().default(''),

@@ -18,7 +18,7 @@ export class L0Store {
   private readonly dir: string;
   private readonly legacyDir: string;
   private readonly helper: EmbedHelper;
-  private readonly embedSvc: EmbeddingService;
+  private embedSvc: EmbeddingService;
   private readonly logger?: MemoryLogger;
 
   constructor(
@@ -125,25 +125,44 @@ export class L0Store {
     return this.db.searchL0Fts(query, limit).map(({ score: _score, ...r }) => r);
   }
 
+  /** 活切换嵌入源：同步换底层服务（嵌入源三态切换用）。 */
+  setEmbeddingService(svc: EmbeddingService): void {
+    this.embedSvc = svc;
+    this.helper.setService(svc);
+  }
+
   /**
    * 增量重嵌入（同 L1Store.reindex：只补缺失向量，零向量记 skipped 并入 skip 集，
-   * 不算失败、不阻塞同步标记——保证补齐判据收敛）。
+   * 不算失败、不阻塞同步标记——保证补齐判据收敛）。onProgress/shouldCancel
+   * 供活切换（D5）的进度展示与取消。
    */
-  async reindex(): Promise<{ written: number; failed: number; skipped: number }> {
+  async reindex(opts?: {
+    onProgress?: (done: number, total: number) => void;
+    shouldCancel?: () => boolean;
+  }): Promise<{ written: number; failed: number; skipped: number; cancelled?: boolean }> {
     if (!this.helper.vectorReady()) return { written: 0, failed: 0, skipped: 0 };
     const items = this.db.getL0ForReindex(this.db.getVecSkipSet('l0'));
+    const total = items.length;
+    let done = 0;
     let written = 0;
     let failed = 0;
     let skipped = 0;
+    let cancelled = false;
     const skippedNow: string[] = [];
     const CHUNK = 32;
     for (let i = 0; i < items.length; i += CHUNK) {
+      if (opts?.shouldCancel?.()) {
+        cancelled = true;
+        break;
+      }
       const chunk = items.slice(i, i + CHUNK);
       let vecs: Float32Array[];
       try {
         vecs = await this.embedSvc.embedBatch(chunk.map((c) => c.text));
       } catch {
         failed += chunk.length;
+        done += chunk.length;
+        opts?.onProgress?.(done, total);
         continue;
       }
       chunk.forEach((c, j) => {
@@ -155,8 +174,10 @@ export class L0Store {
         if (this.db.updateL0Vec(c.id, vecs[j], '')) written++;
         else failed++;
       });
+      done += chunk.length;
+      opts?.onProgress?.(done, total);
     }
     if (skippedNow.length > 0) this.db.addVecSkippedIds('l0', skippedNow);
-    return { written, failed, skipped };
+    return { written, failed, skipped, cancelled };
   }
 }

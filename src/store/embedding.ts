@@ -134,9 +134,15 @@ export class EmbedHelper {
   private warned = false;
 
   constructor(
-    private readonly embed: EmbeddingService,
+    private embed: EmbeddingService,
     private readonly logger?: MemoryLogger,
   ) {}
+
+  /** 活切换嵌入源（D4/D5）：换掉底层服务并复位一次性告警（新服务重新获得告警机会）。 */
+  setService(svc: EmbeddingService): void {
+    this.embed = svc;
+    this.warned = false;
+  }
 
   vectorReady(): boolean {
     return this.embed.isReady();

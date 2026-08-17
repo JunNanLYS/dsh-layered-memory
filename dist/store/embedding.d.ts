@@ -55,10 +55,12 @@ export declare class RemoteEmbeddingService implements EmbeddingService {
  * 同类失败只告警一次，避免刷屏。
  */
 export declare class EmbedHelper {
-    private readonly embed;
+    private embed;
     private readonly logger?;
     private warned;
     constructor(embed: EmbeddingService, logger?: MemoryLogger | undefined);
+    /** 活切换嵌入源（D4/D5）：换掉底层服务并复位一次性告警（新服务重新获得告警机会）。 */
+    setService(svc: EmbeddingService): void;
     vectorReady(): boolean;
     /** 查询向量；失败或空向量返回 undefined（调用方降级 FTS）。 */
     query(text: string): Promise<Float32Array | undefined>;

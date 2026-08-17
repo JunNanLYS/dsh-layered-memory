@@ -116,20 +116,33 @@ export class L0Store {
         }
         return this.db.searchL0Fts(query, limit).map(({ score: _score, ...r }) => r);
     }
+    /** 活切换嵌入源：同步换底层服务（嵌入源三态切换用）。 */
+    setEmbeddingService(svc) {
+        this.embedSvc = svc;
+        this.helper.setService(svc);
+    }
     /**
      * 增量重嵌入（同 L1Store.reindex：只补缺失向量，零向量记 skipped 并入 skip 集，
-     * 不算失败、不阻塞同步标记——保证补齐判据收敛）。
+     * 不算失败、不阻塞同步标记——保证补齐判据收敛）。onProgress/shouldCancel
+     * 供活切换（D5）的进度展示与取消。
      */
-    async reindex() {
+    async reindex(opts) {
         if (!this.helper.vectorReady())
             return { written: 0, failed: 0, skipped: 0 };
         const items = this.db.getL0ForReindex(this.db.getVecSkipSet('l0'));
+        const total = items.length;
+        let done = 0;
         let written = 0;
         let failed = 0;
         let skipped = 0;
+        let cancelled = false;
         const skippedNow = [];
         const CHUNK = 32;
         for (let i = 0; i < items.length; i += CHUNK) {
+            if (opts?.shouldCancel?.()) {
+                cancelled = true;
+                break;
+            }
             const chunk = items.slice(i, i + CHUNK);
             let vecs;
             try {
@@ -137,6 +150,8 @@ export class L0Store {
             }
             catch {
                 failed += chunk.length;
+                done += chunk.length;
+                opts?.onProgress?.(done, total);
                 continue;
             }
             chunk.forEach((c, j) => {
@@ -150,9 +165,11 @@ export class L0Store {
                 else
                     failed++;
             });
+            done += chunk.length;
+            opts?.onProgress?.(done, total);
         }
         if (skippedNow.length > 0)
             this.db.addVecSkippedIds('l0', skippedNow);
-        return { written, failed, skipped };
+        return { written, failed, skipped, cancelled };
     }
 }

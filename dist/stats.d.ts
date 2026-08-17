@@ -7,6 +7,7 @@ import type { L1Store } from './store/l1.js';
 import type { PersonaStore } from './store/persona.js';
 import type { SceneStore } from './store/scenes.js';
 import type { SessionModeStore } from './store/session-modes.js';
+import type { EmbeddingManager } from './store/embedding-source.js';
 import type { StateStore } from './store/state.js';
 import type { MemoryFamily, MemoryLogger } from './types.js';
 export declare const PLUGIN_VERSION: string;
@@ -49,4 +50,4 @@ export declare function registerMemoryRpc(ctx: Context, cfg: MemoryConfig, store
     scenes: Record<MemoryFamily, SceneStore>;
     persona: Record<MemoryFamily, PersonaStore>;
     state: StateStore;
-}, logger: MemoryLogger, status?: MemoryStatusSource, live?: LiveSettingsHandle, modes?: SessionModeStore, dataDir?: string, rebuild?: RebuildController): void;
+}, logger: MemoryLogger, status?: MemoryStatusSource, live?: LiveSettingsHandle, modes?: SessionModeStore, dataDir?: string, rebuild?: RebuildController, embedManager?: EmbeddingManager): void;

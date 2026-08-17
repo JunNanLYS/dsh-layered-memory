@@ -3,16 +3,30 @@
  * 运行：npm run smoke（node dist-smoke/smoke.js）
  */
 import { existsSync, promises as fs } from 'node:fs';
+import { createHash } from 'node:crypto';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { SessionEvent } from '@deepseek-ai/dsh-session';
+import type { MemoryConfig } from './config.js';
 import { memorySchema } from './config.js';
 import { Bm25Index } from './store/bm25.js';
+import { ModelDownloadQueue } from './store/download-queue.js';
 import type { EmbeddingService } from './store/embedding.js';
+import { NoopEmbeddingService } from './store/embedding.js';
+import {
+  EmbeddingManager,
+  EmbeddingSourceStore,
+  resolveInitialEmbedding,
+  type EmbeddingSourceState,
+  type InitialEmbedding,
+} from './store/embedding-source.js';
 import { L0Store } from './store/l0.js';
 import { L1Store } from './store/l1.js';
+import { LocalEmbeddingService } from './store/local-embedding.js';
+import { catalogById, catalogTotalBytes, MODEL_CATALOG, type CatalogEntry } from './store/model-catalog.js';
 import { PersonaStore } from './store/persona.js';
+import { RuntimeInstaller } from './store/runtime-installer.js';
 import { SceneStore, sanitizeFilename } from './store/scenes.js';
 import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
@@ -1478,6 +1492,455 @@ async function main(): Promise<void> {
     // 组件类接线：按钮/输入/Tab/卡片类在 JSX 侧被引用
     for (const cls of ['dsh-mem-btn', 'dsh-mem-input', 'dsh-mem-select', 'dsh-mem-tab', 'dsh-mem-card', 'dsh-mem-root']) {
       assert(clientSrc.includes(`"${cls}`), `组件类被引用：${cls}`);
+    }
+  }
+
+  // ── 22. 模型目录 + 下载器（#20：目录即完整性契约 + 断点续传状态机） ──
+  console.log('== 22. 模型目录 + 下载器 ==');
+  {
+    assert(MODEL_CATALOG.length === 3, '目录三档模型');
+    assert(new Set(MODEL_CATALOG.map((m) => m.dims)).size === 3, '三档维度互异（切换触发重嵌）');
+    for (const m of MODEL_CATALOG) {
+      assert(m.files.length > 0 && /^[0-9a-f]{40,}$/.test(m.revision), `${m.id} 锁定 revision`);
+      for (const f of m.files) {
+        assert(/^[0-9a-f]{64}$/.test(f.sha256), `${m.id}/${f.path} sha256 为 64 位 hex`);
+        assert(f.size > 0, `${m.id}/${f.path} size > 0`);
+      }
+      assert(catalogTotalBytes(m) === m.files.reduce((a, f) => a + f.size, 0), `${m.id} 总量合计一致`);
+    }
+    assert(catalogById('embeddinggemma-300m')!.files.some((f) => f.path.endsWith('.onnx_data')), 'gemma 外部权重 onnx_data 在清单');
+
+    const tmp22 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-dl-'));
+    try {
+      const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
+      const bodyA = 'hello-config-A';
+      const bodyB = 'world-weights-B';
+      const mkEntry = (): CatalogEntry => ({
+        id: 'test-model',
+        name: '测试模型',
+        repo: 't/t',
+        revision: 'r'.repeat(40),
+        dims: 8,
+        contextTokens: 8,
+        pooling: 'cls',
+        tags: [],
+        description: '',
+        files: [
+          { path: 'config.json', size: bodyA.length, sha256: sha(bodyA) },
+          { path: 'onnx/model.onnx', size: bodyB.length, sha256: sha(bodyB) },
+        ],
+      });
+      /** 假 fetch：按 URL 后缀路由，支持 Range 续传语义（206/200 + content-length）。 */
+      const serve = (routes: Array<[string, string]>, opts?: { truncateAt?: Map<string, number>; failOn?: string }): typeof fetch =>
+        (async (url: string, init?: RequestInit) => {
+          for (const [suffix, content] of routes) {
+            if (!url.endsWith(suffix)) continue;
+            if (opts?.failOn === suffix) throw new Error(`模拟网络故障: ${suffix}`);
+            const truncated = opts?.truncateAt?.get(suffix);
+            const payload = truncated !== undefined ? content.slice(0, truncated) : content;
+            const range = (init?.headers as Record<string, string> | undefined)?.range;
+            const from = range ? Number(/bytes=(\d+)-/.exec(range)?.[1] ?? 0) : 0;
+            if (from > payload.length) throw new Error('range 越界');
+            const slice = payload.slice(from);
+            return new Response(slice, {
+              status: from > 0 ? 206 : 200,
+              headers: { 'content-length': String(slice.length) },
+            });
+          }
+          throw new Error('fake fetch 无路由: ' + url);
+        }) as typeof fetch;
+
+      // a. happy path：全量下载 + 校验 + 落盘
+      {
+        const q = new ModelDownloadQueue(tmp22, {
+          mirror: 'https://fake.example',
+          fetchImpl: serve([
+            ['/config.json', bodyA],
+            ['/onnx/model.onnx', bodyB],
+          ]),
+          freeBytes: async () => 1e9,
+        });
+        const r = await q.startEntry(mkEntry());
+        assert(r.phase === 'done', `全量下载 done（${r.phase}${r.error ? ': ' + r.error : ''}）`);
+        const a = await fs.readFile(path.join(q.modelsDir('test-model'), 'config.json'), 'utf8');
+        const b = await fs.readFile(path.join(q.modelsDir('test-model'), 'onnx', 'model.onnx'), 'utf8');
+        assert(a === bodyA && b === bodyB, '文件内容完整落盘');
+        // 合成模型不在内置目录（listStatus 只扫目录）——验证断点旁车已清理
+        let partLeft = false;
+        await fs.stat(path.join(q.modelsDir('test-model'), 'onnx', 'model.onnx.part')).then(
+          () => { partLeft = true; },
+          () => { partLeft = false; },
+        );
+        assert(!partLeft, '成功后 .part 旁车已清理');
+      }
+
+      // b. 断点续传：第二文件中途数量不吻合 → .part 保留 → 重跑从 Range 续传
+      {
+        const dirB = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-resume-'));
+        const entry = mkEntry();
+        const q1 = new ModelDownloadQueue(dirB, {
+          mirror: 'https://fake.example',
+          fetchImpl: serve(
+            [
+              ['/config.json', bodyA],
+              ['/onnx/model.onnx', bodyB],
+            ],
+            { truncateAt: new Map([['/onnx/model.onnx', 6]]) },
+          ),
+          freeBytes: async () => 1e9,
+        });
+        const r1 = await q1.startEntry(entry);
+        assert(r1.phase === 'error' && /数量不吻合/.test(r1.error ?? ''), `中断下载报错保留断点（${r1.error}）`);
+        const partPath = path.join(q1.modelsDir('test-model'), 'onnx', 'model.onnx.part');
+        assert((await fs.stat(partPath)).size === 6, '.part 保留 6 字节断点');
+
+        const q2 = new ModelDownloadQueue(dirB, {
+          mirror: 'https://fake.example',
+          fetchImpl: serve([
+            ['/config.json', bodyA],
+            ['/onnx/model.onnx', bodyB],
+          ]),
+          freeBytes: async () => 1e9,
+        });
+        const r2 = await q2.startEntry(entry);
+        assert(r2.phase === 'done', `续传后 done（${r2.error ?? ''}）`);
+        const b2 = await fs.readFile(path.join(dirB, 'models', 'test-model', 'onnx', 'model.onnx'), 'utf8');
+        assert(b2 === bodyB, '续传拼接内容完整（校验通过）');
+      }
+
+      // c. sha256 失配 → 删除断点报错
+      {
+        const dirC = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-badsha-'));
+        const q = new ModelDownloadQueue(dirC, {
+          mirror: 'https://fake.example',
+          fetchImpl: serve([
+            ['/config.json', bodyA],
+            ['/onnx/model.onnx', 'X'.repeat(bodyB.length)],
+          ]),
+          freeBytes: async () => 1e9,
+        });
+        const r = await q.startEntry(mkEntry());
+        assert(r.phase === 'error' && /sha256 校验失败/.test(r.error ?? ''), `哈希失配拦截（${r.error}）`);
+        let partExists = true;
+        await fs.stat(path.join(dirC, 'models', 'test-model', 'onnx', 'model.onnx.part')).then(
+          () => { partExists = true; },
+          () => { partExists = false; },
+        );
+        assert(!partExists, '失配断点已删除');
+      }
+
+      // d. 磁盘门禁
+      {
+        const dirD = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-disk-'));
+        const q = new ModelDownloadQueue(dirD, {
+          mirror: 'https://fake.example',
+          fetchImpl: serve([
+            ['/config.json', bodyA],
+            ['/onnx/model.onnx', bodyB],
+          ]),
+          freeBytes: async () => 10,
+        });
+        const r = await q.startEntry(mkEntry());
+        assert(r.phase === 'error' && /磁盘剩余空间不足/.test(r.error ?? ''), `磁盘门禁拦截（${r.error}）`);
+      }
+
+      // e. 串行队列 + 取消（挂起 fetch 尊重 abort）
+      {
+        const dirE = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-cancel-'));
+        const hang: typeof fetch = ((url: string, init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+            void url;
+          })) as typeof fetch;
+        const q = new ModelDownloadQueue(dirE, { mirror: 'https://fake.example', fetchImpl: hang, freeBytes: async () => 1e9 });
+        const inflight = q.startEntry(mkEntry()).then((r) => r);
+        await new Promise((r) => setTimeout(r, 30));
+        let secondRejected = false;
+        try {
+          await q.startEntry(mkEntry());
+        } catch {
+          secondRejected = true;
+        }
+        assert(secondRejected, '忙时串行队列拒绝新任务');
+        assert(q.cancel(), '取消在途任务');
+        const r = await inflight;
+        assert(r.phase === 'cancelled', `取消后终态 cancelled（${r.phase}）`);
+      }
+
+      // f. 服务器忽略 Range 回 200：删断点从零重写
+      {
+        const dirF = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-200fb-'));
+        const entry = mkEntry();
+        const partDir = path.join(dirF, 'models', 'test-model', 'onnx');
+        await fs.mkdir(partDir, { recursive: true });
+        await fs.writeFile(path.join(partDir, 'model.onnx.part'), bodyB.slice(0, 5), 'utf8');
+        const noRange: typeof fetch = (async (url: string, _init?: RequestInit) => {
+          if (url.endsWith('/config.json')) return new Response(bodyA, { headers: { 'content-length': String(bodyA.length) } });
+          if (url.endsWith('/onnx/model.onnx')) return new Response(bodyB, { status: 200, headers: { 'content-length': String(bodyB.length) } });
+          throw new Error('no route ' + url);
+        }) as typeof fetch;
+        const q = new ModelDownloadQueue(dirF, { mirror: 'https://fake.example', fetchImpl: noRange, freeBytes: async () => 1e9 });
+        const r = await q.startEntry(entry);
+        assert(r.phase === 'done', `200 回退重写完成（${r.phase}${r.error ? ': ' + r.error : ''}）`);
+        const fb = await fs.readFile(path.join(dirF, 'models', 'test-model', 'onnx', 'model.onnx'), 'utf8');
+        assert(fb === bodyB, '200 回退从零重写内容正确');
+      }
+
+      // g. 满断点预校验：.part 已是完整文件（进程死在 rename 前）→ 不发请求直接收编
+      {
+        const dirG = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-fullpart-'));
+        const entry = mkEntry();
+        const modelDir = path.join(dirG, 'models', 'test-model');
+        const partDir = path.join(modelDir, 'onnx');
+        await fs.mkdir(partDir, { recursive: true });
+        await fs.writeFile(path.join(modelDir, 'config.json'), bodyA, 'utf8');
+        await fs.writeFile(path.join(partDir, 'model.onnx.part'), bodyB, 'utf8');
+        const boom: typeof fetch = (async () => {
+          throw new Error('不应发起网络请求');
+        }) as typeof fetch;
+        const q = new ModelDownloadQueue(dirG, { mirror: 'https://fake.example', fetchImpl: boom, freeBytes: async () => 1e9 });
+        const r = await q.startEntry(entry);
+        assert(r.phase === 'done', `满断点直接收编（${r.phase}${r.error ? ': ' + r.error : ''}）`);
+        const fb = await fs.readFile(path.join(dirG, 'models', 'test-model', 'onnx', 'model.onnx'), 'utf8');
+        assert(fb === bodyB, '满断点 rename 落位');
+      }
+
+      // h. 服务器对满/异常 Range 回 416：删断点一次性从零重下
+      {
+        const dirH = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-416-'));
+        const entry = mkEntry();
+        const modelDir = path.join(dirH, 'models', 'test-model');
+        const partDir = path.join(modelDir, 'onnx');
+        await fs.mkdir(partDir, { recursive: true });
+        await fs.writeFile(path.join(modelDir, 'config.json'), bodyA, 'utf8');
+        await fs.writeFile(path.join(partDir, 'model.onnx.part'), bodyB.slice(0, 5), 'utf8');
+        let rangeHit = false;
+        const fetch416: typeof fetch = (async (url: string, init?: RequestInit) => {
+          if (url.endsWith('/config.json')) return new Response(bodyA, { headers: { 'content-length': String(bodyA.length) } });
+          if (url.endsWith('/onnx/model.onnx')) {
+            const range = (init?.headers as Record<string, string> | undefined)?.range;
+            if (range && !rangeHit) {
+              rangeHit = true;
+              return new Response('', { status: 416 });
+            }
+            return new Response(bodyB, { status: 200, headers: { 'content-length': String(bodyB.length) } });
+          }
+          throw new Error('no route ' + url);
+        }) as typeof fetch;
+        const q = new ModelDownloadQueue(dirH, { mirror: 'https://fake.example', fetchImpl: fetch416, freeBytes: async () => 1e9 });
+        const r = await q.startEntry(entry);
+        assert(r.phase === 'done', `416 回退重下完成（${r.phase}${r.error ? ': ' + r.error : ''}）`);
+        assert(rangeHit, '416 分支确实触发');
+        const fb = await fs.readFile(path.join(dirH, 'models', 'test-model', 'onnx', 'model.onnx'), 'utf8');
+        assert(fb === bodyB, '416 回退后内容完整');
+      }
+    } finally {
+      await fs.rm(tmp22, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  // ── 23. 本地嵌入服务状态机（#21：懒加载/就绪/失败/释放，假 loader 不触真模型） ──
+  console.log('== 23. 本地嵌入服务 ==');
+  {
+    const entry = catalogById('bge-small-zh-v1.5')!;
+    const vec512 = (t: string): Float32Array => {
+      const v = new Float32Array(512);
+      let h = 0;
+      for (const ch of t) h = (h * 31 + ch.codePointAt(0)!) >>> 0;
+      v[h % 512] = 1;
+      v[(h >>> 9) % 512] = 3;
+      const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
+      return new Float32Array(Array.from(v).map((x) => x / norm)) as Float32Array;
+    };
+    const fakeExtractor = async (texts: string[]) => texts.map((t) => ({ data: vec512(t) }));
+    const okLoader = async () => ({ pipeline: async () => fakeExtractor, env: {} });
+    const svc = new LocalEmbeddingService(entry, '/fake/model/dir', okLoader, silentLogger);
+    assert(!svc.isReady() && svc.getState() === 'idle', '初始 idle');
+    const vecs = await svc.embedBatch(['你好世界', 'hello world']);
+    assert(svc.isReady() && svc.getState() === 'ready', '首次调用触发懒加载 → ready');
+    const norm = Math.sqrt(Array.from(vecs[0]).reduce((s, x) => s + x * x, 0));
+    assert(Math.abs(norm - 1) < 1e-5, `pipeline 归一化保持 L2=1（${norm.toFixed(4)}）`);
+    assert(vecs[0].length === 512, '维度 = 目录 dims');
+    assert(svc.getProviderInfo().provider === 'local' && svc.getProviderInfo().dimensions === 512, 'providerInfo 为 local/512');
+    svc.close();
+    assert(!svc.isReady() && svc.getState() === 'terminated', 'close 释放进入 terminated');
+    await svc.embedBatch(['x']).then(
+      () => assert(false, 'terminated 态 embedBatch 应抛'),
+      (e) => assert(/已释放/.test(String(e)), 'terminated 态不可复活（防卸载后模型重载泄漏）'),
+    );
+
+    const badLoader = async () => {
+      throw new Error('模块加载爆炸');
+    };
+    const svc2 = new LocalEmbeddingService(entry, '/fake', badLoader, silentLogger);
+    await svc2.waitForReady().then(
+      () => assert(false, '加载失败应 reject'),
+      () => assert(true, '加载失败 reject'),
+    );
+    assert(svc2.getState() === 'failed' && /模块加载爆炸/.test(svc2.getLoadError() ?? ''), '失败态带原因');
+    await svc2.embed('x').then(
+      () => assert(false, 'failed 态 embed 应抛'),
+      (e) => assert(/加载失败/.test(String(e)), 'failed 态 embed 抛明确错误'),
+    );
+    svc2.close();
+  }
+
+  // ── 24. 嵌入源状态层 + 活切换重嵌链（#22：三态/上限/切换触发重嵌/失败回滚） ──
+  console.log('== 24. 嵌入源三态与活切换 ==');
+  {
+    const tmp24 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-src-'));
+    try {
+      const cfgValue = (await memorySchema['~standard'].validate({})) as unknown as { value: MemoryConfig };
+      const cfg = cfgValue.value;
+
+      // a. 状态存储：默认 remote / 持久化往返 / 坏文件降级
+      const ss = new EmbeddingSourceStore(tmp24, silentLogger);
+      await ss.init();
+      assert(ss.get().source === 'remote', '无状态文件默认 remote（老用户语义）');
+      await ss.set({ source: 'local', activeModel: 'bge-m3' });
+      const ss2 = new EmbeddingSourceStore(tmp24, silentLogger);
+      await ss2.init();
+      assert(ss2.get().source === 'local' && ss2.get().activeModel === 'bge-m3', '写穿持久化往返');
+      await fs.writeFile(path.join(tmp24, 'embedding-source.json'), '{oops', 'utf8');
+      const ss3 = new EmbeddingSourceStore(tmp24, silentLogger);
+      await ss3.init();
+      assert(ss3.get().source === 'remote', '坏状态文件降级默认');
+
+      // b. 初始解析：off / local 缺模型 / local 被部署禁用
+      const fakeStore = (s: EmbeddingSourceState): EmbeddingSourceStore =>
+        ({ get: () => s, init: async () => {}, set: async () => {} }) as unknown as EmbeddingSourceStore;
+      const installer24 = new RuntimeInstaller(tmp24, '0.0.0-test', { logger: silentLogger });
+      const dl24 = new ModelDownloadQueue(tmp24, { mirror: 'https://fake.example', logger: silentLogger });
+      const mkLocal = () => null;
+      const rOff = await resolveInitialEmbedding(cfg, fakeStore({ source: 'off', activeModel: null }), dl24, mkLocal, silentLogger);
+      assert(rOff.dims === 0 && !rOff.providerInfo, 'off 初始 → Noop/0 维');
+      const rMissing = await resolveInitialEmbedding(
+        cfg,
+        fakeStore({ source: 'local', activeModel: 'bge-small-zh-v1.5' }),
+        dl24,
+        mkLocal,
+        silentLogger,
+      );
+      assert(rMissing.dims === 0 && /模型文件缺失/.test(rMissing.note ?? ''), `local 缺模型降级（${rMissing.note}）`);
+      const cfgNoLocal = JSON.parse(JSON.stringify(cfg)) as MemoryConfig;
+      cfgNoLocal.embedding.allowLocalModels = false;
+      const rForbidden = await resolveInitialEmbedding(
+        cfgNoLocal,
+        fakeStore({ source: 'local', activeModel: 'bge-small-zh-v1.5' }),
+        dl24,
+        mkLocal,
+        silentLogger,
+      );
+      assert(/禁用/.test(rForbidden.note ?? ''), '部署禁用本地 → 降级并说明');
+
+      // c. 活切换链：local 全链（假安装器 + 假 transformers 模块 + 预置模型文件）→ 重嵌 → 持久化
+      const db24 = new MemoryDb(path.join(tmp24, 'memory.db'), 0, silentLogger);
+      db24.init(undefined);
+      const l0s = new L0Store(tmp24, db24, new NoopEmbeddingService(), silentLogger);
+      const l1s = new L1Store(tmp24, db24, new NoopEmbeddingService(), 'hybrid', silentLogger);
+      await l0s.init();
+      await l1s.init();
+      const t24 = Date.now();
+      const rec24 = (id: string) => ({
+        id,
+        content: `本地嵌入切换验证 ${id}`,
+        type: 'work_fact',
+        priority: 60,
+        scene_name: 's',
+        timestamps: [t24],
+        createdAt: t24,
+        updatedAt: t24,
+      });
+      await l1s.appendNew([rec24('m1'), rec24('m2')]);
+
+      const entry = catalogById('bge-small-zh-v1.5')!;
+      for (const f of entry.files) {
+        const p = path.join(dl24.modelsDir(entry.id), f.path);
+        await fs.mkdir(path.dirname(p), { recursive: true });
+        await fs.writeFile(p, Buffer.alloc(f.size, 7));
+      }
+
+      const vecFor = (t: string, dims: number): Float32Array => {
+        const v = new Float32Array(dims);
+        let h = 0;
+        for (const ch of t) h = (h * 31 + ch.codePointAt(0)!) >>> 0;
+        v[h % dims] = 1;
+        v[(h >>> 9) % dims] = 3;
+        const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
+        return new Float32Array(Array.from(v).map((x) => x / norm)) as Float32Array;
+      };
+      const fakeExtractor24 = async (texts: string[]) => texts.map((t) => ({ data: vecFor(t, entry.dims) }));
+      const fakeInstaller = {
+        runtimeDir: path.join(tmp24, 'runtime'),
+        getProgress: () => ({ phase: 'ready', targetVersion: '0.0.0-test', installedVersion: '0.0.0-test', startedAt: 0, elapsedMs: 0, lastLines: [] }),
+        installedVersion: async () => '0.0.0-test',
+        isReady: async () => true,
+        ensure: async () => true,
+        cancel: () => false,
+        resolveModule: () => ({ pipeline: async () => fakeExtractor24, env: {} }),
+      } as unknown as RuntimeInstaller;
+
+      const initial24: InitialEmbedding = { svc: new NoopEmbeddingService(), dims: 0 };
+      const mgr = new EmbeddingManager({
+        dataDir: tmp24,
+        cfg,
+        db: db24,
+        l0: l0s,
+        l1: l1s,
+        sourceStore: ss,
+        installer: fakeInstaller,
+        downloader: dl24,
+        initial: initial24,
+        logger: silentLogger,
+      });
+
+      const waitApply = async (): Promise<string> => {
+        for (let i = 0; i < 400; i++) {
+          const snap = await mgr.snapshot();
+          if (!snap.apply.busy) return snap.apply.phase;
+          await new Promise((r) => setTimeout(r, 25));
+        }
+        return 'timeout';
+      };
+
+      const acc1 = mgr.requestSource({ source: 'local', activeModel: entry.id });
+      assert(acc1.accepted, 'local 切换请求被接受');
+      const phase1 = await waitApply();
+      const snap1 = await mgr.snapshot();
+      assert(phase1 === 'done', `local 切换链完成（phase=${phase1}，msg=${snap1.apply.message}）`);
+      assert(ss.get().source === 'local' && ss.get().activeModel === entry.id, '切换成功后状态持久化');
+      assert(db24.getCapabilities().vectorSearch, '向量能力随 swapProvider 启用（0 维起步懒加载 sqlite-vec）');
+      assert(db24.countL1Vec() === 2, `后台重嵌入写满 L1 向量（实际 ${db24.countL1Vec()}）`);
+      assert(snap1.local?.state === 'ready', '本地服务就绪');
+      const swapAgain = db24.swapProvider({ provider: 'local', model: entry.id, dimensions: entry.dims });
+      assert(swapAgain.ok && !swapAgain.needsReindex, '同 provider 复切不重嵌（meta 已同步）');
+
+      const accOff = mgr.requestSource({ source: 'off' });
+      assert(accOff.accepted, 'off 切换接受');
+      assert((await waitApply()) === 'done', 'off 切换完成');
+      assert(ss.get().source === 'off', 'off 状态持久化');
+
+      const rr = mgr.requestSource({ source: 'remote' });
+      assert(!rr.accepted && /部署未配置/.test(rr.error ?? ''), `远程档无四件套被拒（${rr.error}）`);
+
+      const accBad = mgr.requestSource({ source: 'local', activeModel: 'bge-m3' });
+      assert(accBad.accepted, '未下载模型的切换请求进入应用链');
+      const phaseBad = await waitApply();
+      const snapBad = await mgr.snapshot();
+      assert(phaseBad === 'error' && /模型文件不完整/.test(snapBad.apply.message), `未下载模型在链上被拦（${snapBad.apply.message}）`);
+      assert(ss.get().source === 'off', '失败后状态回滚不变');
+
+      // review #2 回归：meta 吻合但物理表维度错位（取消/崩溃残留）→ 必须强制重建
+      const raw24 = (db24 as unknown as { db: DatabaseSync }).db;
+      raw24.exec('DROP TABLE l1_vec');
+      raw24.exec(
+        "CREATE VIRTUAL TABLE l1_vec USING vec0(record_id TEXT PRIMARY KEY, embedding float[768] distance_metric=cosine, updated_time TEXT DEFAULT '')",
+      );
+      const physMismatch = db24.swapProvider({ provider: 'local', model: entry.id, dimensions: entry.dims });
+      assert(physMismatch.ok && physMismatch.needsReindex, 'meta 吻合但物理维度错位 → 强制重建（防静默丢数据）');
+      db24.close();
+    } finally {
+      await fs.rm(tmp24, { recursive: true, force: true }).catch(() => {});
     }
   }
 

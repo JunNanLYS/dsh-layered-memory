@@ -64,6 +64,10 @@ export interface MemoryConfig {
         maxInputChars: number;
         /** 单次调用超时（ms）。 */
         timeoutMs: number;
+        /** 允许本地嵌入模型档（部署上限：公司环境可禁下载与本地推理）。 */
+        allowLocalModels: boolean;
+        /** 模型下载镜像根地址（默认国内可达的 hf-mirror.com，可改回官方）。 */
+        mirror: string;
     };
     llm: {
         /** 蒸馏用的 provider 路由；留空用当前默认选择。 */
@@ -147,6 +151,8 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         dimensions: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;
+        allowLocalModels: Schema<boolean, boolean>;
+        mirror: Schema<string, string>;
     }>, Schemastery.ObjectT<{
         enabled: Schema<boolean, boolean>;
         baseUrl: Schema<string, string>;
@@ -155,6 +161,8 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         dimensions: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;
+        allowLocalModels: Schema<boolean, boolean>;
+        mirror: Schema<string, string>;
     }>>;
     llm: Schema<Schemastery.ObjectS<{
         provider: Schema<string, string>;
@@ -238,6 +246,8 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         dimensions: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;
+        allowLocalModels: Schema<boolean, boolean>;
+        mirror: Schema<string, string>;
     }>, Schemastery.ObjectT<{
         enabled: Schema<boolean, boolean>;
         baseUrl: Schema<string, string>;
@@ -246,6 +256,8 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         dimensions: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;
+        allowLocalModels: Schema<boolean, boolean>;
+        mirror: Schema<string, string>;
     }>>;
     llm: Schema<Schemastery.ObjectS<{
         provider: Schema<string, string>;

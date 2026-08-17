@@ -25,11 +25,16 @@ import { MemoryRunner } from './pipeline/runner.js';
 import { RebuildController } from './pipeline/rebuild.js';
 import { registerMemoryRpc, PLUGIN_VERSION } from './stats.js';
 import { registerLiveSettings } from './settings.js';
+import { NoopEmbeddingService, type EmbeddingProviderInfo, type EmbeddingService } from './store/embedding.js';
 import {
-  NoopEmbeddingService,
-  RemoteEmbeddingService,
-  type EmbeddingService,
-} from './store/embedding.js';
+  EmbeddingManager,
+  EmbeddingSourceStore,
+  makeLocalServiceFactory,
+  resolveInitialEmbedding,
+  type InitialEmbedding,
+} from './store/embedding-source.js';
+import { ModelDownloadQueue } from './store/download-queue.js';
+import { PINNED_TRANSFORMERS_VERSION, RuntimeInstaller } from './store/runtime-installer.js';
 import { ensureDir } from './store/io.js';
 import { L0Store } from './store/l0.js';
 import { L1Store } from './store/l1.js';
@@ -54,27 +59,6 @@ export const inject = ['llm', 'tools', 'systemPrompt'];
  * 导致 config 里嵌套对象为 undefined、apply 抛错、fiber FAILED 拖垮宿主启动。
  */
 export const Config = memorySchema;
-
-/** 按配置构造 embedding 服务：未启用或配置不完整 → Noop（纯 FTS 运行）。 */
-function createEmbeddingService(cfg: MemoryConfig, logger: MemoryLogger): EmbeddingService {
-  if (!cfg.embedding.enabled) return new NoopEmbeddingService();
-  const { baseUrl, apiKey, model, dimensions } = cfg.embedding;
-  if (!baseUrl || !apiKey || !model || dimensions <= 0) {
-    logger.error(
-      '[memory] embedding.enabled=true 但 baseUrl/apiKey/model/dimensions 未配置完整，向量检索停用（纯 FTS 运行）',
-    );
-    return new NoopEmbeddingService();
-  }
-  return new RemoteEmbeddingService({
-    baseUrl,
-    apiKey,
-    model,
-    dimensions,
-    maxInputChars: cfg.embedding.maxInputChars,
-    timeoutMs: cfg.embedding.timeoutMs,
-    logger,
-  });
-}
 
 export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
   let logger: MemoryLogger = {
@@ -117,16 +101,36 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
     }
   }
 
+  // ── 嵌入源三态（D4：远程/本地/关闭）——状态文件优先于静态配置 ──
+  const sourceStore = new EmbeddingSourceStore(dataDir, logger);
+  const installer = new RuntimeInstaller(dataDir, PINNED_TRANSFORMERS_VERSION, { logger });
+  const downloader = new ModelDownloadQueue(dataDir, { mirror: config.embedding.mirror, logger });
+  const makeLocalService = makeLocalServiceFactory(installer, downloader, logger);
+  let initial: InitialEmbedding = { svc: new NoopEmbeddingService(), dims: 0 };
+  /** 管理器引用：启动重嵌链/backfill 闭包在运行期解引用（声明早于创建避免 TDZ）。 */
+  let embedManagerRef: EmbeddingManager | undefined;
+  if (storageOk) {
+    try {
+      await sourceStore.init();
+      initial = await resolveInitialEmbedding(config, sourceStore, downloader, makeLocalService, logger);
+    } catch (err) {
+      logger.warn(`[memory] 嵌入源初始解析失败（降级纯 FTS）: ${errDetail(err)}`);
+    }
+  }
+  /** meta 写入永远用当前目标（杜绝启动期闭包里的陈旧 providerInfo 腐蚀 embedding_meta）。 */
+  const currentProviderInfo = (): EmbeddingProviderInfo | undefined =>
+    embedManagerRef?.currentProviderInfo() ?? initial.providerInfo;
+
   // ── 检索引擎（memory.db）与向量服务 ──
-  const embed = createEmbeddingService(config, logger);
-  const db = new MemoryDb(path.join(dataDir, 'memory.db'), embed.getDimensions(), logger);
+  const embed = initial.svc;
+  const db = new MemoryDb(path.join(dataDir, 'memory.db'), initial.dims, logger);
   // 插件卸载时关闭连接（WAL 落盘），注册一次即可
   ctx.effect(() => () => db.close());
 
   let dbInit: StoreInitResult = { needsReindex: false };
   if (storageOk) {
     try {
-      dbInit = db.init(embed.isReady() ? embed.getProviderInfo() : undefined);
+      dbInit = db.init(initial.providerInfo);
       if (db.isDegraded()) {
         storageOk = false;
         logger.error('[memory] 检索库初始化失败（schema/FTS 不可用），记忆功能停用');
@@ -190,26 +194,32 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
   }
 
   // embedding 配置变化 → 后台全量重嵌入（不阻塞启动）。
-  // meta 只在重嵌入完全成功后写入（review P7）：过早写入会让下次启动比对通过而跳过补齐。
-  if (storageOk && embed.isReady() && !db.isDegraded()) {
-    const info = embed.getProviderInfo();
+  // meta 标记条件 = 失败为 0 且缺失复查为 0（服务未就绪的空转不算成功）。
+  if (storageOk && initial.providerInfo && !db.isDegraded()) {
+    const info = initial.providerInfo;
     if (dbInit.needsReindex) {
       if (caps.vectorSearch) {
         void (async () => {
           try {
-            if (disposed) return;
-            // 增量：配置变化路径向量表已被 drop，全部记录均"缺失"，等效全量
-            const r1 = await stores.l1.reindex();
-            const r0 = await stores.l0.reindex();
-            if (r1.failed === 0 && r0.failed === 0) {
-              db.markEmbeddingSynced(info);
+            if (disposed || embedManagerRef?.isBusy()) return;
+            // 增量：配置变化路径向量表已被 drop，全部记录均"缺失"，等效全量；
+            // 活切换发起时让路（swap 会 drop 表，并发跑只是白烧嵌入调用）
+            const shouldCancel = () => disposed || !!embedManagerRef?.isBusy();
+            const r1 = await stores.l1.reindex({ shouldCancel });
+            const r0 = await stores.l0.reindex({ shouldCancel });
+            // missing 复查：嵌入服务未就绪时 reindex 短路 0/0/0——那是"没跑"不是"成功"，
+            // 不得标记 meta（否则启动链不再补，补齐被无限推迟到 backfill）
+            const missingAfter =
+              db.countL1VecMissing(db.getVecSkipSet('l1')) + db.countL0VecMissing(db.getVecSkipSet('l0'));
+            if (r1.failed === 0 && r0.failed === 0 && missingAfter === 0) {
+              db.markEmbeddingSynced(currentProviderInfo() ?? info);
               const skipNote = r1.skipped + r0.skipped > 0 ? `，跳过不可嵌入 ${r1.skipped + r0.skipped} 条` : '';
               logger.info(
                 `[memory] 向量重建完成：L1 ${r1.written} 条，L0 ${r0.written} 条${skipNote}（原因：${dbInit.reason ?? '配置变化'}）`,
               );
             } else {
               logger.warn(
-                `[memory] 向量重建未完成（L1 失败 ${r1.failed}，L0 失败 ${r0.failed}），下次启动/补齐周期重试`,
+                `[memory] 向量重建未完成（L1 失败 ${r1.failed}，L0 失败 ${r0.failed}，剩缺 ${Math.max(missingAfter, 0)} 条），下次启动/补齐周期重试`,
               );
             }
           } catch (err) {
@@ -219,27 +229,40 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
       }
     } else {
       // meta 已匹配或空库（initSchema 已写入），幂等重写一次
-      db.markEmbeddingSynced(info);
+      db.markEmbeddingSynced(currentProviderInfo() ?? info);
     }
 
     // 周期性向量补齐：嵌入失败的批次/漏网记录自动补上（30 分钟一次）。
     // 判据 = 排除 skip 集后的缺失数（增量语义）：缺 1 条只补 1 条，
     // 零向量记录进 skip 集后不再触发——否则补齐永不收敛、每 30 分钟全量重嵌。
-    if (caps.vectorSearch) {
+    // 注册不再依赖启动期 caps/providerInfo（off 起步后活切回旧源也要能补），
+    // 执行期动态查当前目标与能力位。
+    {
       const backfill = (): void => {
         void (async () => {
           try {
             if (disposed) return;
+            const infoNow = currentProviderInfo();
+            const capsNow = db.getCapabilities();
+            if (!infoNow || !capsNow.vectorSearch) return;
+            // 活切换链（安装/下载/重嵌）进行中让路——增量 reindex 天然幂等，
+            // 但并发跑只是白烧一次嵌入调用
+            if (embedManagerRef?.isBusy()) return;
             const l1Missing = db.countL1VecMissing(db.getVecSkipSet('l1')) > 0;
             const l0Missing = db.countL0VecMissing(db.getVecSkipSet('l0')) > 0;
             if (!l1Missing && !l0Missing) return;
-            const r1 = await stores.l1.reindex();
-            const r0 = await stores.l0.reindex();
-            if (r1.failed === 0 && r0.failed === 0) {
-              db.markEmbeddingSynced(info);
+            const shouldCancel = () => disposed || !!embedManagerRef?.isBusy();
+            const r1 = await stores.l1.reindex({ shouldCancel });
+            const r0 = await stores.l0.reindex({ shouldCancel });
+            const missingAfter =
+              db.countL1VecMissing(db.getVecSkipSet('l1')) + db.countL0VecMissing(db.getVecSkipSet('l0'));
+            if (r1.failed === 0 && r0.failed === 0 && missingAfter === 0) {
+              db.markEmbeddingSynced(infoNow);
               logger.info(
                 `[memory] 向量补齐完成：L1 ${r1.written} 条，L0 ${r0.written} 条（跳过不可嵌入 ${r1.skipped + r0.skipped} 条）`,
               );
+            } else if (r1.failed > 0 || r0.failed > 0) {
+              logger.warn(`[memory] 向量补齐未完成（L1 失败 ${r1.failed}，L0 失败 ${r0.failed}），下个周期重试`);
             }
           } catch (err) {
             logger.warn(`[memory] 向量补齐失败: ${err instanceof Error ? err.message : String(err)}`);
@@ -256,6 +279,25 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
       });
     }
   }
+
+  // 嵌入管理器（活切换/下载/运行时安装；存储降级时不建——RPC 走 supported=false）
+  const embedManager =
+    storageOk && !db.isDegraded()
+      ? new EmbeddingManager({
+          dataDir,
+          cfg: config,
+          db,
+          l0: stores.l0,
+          l1: stores.l1,
+          sourceStore,
+          installer,
+          downloader,
+          initial,
+          logger,
+          makeLocal: makeLocalService,
+        })
+      : undefined;
+  embedManagerRef = embedManager;
 
   const runner = new MemoryRunner(ctx, config, stores, logger, live);
   await runner.init();
@@ -286,6 +328,7 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
     modes,
     dataDir,
     rebuild,
+    embedManager,
   );
 
   logger.info(
@@ -300,6 +343,7 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
   ctx.effect(() => () => {
     disposed = true;
     runner.stop();
+    embedManager?.dispose();
     return (async () => {
       await flushL0?.();
       db.close();

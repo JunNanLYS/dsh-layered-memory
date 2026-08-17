@@ -21,6 +21,7 @@ import type { L1Store } from './store/l1.js';
 import type { PersonaStore } from './store/persona.js';
 import type { SceneStore } from './store/scenes.js';
 import type { SessionModeStore } from './store/session-modes.js';
+import type { EmbeddingManager } from './store/embedding-source.js';
 import type { StateStore } from './store/state.js';
 import type { MemoryFamily, MemoryLogger, MemoryMode } from './types.js';
 
@@ -81,6 +82,7 @@ export function registerMemoryRpc(
   modes?: SessionModeStore,
   dataDir?: string,
   rebuild?: RebuildController,
+  embedManager?: EmbeddingManager,
 ): void {
   /** 当前是否持有一段有效注册（dispose 完成后清空，允许服务重上线时重注册）。 */
   let holding = false;
@@ -223,10 +225,11 @@ interface EndpointDeps {
   dataDir: string;
   logger: MemoryLogger;
   rebuild?: RebuildController;
+  embedManager?: EmbeddingManager;
 }
 
 async function handleEndpoint(endpoint: string, payload: unknown, deps: EndpointDeps): Promise<unknown> {
-  const { cfg, stores, status, live, modes, dataDir, rebuild } = deps;
+  const { cfg, stores, status, live, modes, dataDir, rebuild, embedManager } = deps;
   switch (endpoint) {
     case 'dsh-memory/stats':
       return buildStats(cfg, stores, status);
@@ -362,6 +365,56 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
     case 'dsh-memory/rebuild-cancel': {
       if (!rebuild) throw new Error('重建控制器未初始化');
       return rebuild.requestCancel();
+    }
+
+    // ── 嵌入源（远程/本地/关闭 三态）与模型管理 ──
+    case 'dsh-memory/embedding-state-get': {
+      if (!embedManager) return { supported: false };
+      return { supported: true, ...(await embedManager.snapshot()) };
+    }
+
+    case 'dsh-memory/embedding-source-set': {
+      if (!embedManager) throw new Error('嵌入管理器未初始化（存储不可用）');
+      const p = (payload ?? {}) as { source?: string; activeModel?: string | null };
+      if (p.source !== 'remote' && p.source !== 'local' && p.source !== 'off') {
+        throw new Error('source 必须是 remote | local | off');
+      }
+      const r = embedManager.requestSource({ source: p.source, activeModel: p.activeModel ?? null });
+      if (!r.accepted) throw new Error(r.error ?? '切换请求被拒绝');
+      deps.logger.info(`[memory] 收到嵌入源切换指令（source=${p.source}${p.activeModel ? '，model=' + p.activeModel : ''}）`);
+      return { accepted: true };
+    }
+
+    case 'dsh-memory/embedding-download-start': {
+      if (!embedManager) throw new Error('嵌入管理器未初始化（存储不可用）');
+      const p = (payload ?? {}) as { modelId?: string };
+      if (typeof p.modelId !== 'string' || !p.modelId) throw new Error('modelId 缺失');
+      const r = embedManager.startDownload(p.modelId);
+      if (!r.ok) throw new Error(r.error ?? '下载请求被拒绝');
+      deps.logger.info(`[memory] 收到模型下载指令（${p.modelId}）`);
+      return { accepted: true };
+    }
+
+    case 'dsh-memory/embedding-download-cancel': {
+      if (!embedManager) throw new Error('嵌入管理器未初始化');
+      return { cancelled: embedManager.cancelDownload() };
+    }
+
+    case 'dsh-memory/embedding-model-delete': {
+      if (!embedManager) throw new Error('嵌入管理器未初始化');
+      const p = (payload ?? {}) as { modelId?: string };
+      if (typeof p.modelId !== 'string' || !p.modelId) throw new Error('modelId 缺失');
+      return embedManager.deleteModel(p.modelId);
+    }
+
+    case 'dsh-memory/embedding-runtime-cancel': {
+      if (!embedManager) throw new Error('嵌入管理器未初始化');
+      return { cancelled: embedManager.cancelRuntimeInstall() };
+    }
+
+    case 'dsh-memory/embedding-reindex-cancel': {
+      if (!embedManager) throw new Error('嵌入管理器未初始化');
+      return { cancelled: embedManager.cancelReindex() };
     }
 
     default:

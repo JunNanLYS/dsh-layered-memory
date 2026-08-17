@@ -72,6 +72,8 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         dimensions: import("@deepseek-ai/schemastery").default<number, number>;
         maxInputChars: import("@deepseek-ai/schemastery").default<number, number>;
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
+        allowLocalModels: import("@deepseek-ai/schemastery").default<boolean, boolean>;
+        mirror: import("@deepseek-ai/schemastery").default<string, string>;
     }>, Schemastery.ObjectT<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         baseUrl: import("@deepseek-ai/schemastery").default<string, string>;
@@ -80,6 +82,8 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         dimensions: import("@deepseek-ai/schemastery").default<number, number>;
         maxInputChars: import("@deepseek-ai/schemastery").default<number, number>;
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
+        allowLocalModels: import("@deepseek-ai/schemastery").default<boolean, boolean>;
+        mirror: import("@deepseek-ai/schemastery").default<string, string>;
     }>>;
     llm: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
         provider: import("@deepseek-ai/schemastery").default<string, string>;
@@ -163,6 +167,8 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         dimensions: import("@deepseek-ai/schemastery").default<number, number>;
         maxInputChars: import("@deepseek-ai/schemastery").default<number, number>;
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
+        allowLocalModels: import("@deepseek-ai/schemastery").default<boolean, boolean>;
+        mirror: import("@deepseek-ai/schemastery").default<string, string>;
     }>, Schemastery.ObjectT<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         baseUrl: import("@deepseek-ai/schemastery").default<string, string>;
@@ -171,6 +177,8 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         dimensions: import("@deepseek-ai/schemastery").default<number, number>;
         maxInputChars: import("@deepseek-ai/schemastery").default<number, number>;
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
+        allowLocalModels: import("@deepseek-ai/schemastery").default<boolean, boolean>;
+        mirror: import("@deepseek-ai/schemastery").default<string, string>;
     }>>;
     llm: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
         provider: import("@deepseek-ai/schemastery").default<string, string>;

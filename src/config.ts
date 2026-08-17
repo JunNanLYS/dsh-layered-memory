@@ -66,6 +66,10 @@ export interface MemoryConfig {
     maxInputChars: number;
     /** 单次调用超时（ms）。 */
     timeoutMs: number;
+    /** 允许本地嵌入模型档（部署上限：公司环境可禁下载与本地推理）。 */
+    allowLocalModels: boolean;
+    /** 模型下载镜像根地址（默认国内可达的 hf-mirror.com，可改回官方）。 */
+    mirror: string;
   };
   llm: {
     /** 蒸馏用的 provider 路由；留空用当前默认选择。 */
@@ -127,6 +131,8 @@ export const memorySchema = Schema.object({
     dimensions: Schema.number().min(0).max(8192).default(0),
     maxInputChars: Schema.number().min(100).max(100_000).default(5000),
     timeoutMs: Schema.number().min(1000).max(300_000).default(10_000),
+    allowLocalModels: Schema.boolean().default(true),
+    mirror: Schema.string().default('https://hf-mirror.com'),
   }),
   llm: Schema.object({
     provider: Schema.string().default(''),
