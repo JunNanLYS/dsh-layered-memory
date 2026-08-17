@@ -25,8 +25,8 @@ const TAG = '[memory][sqlite]';
 const ZERO_VEC_BUFFER = 10;
 /** IN 查询/删除的分块大小（保守避开 SQLite 变量数上限：现代构建 32766，老版 999）。 */
 const IN_CHUNK = 900;
-/** 零向量 skip 集上限（NOT IN 占位符随之有界；被挤出的 id 只多一次重试）。 */
-const VEC_SKIP_CAP = 1000;
+/** 零向量 skip 集上限（≤ IN_CHUNK：notInClause 不分块，占位符数即集合大小，须避开老构建 999 上限）。 */
+const VEC_SKIP_CAP = 900;
 /** 把 id 列表切成 ≤IN_CHUNK 的块（分块执行后合并语义等价于单次 IN）。 */
 function chunkIds(ids) {
     const out = [];
@@ -529,7 +529,7 @@ export class MemoryDb {
             const failed = [];
             for (let i = 0; i < records.length; i++) {
                 if (!this.upsertL1(records[i], embeddings?.[i]))
-                    failed.push(records[i].id);
+                    failed.push(records[i]?.id ?? `#${i}`);
             }
             if (failed.length > 0) {
                 this.logger?.warn(`${TAG} 逐条回退后仍失败 ${failed.length}/${records.length} 条: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);

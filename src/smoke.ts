@@ -331,10 +331,11 @@ async function main(): Promise<void> {
     const ri0 = await l0v.reindex();
     assert(ri0.written === 0 && ri0.failed === 0 && ri0.skipped === 1, `L0 零向量 skipped（skipped=${ri0.skipped}）`);
     assert(db2.countL0VecMissing(db2.getVecSkipSet('l0')) === 0, 'L0 补齐判据收敛');
-    // skip 集上限 1000：保最新，被挤出的旧 id 只是多一次重试（NOT IN 占位符有界）
+    // skip 集上限 900（=IN_CHUNK，notInClause 不分块须避开老构建 999 上限）：
+    // 保最新，被挤出的旧 id 只是多一次重试
     db2.addVecSkippedIds('l1', Array.from({ length: 1100 }, (_, i) => `skip-${i}`));
     const skipBig = db2.getVecSkipSet('l1');
-    assert(skipBig.size === 1000 && skipBig.has('skip-1099') && !skipBig.has('skip-0') && !skipBig.has('c5'), `skip 集上限保最新（size=${skipBig.size}，c5 被挤出仅多一次重试）`);
+    assert(skipBig.size === 900 && skipBig.has('skip-1099') && !skipBig.has('skip-0') && !skipBig.has('c5'), `skip 集上限保最新（size=${skipBig.size}，c5 被挤出仅多一次重试）`);
     db2.close();
   } finally {
     await fs.rm(tmp2, { recursive: true, force: true }).catch(() => undefined);

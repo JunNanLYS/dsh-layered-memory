@@ -107,10 +107,11 @@ export function registerLiveSettings(ctx, logger) {
             }
             return;
         }
-        if (impl !== cachedSvc) {
+        // 实例变了才作废缓存；但 tryAttach 无条件执行（幂等）——同一事件会广播到
+        // 所有存活 fiber 的监听器，后跑的那个也必须修好自己闭包里的 inner
+        if (impl !== cachedSvc)
             invalidateCache();
-            tryAttach();
-        }
+        tryAttach();
     });
     return {
         get supported() {
