@@ -65,7 +65,7 @@ body[data-ds-dark-theme] { --dsh-mem-...: <暗色值> }  /* 暗色整组覆盖 *
 | `--dsh-mem-dot` | `rgba(128,140,150,0.55)` | `rgba(148,160,180,0.5)` | 滑轨停点 |
 | `--dsh-mem-shadow-card` | dsw shadow-lv1，fallback `0 2px 4px rgba(0,0,0,.05)` | 同左，fallback `0 2px 4px rgba(0,0,0,.3)` | 卡片浅投影 |
 | `--dsh-mem-shadow-pop` | dsw shadow-lv3，fallback `0 0 1px rgba(0,0,0,.2), 0 0 4px rgba(0,0,0,.02), 0 12px 32px rgba(0,0,0,.08)`（双主题同值） | 同左 | 浮层投影（原生菜单同款） |
-| `--dsh-mem-fill-1/2` | `#93a8ff` → `#3d5be0` | `#8fa0ff` → `#465ce8` | 滑轨填充渐变（左浅右深、球侧最深） |
+| `--dsh-mem-fill-1/2` | `#7b93ff` → `#3d5be0` | `#8fa0ff` → `#465ce8` | 滑轨填充渐变（左浅右深、球侧最深；浅端为可见性下限，勿再调浅） |
 
 会话档位色令牌（`--dsh-mem-mode-chat/work/auto`）归 `pill-spec.md`。
 

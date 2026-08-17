@@ -721,7 +721,7 @@ window.__ModuleLoader__.load({
         "  --dsh-mem-mode-work: #5263ca;",
         "  --dsh-mem-mode-auto: #3d5be0;",
         // 滑轨填充渐变（左浅右深）
-        "  --dsh-mem-fill-1: #93a8ff;",
+        "  --dsh-mem-fill-1: #7b93ff;",
         "  --dsh-mem-fill-2: #3d5be0;",
         "  --dsh-mem-thumb: #ffffff;",
         "  --dsh-mem-track: rgba(128,140,150,0.32);",
