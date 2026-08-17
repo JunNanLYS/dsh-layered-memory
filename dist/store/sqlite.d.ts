@@ -176,6 +176,21 @@ export declare class MemoryDb {
     /** 只更新向量行（重嵌入用）。 */
     updateL1Vec(id: string, embedding: Float32Array): boolean;
     updateL0Vec(id: string, embedding: Float32Array, recordedAt: string): boolean;
+    /**
+     * 批量更新 L1 向量行（重嵌入热路径）：单事务写入整批，替代逐条裸写——
+     * 逐条每行一次隐式事务，批量场景（万级记录重嵌）开销集中在 fsync 上。
+     * 整批失败回退逐条：好行照常入库，坏行只丢自身（向量行 id 寻址，无顺序依赖）。
+     * 返回成功写入的行数（零向量行防御性跳过、不计入）。
+     */
+    updateL1VecBatch(items: Array<{
+        id: string;
+        embedding: Float32Array;
+    }>): number;
+    /** L0 版 updateL1VecBatch（语义同：单事务 + 失败回退逐条）。recordedAt 整批统一。 */
+    updateL0VecBatch(items: Array<{
+        id: string;
+        embedding: Float32Array;
+    }>, recordedAt: string): number;
     close(): void;
 }
 /** 全零向量（cosine 未定义，不可入向量表）。reindex 侧用它区分"不可嵌入"与"写入失败"。 */

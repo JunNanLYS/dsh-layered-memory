@@ -165,15 +165,20 @@ export class L0Store {
         opts?.onProgress?.(done, total);
         continue;
       }
+      const pending: Array<{ id: string; embedding: Float32Array }> = [];
       chunk.forEach((c, j) => {
         if (isZeroVector(vecs[j])) {
           skipped++;
           skippedNow.push(c.id);
           return;
         }
-        if (this.db.updateL0Vec(c.id, vecs[j], '')) written++;
-        else failed++;
+        pending.push({ id: c.id, embedding: vecs[j] });
       });
+      if (pending.length > 0) {
+        const ok = this.db.updateL0VecBatch(pending, '');
+        written += ok;
+        failed += pending.length - ok;
+      }
       done += chunk.length;
       opts?.onProgress?.(done, total);
     }

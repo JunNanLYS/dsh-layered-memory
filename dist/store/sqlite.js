@@ -72,9 +72,12 @@ export class MemoryDb {
                 mkdirSync(dbDir, { recursive: true });
             const { DatabaseSync: DbSync } = require('node:sqlite');
             this.db = new DbSync(dbPath, { allowExtension: true });
-            // 并发读优化 + 有界内存（照搬官方 PRAGMA 组合）
+            // 并发读优化 + 有界内存（照搬官方 PRAGMA 组合，synchronous 为本仓新增：
+            // WAL 下官方推荐 NORMAL——批量写从"每事务一次 fsync"降为"每 checkpoint 一次"，
+            // 重嵌入/导入提速明显；代价仅是断电时丢最后若干已提交事务（只丢不损，无损坏风险））
             this.db.exec('PRAGMA busy_timeout = 5000');
             this.db.exec('PRAGMA journal_mode = WAL');
+            this.db.exec('PRAGMA synchronous = NORMAL');
             this.db.exec('PRAGMA cache_size = -65536');
             this.db.exec('PRAGMA mmap_size = 134217728');
             this.db.exec('PRAGMA wal_autocheckpoint = 1000');
@@ -1177,6 +1180,85 @@ export class MemoryDb {
         }
         catch {
             return false;
+        }
+    }
+    /**
+     * 批量更新 L1 向量行（重嵌入热路径）：单事务写入整批，替代逐条裸写——
+     * 逐条每行一次隐式事务，批量场景（万级记录重嵌）开销集中在 fsync 上。
+     * 整批失败回退逐条：好行照常入库，坏行只丢自身（向量行 id 寻址，无顺序依赖）。
+     * 返回成功写入的行数（零向量行防御性跳过、不计入）。
+     */
+    updateL1VecBatch(items) {
+        if (this.degraded || !this.stmtDeleteL1Vec || !this.stmtInsertL1Vec || items.length === 0)
+            return 0;
+        try {
+            this.db.exec('BEGIN');
+            try {
+                let written = 0;
+                for (const it of items) {
+                    if (isZeroVector(it.embedding))
+                        continue;
+                    this.stmtDeleteL1Vec.run(it.id);
+                    this.stmtInsertL1Vec.run(it.id, vecToBuffer(it.embedding), new Date().toISOString());
+                    written++;
+                }
+                this.db.exec('COMMIT');
+                return written;
+            }
+            catch (err) {
+                try {
+                    this.db.exec('ROLLBACK');
+                }
+                catch {
+                    /* ignore */
+                }
+                throw err;
+            }
+        }
+        catch (err) {
+            this.logger?.warn(`${TAG} L1 向量批量写入失败，回退逐条: ${err instanceof Error ? err.message : String(err)}`);
+            let ok = 0;
+            for (const it of items)
+                if (this.updateL1Vec(it.id, it.embedding))
+                    ok++;
+            return ok;
+        }
+    }
+    /** L0 版 updateL1VecBatch（语义同：单事务 + 失败回退逐条）。recordedAt 整批统一。 */
+    updateL0VecBatch(items, recordedAt) {
+        if (this.degraded || !this.stmtDeleteL0Vec || !this.stmtInsertL0Vec || items.length === 0)
+            return 0;
+        try {
+            this.db.exec('BEGIN');
+            try {
+                let written = 0;
+                for (const it of items) {
+                    if (isZeroVector(it.embedding))
+                        continue;
+                    this.stmtDeleteL0Vec.run(it.id);
+                    this.stmtInsertL0Vec.run(it.id, vecToBuffer(it.embedding), recordedAt);
+                    written++;
+                }
+                this.db.exec('COMMIT');
+                return written;
+            }
+            catch (err) {
+                try {
+                    this.db.exec('ROLLBACK');
+                }
+                catch {
+                    /* ignore */
+                }
+                throw err;
+            }
+        }
+        catch (err) {
+            this.logger?.warn(`${TAG} L0 向量批量写入失败，回退逐条: ${err instanceof Error ? err.message : String(err)}`);
+            let ok = 0;
+            for (const it of items)
+                if (this.updateL0Vec(it.id, it.embedding, recordedAt))
+                    ok++;
+            return ok;
         }
     }
     close() {
