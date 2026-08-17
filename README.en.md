@@ -1,8 +1,8 @@
 [简体中文](README.md) | **English**
 
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%"
-       alt="dsh-layered-memory: conversations are automatically distilled into layered memories and injected before every model step (L0 raw conversation → L1 atomic memories → L2 scene blocks → L3 core persona)">
+  <img src="./assets/img/Hero.png" width="100%"
+       alt="DeepSeek Harness hero banner: conversations distilled into layered memories and recalled before every model step — chat bubbles dissolve into three progressively brighter light layers flowing into a frosted-glass capsule with a glowing orb and gradient track (tick labels: 日常·工作·智能·关闭), with light threads looping back to suggest recall">
 </p>
 
 # dsh-layered-memory
