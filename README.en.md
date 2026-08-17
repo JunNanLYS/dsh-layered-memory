@@ -34,8 +34,8 @@ tools: `memory_search` / `conversation_search` / `memory_read_scene`.
 ## Layered Memory (L0–L3)
 
 <p align="center">
-  <img src="./assets/readme/layers.svg" width="100%"
-       alt="Four layers: L0 raw conversation (cleaned and persisted) → L1 atomic memories (extraction + dedup merge, chat/work families) → L2 scene blocks (Markdown scene docs) → L3 core persona (one per family); layers are connected by LLM calls and the shrinking card width shows progressive refinement">
+  <img src="./assets/img/Layers.png" width="100%"
+       alt="Four memory layers refining from top-left to bottom-right: L0 raw conversation (chat bubbles) → L1 atomic memories (glowing fact particles) → L2 scene blocks (glass document slabs) → L3 core persona (radiant crystal core); stages connected by LLM extract/consolidate/distill light beams, shrinking width shows progressive refinement">
 </p>
 
 - **Pending buffer persistence**: messages awaiting retry after a failed extraction, and
@@ -55,8 +55,8 @@ tools: `memory_search` / `conversation_search` / `memory_read_scene`.
 ## Per-Session Memory Modes
 
 <p align="center">
-  <img src="./assets/readme/modes.svg" width="100%"
-       alt="Four memory modes: auto (default; both families on write and recall), chat (personal 3 types only), work (work 4 types only), off (no writes, no recall, tools report cloaked); write and recall always share the same mode">
+  <img src="./assets/img/Modes.png" width="100%"
+       alt="Per-session memory modes: a glass capsule track with four stops (日常 · 工作 · 智能 · 关闭), the glowing orb resting on 智能 (default); a vignette above each — personal chat bubbles for 日常, code/document panes for 工作, two streams merging brightest for 智能, a dim dashed ghost bubble for 关闭">
 </p>
 
 - **Control**: the pill next to the mode selector in the input bar (`Memory · Auto`);
