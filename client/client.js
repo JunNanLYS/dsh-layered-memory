@@ -325,6 +325,21 @@ window.__ModuleLoader__.load({
     var THUMB = 16;
     var RAIL_H = 22; // 粗滑轨高度 > 圆球直径（圆球被滑轨包裹）
     var INNER_W = TRACK_W - THUMB;
+    // 点阵粒子场档位参数（参考 DSH-Claude-Style-Reasoning-Slider 的分档场强，
+    // 配色锁品牌蓝单色系）：density 越大点阵越密、alpha 亮度系数、wave 明暗水波纹、
+    // tempo 闪烁节拍倍率。tier0（关闭）不参与——show=false 整层不画
+    var FIELD_TIERS = [
+      { density: 0, alpha: 0, wave: 0, tempo: 1 },
+      { density: 0.34, alpha: 0.5, wave: 0, tempo: 1 }, // 日常：稀疏微光
+      { density: 0.55, alpha: 0.78, wave: 1, tempo: 1.15 }, // 工作：中强 + 水波纹
+      { density: 0.72, alpha: 1, wave: 1, tempo: 1.3 }, // 智能：满场最活跃
+    ];
+
+    /** smoothstep（粒子场展开/揭示用 ease） */
+    function smStep(a, b, x) {
+      var t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    }
 
     function modeInfo(key) {
       for (var i = 0; i < MODES.length; i++) if (MODES[i].key === key) return MODES[i];
@@ -398,8 +413,9 @@ window.__ModuleLoader__.load({
 
       // 粒子层几何快照：每帧渲染时更新，rAF 循环跨帧读取（避免按帧重建 effect）
       geoRef.current = {
-        origin: thumbLeft + THUMB / 2, // 发射点 = 圆球中心
+        origin: thumbLeft + THUMB / 2, // 密度/亮度中心 = 圆球中心
         rightEdge: thumbLeft + THUMB, // 粒子活动区右界 = 填充右缘（不越过圆球）
+        tier: activeIdx, // 场强档位（与填充/气泡同源；拖拽预览即时升降级）
         show: activeIdx > 0 || drag !== null, // 与填充显隐同源
         dragging: drag !== null,
       };
@@ -415,6 +431,12 @@ window.__ModuleLoader__.load({
         var width = 1;
         var height = 1;
         var frame = 0;
+        var grid = []; // 点阵网格（resize 时预计算静态哈希，逐帧只做时间维运算）
+        var cell = 5;
+        var gap = 1.1;
+        var fieldOn = false; // show 翻转沿：入场展开动画的计时原点
+        var fieldStart = 0;
+        var lastDrawn = 0;
 
         var resize = function () {
           var b = canvas.getBoundingClientRect();
@@ -424,52 +446,82 @@ window.__ModuleLoader__.load({
           canvas.width = Math.max(1, Math.round(width * ratio));
           canvas.height = Math.max(1, Math.round(height * ratio));
           ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+          // 网格：200×22 轨道 → 40 列 × 5 行 ≈ 200 格（哈希来自仓库B 的预计算方案）
+          cell = width < 280 ? 5 : 6;
+          grid = [];
+          for (var row = 0; row * cell < height; row++) {
+            for (var column = 0; column * cell < width; column++) {
+              grid.push({
+                x: column * cell,
+                y: row * cell,
+                base: Math.abs(Math.sin(column * 12.9898 + row * 78.233) * 43758.5453) % 1,
+                tempo: Math.abs(Math.sin(column * 7.13 + row * 19.41) * 19341.731) % 1,
+                phase: Math.abs(Math.sin(column * 31.17 + row * 11.93) * 28437.123) % 1,
+              });
+            }
+          }
         };
 
         var draw = function (time) {
-          var st = geoRef.current || { origin: 0, rightEdge: 0, show: false, dragging: false };
+          var st = geoRef.current || { origin: 0, rightEdge: 0, tier: 0, show: false, dragging: false };
           ctx.clearRect(0, 0, width, height);
-          if (!st.show || st.rightEdge <= 0) return;
+          if (!st.show || st.rightEdge <= 0) {
+            fieldOn = false;
+            return;
+          }
+          if (!fieldOn) {
+            fieldOn = true;
+            fieldStart = time; // 入场展开从这一刻起算（900ms 从圆球向外揭示）
+          }
           var dark = document.body.hasAttribute("data-ds-dark-theme");
+          var tier = FIELD_TIERS[st.tier] || FIELD_TIERS[1];
+          var elapsed = Math.max(0, time - fieldStart);
+          var reveal = reduced.matches ? 1 : smStep(0, 1, elapsed / 900);
+          var ripplePhase = (elapsed % 1200) / 1200; // 明暗水波纹（1200ms 一轮，从球向外）
+          var tempo = tier.tempo * (st.dragging ? 2 : 1); // 拖拽全档提速
+          // 基色→高亮色：浅色用深蓝（multiply 混合下沉显色）/ 暗色用亮蓝
+          var dim = dark ? [124, 144, 250] : [61, 91, 224];
+          var hot = dark ? [214, 224, 255] : [126, 148, 250];
+
           ctx.save();
           ctx.beginPath();
           // 裁剪到填充区（胶囊形，与滑轨同圆角——矩形裁剪会在圆角末端溢出）
           if (ctx.roundRect) ctx.roundRect(0, 0, st.rightEdge, height, height / 2);
           else ctx.rect(0, 0, st.rightEdge, height);
           ctx.clip();
-          // 光尘拖尾：从圆球中心向左穿行（透明→品牌蓝→亮端指向圆球），拖拽时提速加长
-          var speed = st.dragging ? 0.14 : 0.05;
-          var span = Math.max(30, st.rightEdge + 24);
-          for (var i = 0; i < 12; i++) {
-            var travel = (time * speed * (0.78 + (i % 5) * 0.09) + i * 23) % span;
-            var x = st.origin - travel;
-            if (x < -20) continue;
-            var y = 3 + ((i * 13 + Math.sin(time * 0.003 + i) * 5) % Math.max(7, height - 6));
-            var len = 4 + (i % 4) * 4 + (st.dragging ? 6 : 0);
-            var alpha = 0.26 + (i % 5) * 0.1;
-            var g = ctx.createLinearGradient(x, 0, x + len, 0);
-            g.addColorStop(0, dark ? "rgba(110,133,255,0)" : "rgba(61,91,224,0)");
-            g.addColorStop(0.68, dark
-              ? "rgba(129,149,255," + alpha + ")"
-              : "rgba(61,91,224," + (alpha * 0.72) + ")");
-            g.addColorStop(1, dark
-              ? "rgba(214,222,255," + Math.min(1, alpha + 0.26) + ")"
-              : "rgba(158,178,255," + Math.min(0.85, alpha + 0.2) + ")");
-            ctx.fillStyle = g;
-            ctx.fillRect(x, y, len, i % 3 === 0 ? 2 : 1);
+
+          for (var i = 0; i < grid.length; i++) {
+            var c = grid[i];
+            var dx = Math.abs(c.x + cell * 0.5 - st.origin) / Math.max(1, st.rightEdge * 0.5);
+            if (dx > 1) continue;
+            var near = Math.min(1, Math.max(0, 1 - dx * 1.1)); // 近球更密更亮
+            if (c.base > tier.density - near * 0.3) continue; // 密度门（近球放行更多格）
+            // 独立随机闪烁：每格按自身 tempo/phase 起伏
+            var flicker = 0.5 + 0.5 * Math.sin(elapsed * 0.012 * tempo + c.tempo * 6.283 + c.phase * 6.283);
+            // 明暗水波纹：从球心向外传播的亮带（tier 未开波纹时给常量底）
+            var wave = tier.wave ? 0.5 + 0.5 * Math.sin((dx * 2 - ripplePhase) * 6.283) : 0.62;
+            // 展开：越靠近球越早亮，向外渐显
+            var revealA = smStep(0, 1, reveal * (1 - dx * 0.85) + dx * 0.15);
+            var alpha = Math.min(1, (0.26 + 0.44 * flicker + near * 0.28) * (0.28 + 0.72 * wave) * revealA * tier.alpha);
+            if (alpha < 0.02) continue;
+            // 亮闪格向高亮色靠（flicker×wave 双高才发白）
+            var glowMix = Math.max(0, flicker * wave - 0.45) * 1.6;
+            ctx.fillStyle = "rgba(" +
+              Math.round(dim[0] + (hot[0] - dim[0]) * glowMix) + "," +
+              Math.round(dim[1] + (hot[1] - dim[1]) * glowMix) + "," +
+              Math.round(dim[2] + (hot[2] - dim[2]) * glowMix) + "," +
+              alpha.toFixed(3) + ")";
+            ctx.fillRect(c.x + gap * 0.5, c.y + gap * 0.5, cell - gap, cell - gap);
           }
-          // 发射点柔光：圆球左缘一小团辉光（粒子从这发出）
-          var glow = ctx.createRadialGradient(st.origin, height / 2, 0, st.origin, height / 2, 12);
-          glow.addColorStop(0, dark ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.78)");
-          glow.addColorStop(0.3, dark ? "rgba(129,149,255,0.38)" : "rgba(77,107,254,0.28)");
-          glow.addColorStop(1, "rgba(77,107,254,0)");
-          ctx.fillStyle = glow;
-          ctx.fillRect(st.origin - 14, 0, 28, height);
           ctx.restore();
         };
 
         var loop = function (time) {
-          draw(time);
+          // 33ms 节流（≈30fps）：闪烁/波纹尺度下无可感差异，省电
+          if (time - lastDrawn >= 33) {
+            lastDrawn = time;
+            draw(time);
+          }
           frame = window.requestAnimationFrame(loop);
         };
         var redrawStatic = function () {
@@ -575,9 +627,10 @@ window.__ModuleLoader__.load({
                 })
               : null,
             stops,
-            // 粒子层：轨道内从圆球向左流动的光尘（pointerEvents none 不挡拖拽）
+            // 粒子层：点阵粒子场（pointerEvents none 不挡拖拽；拖拽时滤镜增饱和提亮）
             react.createElement("canvas", {
               ref: canvasRef,
+              className: "dsh-mem-particles",
               style: {
                 position: "absolute",
                 left: 0,
@@ -586,6 +639,7 @@ window.__ModuleLoader__.load({
                 height: "100%",
                 pointerEvents: "none",
                 zIndex: 2,
+                filter: drag !== null ? "saturate(1.45) brightness(1.28) contrast(1.06)" : "none",
               },
             }),
             // 圆球：被粗滑轨包裹（RAIL_H > THUMB），品牌蓝描边，拖拽时阴影加重
@@ -816,6 +870,8 @@ window.__ModuleLoader__.load({
         "  clip-path: polygon(0 0, 100% 0, 50% 100%);",
         "  background: var(--dsh-mem-bg-pop);",
         "}",
+        // ── 粒子层（点阵场）：浅色 multiply 混合——深蓝点乘在浅蓝填充上沉显对比 ──
+        "body:not([data-ds-dark-theme]) .dsh-mem-particles { mix-blend-mode: multiply; opacity: 0.82; }",
         // ── 重建面板 ──（模态本体走 NModal：原生 Modal 优先，回退 rb-overlay/rb-modal）
         ".dsh-mem-rb-card {",
         "  border: 1px solid var(--dsh-mem-border); border-radius: 10px; background: var(--dsh-mem-bg-card);",
