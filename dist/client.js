@@ -1178,7 +1178,8 @@ window.__ModuleLoader__.load({
       return react.createElement(
         "div", null,
         react.createElement(
-          "div", { style: S.toolbar },          react.createElement("input", {
+          "div", { style: S.toolbar },
+          react.createElement("input", {
             style: S.input,
             placeholder: "搜索记忆内容（BM25 关键词）…",
             value: query,

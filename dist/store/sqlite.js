@@ -25,6 +25,8 @@ const TAG = '[memory][sqlite]';
 const ZERO_VEC_BUFFER = 10;
 /** IN 查询/删除的分块大小（保守避开 SQLite 变量数上限：现代构建 32766，老版 999）。 */
 const IN_CHUNK = 900;
+/** 零向量 skip 集上限（NOT IN 占位符随之有界；被挤出的 id 只多一次重试）。 */
+const VEC_SKIP_CAP = 1000;
 /** 把 id 列表切成 ≤IN_CHUNK 的块（分块执行后合并语义等价于单次 IN）。 */
 function chunkIds(ids) {
     const out = [];
@@ -390,6 +392,8 @@ export class MemoryDb {
     dropVectorTables() {
         this.db.exec('DROP TABLE IF EXISTS l1_vec');
         this.db.exec('DROP TABLE IF EXISTS l0_vec');
+        // 表已重建：作废按块缓存的 IN 语句（旧语句指向已删表，不能依赖引擎自动重编译兜底）
+        this.inStmts.clear();
         // provider/model/维度已变：旧的"不可嵌入"判定作废（新 provider 可能嵌入得了），skip 集清空
         this.clearVecSkipIds('l1');
         this.clearVecSkipIds('l0');
@@ -495,6 +499,8 @@ export class MemoryDb {
     /**
      * 批量 upsert L1（单事务；与单条同语义：FTS 失败整批回滚）。
      * 追加/导入热路径用它——逐条开事务在 WAL FULL 下每条一次 fsync。
+     * 整批失败时回退逐条写入：好记录照常入库、坏记录只丢自身——否则
+     * JSONL 事实源已先行追加，检索库却整批缺失且无自动重导路径（批次空洞）。
      */
     upsertL1Batch(records, embeddings) {
         if (this.degraded || records.length === 0)
@@ -519,8 +525,16 @@ export class MemoryDb {
             return true;
         }
         catch (err) {
-            this.logger?.warn(`${TAG} L1 批量写入失败（非致命）: ${err instanceof Error ? err.message : String(err)}`);
-            return false;
+            this.logger?.warn(`${TAG} L1 批量写入失败，回退逐条写入: ${err instanceof Error ? err.message : String(err)}`);
+            const failed = [];
+            for (let i = 0; i < records.length; i++) {
+                if (!this.upsertL1(records[i], embeddings?.[i]))
+                    failed.push(records[i].id);
+            }
+            if (failed.length > 0) {
+                this.logger?.warn(`${TAG} 逐条回退后仍失败 ${failed.length}/${records.length} 条: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
+            }
+            return failed.length === 0;
         }
     }
     /** 事务内的单条写入体（upsertL1 / upsertL1Batch 共用；调用方负责 BEGIN/COMMIT）。 */
@@ -622,6 +636,7 @@ export class MemoryDb {
             if (this.stmtDeleteL1Vec) {
                 this.db.exec('DROP TABLE IF EXISTS l1_vec');
                 this.prepareL1VecStatements();
+                this.inStmts.clear();
             }
             // 重建后 L1 id 全新，旧 skip 集是死数据，清空让新记录获得一次嵌入机会
             this.clearVecSkipIds('l1');
@@ -965,7 +980,9 @@ export class MemoryDb {
                 .all(...notInParams(exclude))[0];
             return row?.n ?? 0;
         }
-        catch {
+        catch (err) {
+            // -1 会让补齐判据（> 0）按"无缺失"处理——必须留痕，不能静默停摆
+            this.logger?.warn(`${TAG} L1 缺失向量计数失败（补齐判据按无缺失处理）: ${err instanceof Error ? err.message : String(err)}`);
             return -1;
         }
     }
@@ -981,7 +998,8 @@ export class MemoryDb {
                 .all(...notInParams(exclude))[0];
             return row?.n ?? 0;
         }
-        catch {
+        catch (err) {
+            this.logger?.warn(`${TAG} L0 缺失向量计数失败（补齐判据按无缺失处理）: ${err instanceof Error ? err.message : String(err)}`);
             return -1;
         }
     }
@@ -993,21 +1011,33 @@ export class MemoryDb {
     getL1ForReindex(exclude) {
         if (this.degraded)
             return [];
-        return this.db
-            .prepare(`SELECT r.record_id AS id, r.content FROM l1_records r
-         LEFT JOIN l1_vec v ON v.record_id = r.record_id
-         WHERE v.record_id IS NULL${notInClause('r.record_id', exclude)}`)
-            .all(...notInParams(exclude));
+        try {
+            return this.db
+                .prepare(`SELECT r.record_id AS id, r.content FROM l1_records r
+           LEFT JOIN l1_vec v ON v.record_id = r.record_id
+           WHERE v.record_id IS NULL${notInClause('r.record_id', exclude)}`)
+                .all(...notInParams(exclude));
+        }
+        catch (err) {
+            this.logger?.warn(`${TAG} L1 重嵌入取数失败（返回空，本轮跳过）: ${err instanceof Error ? err.message : String(err)}`);
+            return [];
+        }
     }
     /** 待重嵌入的 L0（增量 + 排除 skip 集，同 getL1ForReindex）。 */
     getL0ForReindex(exclude) {
         if (this.degraded)
             return [];
-        return this.db
-            .prepare(`SELECT r.record_id AS id, r.message_text AS text FROM l0_conversations r
-         LEFT JOIN l0_vec v ON v.record_id = r.record_id
-         WHERE v.record_id IS NULL${notInClause('r.record_id', exclude)}`)
-            .all(...notInParams(exclude));
+        try {
+            return this.db
+                .prepare(`SELECT r.record_id AS id, r.message_text AS text FROM l0_conversations r
+           LEFT JOIN l0_vec v ON v.record_id = r.record_id
+           WHERE v.record_id IS NULL${notInClause('r.record_id', exclude)}`)
+                .all(...notInParams(exclude));
+        }
+        catch (err) {
+            this.logger?.warn(`${TAG} L0 重嵌入取数失败（返回空，本轮跳过）: ${err instanceof Error ? err.message : String(err)}`);
+            return [];
+        }
     }
     // ── 零向量 skip 集（embedding_meta 持久化；provider 变化时随向量表一起清空） ──
     getVecSkipSet(kind) {
@@ -1032,7 +1062,13 @@ export class MemoryDb {
         if (this.degraded || ids.length === 0)
             return;
         try {
-            const merged = [...new Set([...this.getVecSkipSet(kind), ...ids])];
+            let merged = [...new Set([...this.getVecSkipSet(kind), ...ids])];
+            // 上限防 NOT IN 占位符无界膨胀（老构建变量上限 999）；达到上限本身
+            // 说明 embedding 服务大面积返回零向量，被挤出的旧 id 只是多一次重试
+            if (merged.length > VEC_SKIP_CAP) {
+                merged = merged.slice(-VEC_SKIP_CAP);
+                this.logger?.warn(`${TAG} skip 集达上限 ${VEC_SKIP_CAP}（零向量记录过多，embedding 服务疑似异常）`);
+            }
             this.db
                 .prepare('INSERT INTO embedding_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
                 .run(vecSkipKey(kind), JSON.stringify(merged));

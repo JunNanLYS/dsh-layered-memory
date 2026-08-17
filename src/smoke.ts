@@ -331,6 +331,10 @@ async function main(): Promise<void> {
     const ri0 = await l0v.reindex();
     assert(ri0.written === 0 && ri0.failed === 0 && ri0.skipped === 1, `L0 零向量 skipped（skipped=${ri0.skipped}）`);
     assert(db2.countL0VecMissing(db2.getVecSkipSet('l0')) === 0, 'L0 补齐判据收敛');
+    // skip 集上限 1000：保最新，被挤出的旧 id 只是多一次重试（NOT IN 占位符有界）
+    db2.addVecSkippedIds('l1', Array.from({ length: 1100 }, (_, i) => `skip-${i}`));
+    const skipBig = db2.getVecSkipSet('l1');
+    assert(skipBig.size === 1000 && skipBig.has('skip-1099') && !skipBig.has('skip-0') && !skipBig.has('c5'), `skip 集上限保最新（size=${skipBig.size}，c5 被挤出仅多一次重试）`);
     db2.close();
   } finally {
     await fs.rm(tmp2, { recursive: true, force: true }).catch(() => undefined);
@@ -1122,49 +1126,100 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log('== 16. settings 命名空间 fiber 重启重挂（M10） ==');
+  console.log('== 16. settings 命名空间 fiber 重启 / 服务实例迁移重挂（M10） ==');
   {
     // 复现要点（与 dsh-settings 实测实现一致）：注册挂服务自身生命周期
-    // （不随调用方 fiber 销毁）、同 ns 二次 register 抛 already registered
-    const registrations = new Map<string, { value: Record<string, unknown>; watchers: Set<(v: unknown) => void> }>();
-    const mkSvc = () => ({
-      register: (ns: string, _schema: unknown, _opts?: unknown) => {
-        if (registrations.has(ns)) throw new Error(`settings namespace "${ns}" is already registered`);
-        const reg = { value: { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' }, watchers: new Set<(v: unknown) => void>() };
-        registrations.set(ns, reg);
-        return {
-          get: () => reg.value,
-          watch: (cb: (v: unknown) => void) => {
-            reg.watchers.add(cb);
-            return () => {
-              reg.watchers.delete(cb);
-            };
-          },
-          update: async (patch: Record<string, unknown>) => {
-            reg.value = { ...reg.value, ...patch };
-            for (const w of reg.watchers) w(reg.value);
-          },
-        };
-      },
-    });
-    const mkCtx = (svc: unknown) =>
-      ({ get: (n: string) => (n === 'settings' ? svc : undefined), on: () => () => {} }) as never;
+    // （不随调用方 fiber 销毁）、同 ns 二次 register 抛 already registered。
+    // 每次 mkSvc() 是一个独立服务实例（各自 registrations）；
+    // initial 模拟服务重启后从持久层重解析出的用户开关值。
+    type SvcEvent = (name: string, impl: unknown) => void;
+    const mkSvc = (initial?: Record<string, unknown>) => {
+      const registrations = new Map<string, { value: Record<string, unknown>; watchers: Set<(v: unknown) => void> }>();
+      let registerCalls = 0;
+      const svc = {
+        registerCalls: () => registerCalls,
+        register: (ns: string, _schema: unknown, _opts?: unknown) => {
+          registerCalls++;
+          if (registrations.has(ns)) throw new Error(`settings namespace "${ns}" is already registered`);
+          const reg = {
+            value: { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '', ...initial },
+            watchers: new Set<(v: unknown) => void>(),
+          };
+          registrations.set(ns, reg);
+          return {
+            get: () => reg.value,
+            watch: (cb: (v: unknown) => void) => {
+              reg.watchers.add(cb);
+              return () => {
+                reg.watchers.delete(cb);
+              };
+            },
+            update: async (patch: Record<string, unknown>) => {
+              reg.value = { ...reg.value, ...patch };
+              for (const w of reg.watchers) w(reg.value);
+            },
+          };
+        },
+      };
+      return svc;
+    };
+    type Svc = ReturnType<typeof mkSvc>;
+    // ctx.get('settings') 跟随当前实例（fire 前先 setService，模拟服务迁移后的解析结果）
+    const mkCtx = () => {
+      let svc: Svc | undefined;
+      let listener: SvcEvent | undefined;
+      const ctx = {
+        get: (n: string) => (n === 'settings' ? svc : undefined),
+        on: (_e: string, h: SvcEvent) => {
+          listener = h;
+          return () => {};
+        },
+        effect: (f: () => (() => void)) => f(),
+      };
+      return {
+        ctx: ctx as never,
+        setService: (s: Svc | undefined) => {
+          svc = s;
+        },
+        fire: (name: string, impl: unknown) => listener!(name, impl),
+      };
+    };
 
-    const h1 = registerLiveSettings(mkCtx(mkSvc()), silentLogger);
+    // 16a 首次注册 + 写入用户开关
+    const svcA = mkSvc();
+    const c1 = mkCtx();
+    c1.setService(svcA);
+    const h1 = registerLiveSettings(c1.ctx, silentLogger);
     assert(h1.supported === true, '首次注册成功');
     await h1.update({ enabled: false });
     assert(h1.get().enabled === false, '写入用户开关（enabled=false）');
 
-    // fiber 重启：旧 handle 弃用（注册仍在服务侧），新 fiber 再挂——修复前在此撞
-    // already registered 并停在 stub（用户开关被静默忽略直到重启进程）
-    const h2 = registerLiveSettings(mkCtx(mkSvc()), silentLogger);
-    assert(h2.supported === true, 'fiber 重启后重挂成功（复用进程内注册）');
-    assert(h2.get().enabled === false, '重挂后读到用户已存开关（不静默回退全开）');
-    await h2.update({ enabled: true });
-    assert(h2.get().enabled === true, '重挂后写恢复正常');
+    // 16b fiber 重启（同一服务实例）：复用进程内注册，不撞 already registered
+    const c2 = mkCtx();
+    c2.setService(svcA);
+    const h2 = registerLiveSettings(c2.ctx, silentLogger);
+    assert(h2.supported === true && h2.get().enabled === false, 'fiber 重启后复用进程内注册（读到已存开关）');
+    assert(svcA.registerCalls() === 1, '同实例重挂不重复注册');
 
-    // 服务缺失路径保持：恒开 stub
-    const h3 = registerLiveSettings(mkCtx(undefined), silentLogger);
+    // 16c 服务实例替换（服务重启，用户层从持久层重解析）：作废死 scope → 向新实例重注册
+    const svcB = mkSvc({ enabled: false });
+    c2.setService(svcB);
+    c2.fire('settings', svcB as unknown);
+    assert(svcB.registerCalls() === 1, '服务实例替换后向新实例重新注册（旧 scope 作废）');
+    assert(h2.supported === true && h2.get().enabled === false, '重挂读到新实例解析的用户已存开关');
+    await h2.update({ enabled: true });
+    assert(h2.get().enabled === true, '实例替换后写恢复正常');
+
+    // 16d 服务下线 → 再上线：缓存作废，重新注册
+    c2.setService(undefined);
+    c2.fire('settings', undefined);
+    const svcC = mkSvc({ enabled: true });
+    c2.setService(svcC);
+    c2.fire('settings', svcC as unknown);
+    assert(svcC.registerCalls() === 1 && h2.get().enabled === true, '服务下线再上线后自动重挂');
+
+    // 16e 服务缺失路径保持：恒开 stub
+    const h3 = registerLiveSettings(mkCtx().ctx, silentLogger);
     assert(h3.supported === false && h3.get().enabled === true, '服务缺失保持全开（既有行为不变）');
   }
 
@@ -1348,7 +1403,33 @@ async function main(): Promise<void> {
       const hitT6 = dbT6.searchL1Fts('批量记录 900', 5);
       assert(hitT6.length >= 1 && hitT6[0].id === 'b900', '批量写入后 FTS 可检索');
 
-      // 批量事务保持 T2 的 FTS 失败整批回滚语义
+      // 批量失败回退逐条：好记录照常入库、坏记录只丢自身——消"JSONL 已写、
+      // 检索库整批缺失且无自愈"的批次空洞（毒记录 = 仅让 FTS 插入对该条抛错）
+      const dbPriv = dbT6 as unknown as {
+        stmtL1FtsInsert: {
+          run: (...a: unknown[]) => unknown;
+          all: (...a: unknown[]) => unknown[];
+          get: (...a: unknown[]) => unknown;
+        };
+      };
+      const origFtsInsert = dbPriv.stmtL1FtsInsert;
+      dbPriv.stmtL1FtsInsert = {
+        run: (...a: unknown[]) => {
+          if (String(a[1]).includes('毒记录')) throw new Error('fts boom');
+          return origFtsInsert.run(...a);
+        },
+        all: (...a: unknown[]) => origFtsInsert.all(...a),
+        get: (...a: unknown[]) => origFtsInsert.get(...a),
+      };
+      const beforeP = dbT6.countL1();
+      const recP = (id: string, content: string) => ({ id, content, type: 'work_fact', priority: 60, scene_name: 's', timestamps: [t6], createdAt: t6, updatedAt: t6 });
+      const fbRes = dbT6.upsertL1Batch([recP('fb-good1', '回退批的好记录一'), recP('fb-bad', '包含毒记录的坏条目'), recP('fb-good2', '回退批的好记录二')]);
+      dbPriv.stmtL1FtsInsert = origFtsInsert;
+      assert(fbRes === false, '含坏记录的批量返回 false（未全量成功）');
+      assert(dbT6.countL1() === beforeP + 2, `逐条回退：好记录入库、坏记录只丢自身（+${dbT6.countL1() - beforeP}）`);
+      assert(dbT6.getL1ByIds(['fb-good1', 'fb-good2']).length === 2, '回退后好记录可查');
+
+      // 批量事务保持 T2 的 FTS 失败整批回滚语义（回退后逐条同样全失败 → 计数不变）
       const raw6 = (dbT6 as unknown as { db: DatabaseSync }).db;
       raw6.exec('DROP TABLE l1_fts');
       const before6 = dbT6.countL1();

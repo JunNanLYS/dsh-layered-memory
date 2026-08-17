@@ -77,6 +77,8 @@ export declare class MemoryDb {
     /**
      * 批量 upsert L1（单事务；与单条同语义：FTS 失败整批回滚）。
      * 追加/导入热路径用它——逐条开事务在 WAL FULL 下每条一次 fsync。
+     * 整批失败时回退逐条写入：好记录照常入库、坏记录只丢自身——否则
+     * JSONL 事实源已先行追加，检索库却整批缺失且无自动重导路径（批次空洞）。
      */
     upsertL1Batch(records: MemoryRecord[], embeddings?: Array<Float32Array | undefined>): boolean;
     /** 事务内的单条写入体（upsertL1 / upsertL1Batch 共用；调用方负责 BEGIN/COMMIT）。 */
