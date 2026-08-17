@@ -15,7 +15,7 @@
     <text x="64" y="198" font-size="34" fill="#C9CFDB">对话自动分层蒸馏成记忆，</text>
     <text x="64" y="244" font-size="34" fill="#C9CFDB">模型每步前自动召回注入。</text>
     <text x="64" y="288" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
-          font-size="18" fill="#6B7484">MIT LICENSE · v0.5.0 · SESSION-LEVEL MODES</text>
+          font-size="18" fill="#6B7484">MIT LICENSE · v0.6.1 · PIPELINE PORTED FROM MEMORYCORE</text>
   </g>
 
   <!-- ── 分层管线（宽度递减 = 数据精炼） ── -->

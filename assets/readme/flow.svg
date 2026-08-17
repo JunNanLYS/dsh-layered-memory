@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1200" height="600" viewBox="0 0 1200 600"
+     role="img" aria-labelledby="flowTitle flowDesc">
+  <title id="flowTitle">dsh-layered-memory 运行时数据流</title>
+  <desc id="flowDesc">左侧 User 与 Assistant 的会话事件（session/event）流入中间的 dsh-layered-memory 插件：L0 捕获、L1–L3 蒸馏、检索召回与记忆工具；插件在 agent/pre-step 把相关记忆注入右侧 DeepSeek Harness 核心，蒸馏调用复用核心的 ctx.llm；数据双写 ~/.dsh/memory/。</desc>
+
+  <defs>
+    <marker id="arr-teal" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8 Z" fill="#2DD4BF"/>
+    </marker>
+    <marker id="arr-orange" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8 Z" fill="#F5A623"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="600" rx="26" fill="#0B0E14"/>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
+
+    <!-- ── 图例 ── -->
+    <circle cx="72" cy="58" r="5" fill="#2DD4BF"/>
+    <text x="86" y="64" font-size="18" fill="#C9CFDB">捕获 / 写入</text>
+    <circle cx="250" cy="58" r="5" fill="#F5A623"/>
+    <text x="264" y="64" font-size="18" fill="#C9CFDB">召回 / 注入</text>
+
+    <!-- ── 左列：User ── -->
+    <g id="node-user">
+      <rect x="64" y="120" width="190" height="92" rx="16" fill="#11161F" stroke="#232A38" stroke-width="1.5"/>
+      <circle cx="102" cy="152" r="9" fill="none" stroke="#8B93A7" stroke-width="2"/>
+      <path d="M86 182 a16 16 0 0 1 32 0" fill="none" stroke="#8B93A7" stroke-width="2"/>
+      <text x="126" y="162" font-size="20" font-weight="700" fill="#F2F3F5">User</text>
+      <text x="126" y="188" font-size="18" fill="#8B93A7">用户消息</text>
+    </g>
+
+    <!-- ── 左列：Assistant ── -->
+    <g id="node-assistant">
+      <rect x="64" y="348" width="190" height="92" rx="16" fill="#11161F" stroke="#232A38" stroke-width="1.5"/>
+      <path d="M102 376 L106 390 L120 394 L106 398 L102 412 L98 398 L84 394 L98 390 Z" fill="#8B93A7"/>
+      <text x="126" y="392" font-size="20" font-weight="700" fill="#F2F3F5">Assistant</text>
+      <text x="126" y="418" font-size="18" fill="#8B93A7">助手回复</text>
+    </g>
+
+    <!-- ── 中列：插件 ── -->
+    <g id="node-plugin">
+      <rect x="430" y="96" width="290" height="356" rx="18" fill="#11161F" stroke="#2DD4BF" stroke-opacity="0.55" stroke-width="1.5"/>
+      <text x="575" y="138" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+            font-size="22" font-weight="700" fill="#F2F3F5">dsh-layered-memory</text>
+      <text x="575" y="166" text-anchor="middle" font-size="18" fill="#8B93A7">分层蒸馏记忆插件</text>
+
+      <g id="plugin-modules">
+        <rect x="452" y="188" width="246" height="46" rx="10" fill="#0D1119" stroke="#232A38"/>
+        <circle cx="470" cy="211" r="4" fill="#2DD4BF"/>
+        <text x="486" y="218" font-size="19" fill="#F2F3F5">L0 捕获 capture</text>
+
+        <rect x="452" y="244" width="246" height="46" rx="10" fill="#0D1119" stroke="#232A38"/>
+        <circle cx="470" cy="267" r="4" fill="#2DD4BF"/>
+        <text x="486" y="274" font-size="19" fill="#F2F3F5">L1–L3 蒸馏 distill</text>
+
+        <rect x="452" y="300" width="246" height="46" rx="10" fill="#0D1119" stroke="#232A38"/>
+        <circle cx="470" cy="323" r="4" fill="#2DD4BF"/>
+        <text x="486" y="330" font-size="19" fill="#F2F3F5">检索召回 · 三策略</text>
+
+        <rect x="452" y="356" width="246" height="46" rx="10" fill="#0D1119" stroke="#232A38"/>
+        <circle cx="470" cy="379" r="4" fill="#2DD4BF"/>
+        <text x="486" y="386" font-size="19" fill="#F2F3F5">记忆工具 ×3</text>
+      </g>
+    </g>
+
+    <!-- ── 存储条 ── -->
+    <g id="node-storage">
+      <path id="sto-write" d="M545 456 V482" stroke="#2DD4BF" stroke-width="2.5" fill="none" marker-end="url(#arr-teal)"/>
+      <path id="sto-read" d="M605 482 V456" stroke="#F5A623" stroke-width="2.5" fill="none" marker-end="url(#arr-orange)"/>
+      <text x="531" y="472" text-anchor="end" font-size="16" fill="#2DD4BF">写</text>
+      <text x="619" y="472" font-size="16" fill="#F5A623">读</text>
+      <circle r="3.5" fill="#2DD4BF" cx="545" cy="470">
+        <animate attributeName="cx" to="0" dur="1ms" fill="freeze"/>
+        <animate attributeName="cy" to="0" dur="1ms" fill="freeze"/>
+        <animateMotion dur="1.6s" begin="0s" repeatCount="indefinite"><mpath href="#sto-write" xlink:href="#sto-write"/></animateMotion>
+      </circle>
+      <circle r="3.5" fill="#F5A623" cx="605" cy="468">
+        <animate attributeName="cx" to="0" dur="1ms" fill="freeze"/>
+        <animate attributeName="cy" to="0" dur="1ms" fill="freeze"/>
+        <animateMotion dur="1.6s" begin="-0.8s" repeatCount="indefinite"><mpath href="#sto-read" xlink:href="#sto-read"/></animateMotion>
+      </circle>
+
+      <rect x="430" y="486" width="290" height="54" rx="12" fill="#0D1119" stroke="#232A38" stroke-dasharray="6 4"/>
+      <text x="575" y="509" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+            font-size="18" fill="#2DD4BF">~/.dsh/memory/</text>
+      <text x="575" y="531" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+            font-size="16" fill="#6B7484">memory.db · JSONL · Markdown</text>
+    </g>
+
+    <!-- ── 右列：DSH 核心 ── -->
+    <g id="node-core">
+      <rect x="920" y="96" width="216" height="356" rx="18" fill="#11161F" stroke="#232A38" stroke-width="1.5"/>
+      <text x="1028" y="138" text-anchor="middle" font-size="22" font-weight="700" fill="#F2F3F5">DSH 核心</text>
+      <text x="1028" y="166" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+            font-size="18" fill="#8B93A7">DeepSeek Harness</text>
+
+      <g id="core-modules">
+        <rect x="936" y="188" width="184" height="46" rx="10" fill="#0D1119" stroke="#232A38"/>
+        <circle cx="954" cy="211" r="4" fill="#F5A623"/>
+        <text x="970" y="218" font-size="19" fill="#F2F3F5">agent 循环</text>
+
+        <rect x="936" y="244" width="184" height="46" rx="10" fill="#0D1119" stroke="#232A38"/>
+        <circle cx="954" cy="267" r="4" fill="#F5A623"/>
+        <text x="970" y="274" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="19" fill="#F2F3F5">ctx.llm</text>
+
+        <rect x="936" y="300" width="184" height="46" rx="10" fill="#0D1119" stroke="#232A38"/>
+        <circle cx="954" cy="323" r="4" fill="#F5A623"/>
+        <text x="970" y="330" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="19" fill="#F2F3F5">systemPrompt</text>
+
+        <rect x="936" y="356" width="184" height="46" rx="10" fill="#0D1119" stroke="#232A38"/>
+        <circle cx="954" cy="379" r="4" fill="#F5A623"/>
+        <text x="970" y="386" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="19" fill="#F2F3F5">tools·settings</text>
+      </g>
+    </g>
+
+    <!-- ── 连接 1：User → 插件（捕获） ── -->
+    <path id="cap-user" d="M254 166 H430" stroke="#2DD4BF" stroke-width="2.5" fill="none" marker-end="url(#arr-teal)"/>
+    <text x="342" y="142" text-anchor="middle" font-size="18" fill="#C9CFDB">对话输入</text>
+    <circle r="4" fill="#2DD4BF" cx="320" cy="166">
+      <animate attributeName="cx" to="0" dur="1ms" fill="freeze"/>
+      <animate attributeName="cy" to="0" dur="1ms" fill="freeze"/>
+      <animateMotion dur="2.4s" begin="0s" repeatCount="indefinite"><mpath href="#cap-user" xlink:href="#cap-user"/></animateMotion>
+    </circle>
+    <circle r="4" fill="#2DD4BF" opacity="0.7" cx="368" cy="166">
+      <animate attributeName="cx" to="0" dur="1ms" fill="freeze"/>
+      <animate attributeName="cy" to="0" dur="1ms" fill="freeze"/>
+      <animateMotion dur="2.4s" begin="-1.2s" repeatCount="indefinite"><mpath href="#cap-user" xlink:href="#cap-user"/></animateMotion>
+    </circle>
+
+    <!-- ── 连接 2：Assistant → 插件（捕获） ── -->
+    <path id="cap-asst" d="M254 394 H430" stroke="#2DD4BF" stroke-width="2.5" fill="none" marker-end="url(#arr-teal)"/>
+    <text x="342" y="370" text-anchor="middle" font-size="18" fill="#C9CFDB">回复捕获</text>
+    <circle r="4" fill="#2DD4BF" cx="320" cy="394">
+      <animate attributeName="cx" to="0" dur="1ms" fill="freeze"/>
+      <animate attributeName="cy" to="0" dur="1ms" fill="freeze"/>
+      <animateMotion dur="2.4s" begin="-0.6s" repeatCount="indefinite"><mpath href="#cap-asst" xlink:href="#cap-asst"/></animateMotion>
+    </circle>
+    <circle r="4" fill="#2DD4BF" opacity="0.7" cx="368" cy="394">
+      <animate attributeName="cx" to="0" dur="1ms" fill="freeze"/>
+      <animate attributeName="cy" to="0" dur="1ms" fill="freeze"/>
+      <animateMotion dur="2.4s" begin="-1.8s" repeatCount="indefinite"><mpath href="#cap-asst" xlink:href="#cap-asst"/></animateMotion>
+    </circle>
+
+    <!-- ── 连接 3：插件 → 核心（召回注入） ── -->
+    <path id="flow-recall" d="M720 192 L920 214" stroke="#F5A623" stroke-width="2.5" fill="none" marker-end="url(#arr-orange)"/>
+    <text x="820" y="166" text-anchor="middle" font-size="18" fill="#F5A623">召回注入 pre-step</text>
+    <circle r="3.5" fill="#F5A623" cx="770" cy="198">
+      <animate attributeName="cx" to="0" dur="1ms" fill="freeze"/>
+      <animate attributeName="cy" to="0" dur="1ms" fill="freeze"/>
+      <animateMotion dur="2.4s" begin="0s" repeatCount="indefinite"><mpath href="#flow-recall" xlink:href="#flow-recall"/></animateMotion>
+    </circle>
+    <circle r="3.5" fill="#F5A623" cx="815" cy="202.5">
+      <animate attributeName="cx" to="0" dur="1ms" fill="freeze"/>
+      <animate attributeName="cy" to="0" dur="1ms" fill="freeze"/>
+      <animateMotion dur="2.4s" begin="-0.8s" repeatCount="indefinite"><mpath href="#flow-recall" xlink:href="#flow-recall"/></animateMotion>
+    </circle>
+    <circle r="3.5" fill="#F5A623" cx="860" cy="207">
+      <animate attributeName="cx" to="0" dur="1ms" fill="freeze"/>
+      <animate attributeName="cy" to="0" dur="1ms" fill="freeze"/>
+      <animateMotion dur="2.4s" begin="-1.6s" repeatCount="indefinite"><mpath href="#flow-recall" xlink:href="#flow-recall"/></animateMotion>
+    </circle>
+
+    <!-- ── 连接 4：核心 → 插件（蒸馏复用 LLM） ── -->
+    <path id="flow-distill" d="M920 320 L720 342" stroke="#2DD4BF" stroke-width="2.5" fill="none" marker-end="url(#arr-teal)"/>
+    <text x="820" y="374" text-anchor="middle" font-size="18" fill="#2DD4BF">蒸馏复用 ctx.llm</text>
+    <circle r="3.5" fill="#2DD4BF" cx="865" cy="327">
+      <animate attributeName="cx" to="0" dur="1ms" fill="freeze"/>
+      <animate attributeName="cy" to="0" dur="1ms" fill="freeze"/>
+      <animateMotion dur="2.4s" begin="-0.4s" repeatCount="indefinite"><mpath href="#flow-distill" xlink:href="#flow-distill"/></animateMotion>
+    </circle>
+    <circle r="3.5" fill="#2DD4BF" cx="820" cy="331">
+      <animate attributeName="cx" to="0" dur="1ms" fill="freeze"/>
+      <animate attributeName="cy" to="0" dur="1ms" fill="freeze"/>
+      <animateMotion dur="2.4s" begin="-1.2s" repeatCount="indefinite"><mpath href="#flow-distill" xlink:href="#flow-distill"/></animateMotion>
+    </circle>
+    <circle r="3.5" fill="#2DD4BF" cx="775" cy="335">
+      <animate attributeName="cx" to="0" dur="1ms" fill="freeze"/>
+      <animate attributeName="cy" to="0" dur="1ms" fill="freeze"/>
+      <animateMotion dur="2.4s" begin="-2s" repeatCount="indefinite"><mpath href="#flow-distill" xlink:href="#flow-distill"/></animateMotion>
+    </circle>
+
+    <!-- ── 底注 ── -->
+    <text x="600" y="576" text-anchor="middle" font-size="18" fill="#8B93A7">事件缝 session/event · 注入缝 agent/pre-step + systemPrompt.context · 全程无感，用户与模型零操作</text>
+  </g>
+</svg>

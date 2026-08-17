@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="780" viewBox="0 0 1200 780"
+     role="img" aria-labelledby="layersTitle layersDesc">
+  <title id="layersTitle">分层记忆 L0–L3</title>
+  <desc id="layersDesc">四层蒸馏：L0 原始对话（每轮消息清洗落盘）→ L1 原子记忆（情境切分、提取、去重合并，分 chat/work 两族）→ L2 场景块（Markdown 场景文档）→ L3 核心画像（每族一份）。卡片宽度递减表示数据逐层精炼；层间由 LLM 驱动。</desc>
+
+  <defs>
+    <marker id="arr-teal" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8 Z" fill="#2DD4BF"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="780" rx="26" fill="#0B0E14"/>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
+    <text x="1136" y="78" text-anchor="end" font-size="18" fill="#6B7484">卡片宽度递减 = 数据逐层精炼</text>
+
+    <!-- ── L0 ── -->
+    <g id="layer-l0">
+      <rect x="120" y="96" width="1016" height="118" rx="16" fill="#11161F" stroke="#232A38" stroke-width="1.5"/>
+      <rect x="126" y="106" width="4" height="98" rx="2" fill="#2DD4BF"/>
+      <rect x="142" y="120" width="54" height="34" rx="9" fill="#2DD4BF" fill-opacity="0.12"/>
+      <text x="169" y="143" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+            font-size="20" font-weight="700" fill="#2DD4BF">L0</text>
+      <text x="216" y="144" font-size="24" font-weight="700" fill="#F2F3F5">原始对话</text>
+      <text x="1108" y="143" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+            font-size="18" fill="#6B7484">conversations/YYYY-MM-DD.jsonl + SQLite</text>
+      <text x="216" y="180" font-size="18" fill="#C9CFDB">每轮 user / assistant 消息 — 清洗去噪、剥离代码块与召回注入标签，turn/end 即时落盘</text>
+      <text x="216" y="204" font-size="18" fill="#8B93A7">按天分片追加 · 不分族 · 独立串行落盘链，进程退出不丢</text>
+    </g>
+
+    <path d="M169 220 V246" stroke="#2DD4BF" stroke-width="2" fill="none" marker-end="url(#arr-teal)"/>
+    <text x="186" y="237" font-size="18" fill="#2DD4BF">LLM 提取</text>
+
+    <!-- ── L1 ── -->
+    <g id="layer-l1">
+      <rect x="120" y="252" width="944" height="118" rx="16" fill="#11161F" stroke="#232A38" stroke-width="1.5"/>
+      <rect x="126" y="262" width="4" height="98" rx="2" fill="#2DD4BF"/>
+      <rect x="142" y="276" width="54" height="34" rx="9" fill="#2DD4BF" fill-opacity="0.12"/>
+      <text x="169" y="299" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+            font-size="20" font-weight="700" fill="#2DD4BF">L1</text>
+      <text x="216" y="300" font-size="24" font-weight="700" fill="#F2F3F5">原子记忆</text>
+      <text x="1036" y="299" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+            font-size="18" fill="#6B7484">records/*.jsonl + SQLite（FTS5+向量 · family 列）</text>
+      <text x="216" y="336" font-size="18" fill="#C9CFDB">情境切分 + 记忆提取 — 冲突检测、去重合并；候选只在同族内召回，永不跨族</text>
+      <text x="216" y="360" font-size="18" fill="#8B93A7">chat：persona / episodic / instruction · work：work_fact / task / method / artifact</text>
+    </g>
+
+    <path d="M169 376 V402" stroke="#2DD4BF" stroke-width="2" fill="none" marker-end="url(#arr-teal)"/>
+    <text x="186" y="393" font-size="18" fill="#2DD4BF">LLM 整合</text>
+
+    <!-- ── L2 ── -->
+    <g id="layer-l2">
+      <rect x="120" y="408" width="872" height="118" rx="16" fill="#11161F" stroke="#232A38" stroke-width="1.5"/>
+      <rect x="126" y="418" width="4" height="98" rx="2" fill="#2DD4BF"/>
+      <rect x="142" y="432" width="54" height="34" rx="9" fill="#2DD4BF" fill-opacity="0.12"/>
+      <text x="169" y="455" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+            font-size="20" font-weight="700" fill="#2DD4BF">L2</text>
+      <text x="216" y="456" font-size="24" font-weight="700" fill="#F2F3F5">场景块</text>
+      <text x="964" y="455" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+            font-size="18" fill="#6B7484">scenes/&lt;family&gt;/*.md</text>
+      <text x="216" y="492" font-size="18" fill="#C9CFDB">新记忆整合为 Markdown 场景文档 — META 热度管理、合并上限，按族各自整合</text>
+      <text x="216" y="516" font-size="18" fill="#8B93A7">LLM 删除指令（[DELETED]）由工程侧硬删除文件</text>
+    </g>
+
+    <path d="M169 532 V558" stroke="#2DD4BF" stroke-width="2" fill="none" marker-end="url(#arr-teal)"/>
+    <text x="186" y="549" font-size="18" fill="#2DD4BF">LLM 蒸馏</text>
+
+    <!-- ── L3 ── -->
+    <g id="layer-l3">
+      <rect x="120" y="564" width="800" height="118" rx="16" fill="#11161F" stroke="#232A38" stroke-width="1.5"/>
+      <rect x="126" y="574" width="4" height="98" rx="2" fill="#2DD4BF"/>
+      <rect x="142" y="588" width="54" height="34" rx="9" fill="#2DD4BF" fill-opacity="0.12"/>
+      <text x="169" y="611" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+            font-size="20" font-weight="700" fill="#2DD4BF">L3</text>
+      <text x="216" y="612" font-size="24" font-weight="700" fill="#F2F3F5">核心画像</text>
+      <text x="892" y="611" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+            font-size="18" fill="#6B7484">persona-&lt;family&gt;.md</text>
+      <text x="216" y="648" font-size="18" fill="#C9CFDB">从变化的场景蒸馏画像，每族一份，冷启动自动触发</text>
+      <text x="216" y="672" font-size="18" fill="#8B93A7">chat：用户画像 ≤2000 字 · work：Team Operating Doctrine ≤1200 字</text>
+    </g>
+
+    <!-- ── 管线原则 ── -->
+    <rect x="120" y="706" width="1016" height="50" rx="12" fill="#0D1119" stroke="#232A38"/>
+    <text x="628" y="737" text-anchor="middle" font-size="18" fill="#8B93A7">全阶段复用 DSH ctx.llm · 任何阶段失败仅记日志、绝不阻塞 Agent 循环 · 注入内容用标签包裹，捕获侧自动剥离（防反馈循环）</text>
+  </g>
+</svg>

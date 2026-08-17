@@ -9,66 +9,58 @@
 
 DeepSeek Harness 的**分层蒸馏记忆插件**（持久组合插件）：对话在后台自动完成
 L0 捕获 → L1 原子记忆 → L2 场景整合 → L3 画像蒸馏，模型每一步前自动把相关记忆
-注入上下文——用户与模型都不需要做任何操作。移植自
-[MemoryCore](https://github.com/TencentDB-Agent-Memory)（TencentDB Agent Memory）的
-管线设计：Prompt 原样保留，仅把"LLM 操作文件"的 L2/L3 流程适配为"LLM 输出、工程侧执行"。
+注入上下文——用户与模型都不需要做任何操作。
 
-## 核心能力
+> 本插件的记忆核心能力（L0–L3 分层蒸馏管线、Prompt 与双写存储设计）参考自
+> [TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory)
+> 中的 **MemoryCore**：Prompt 原样保留，仅把"LLM 操作文件"的 L2/L3 流程适配为
+> "LLM 输出、工程侧执行"。
 
-### 分层记忆（L0–L3）
+## 运行时数据流
 
-| 层 | 内容 | 存储 |
-| --- | --- | --- |
-| L0 | 每轮 user/assistant 消息（清洗去噪、剥离代码块与注入标签） | `conversations/YYYY-MM-DD.jsonl` + SQLite |
-| L1 | 情境切分 + 记忆提取（chat: persona/episodic/instruction；work: work_fact/work_task/work_method/work_artifact）+ 冲突检测去重合并，每条带族标签 | `records/YYYY-MM-DD.jsonl` + SQLite（FTS5 + 可选向量，family 列） |
-| L2 | 把新记忆整合为 Markdown 场景文档（META 块、热度管理、合并上限），按族各自整合 | `scenes/chat/*.md`、`scenes/work/*.md` |
-| L3 | 从变化场景蒸馏画像（chat: 用户画像 ≤2000 字；work: Team Operating Doctrine ≤1200 字），每族一份 | `persona-chat.md`、`persona-work.md` |
+<p align="center">
+  <img src="./assets/readme/flow.svg" width="100%"
+       alt="dsh-layered-memory 运行时数据流：左侧 User 与 Assistant 的会话事件流入插件（L0 捕获、L1–L3 蒸馏、检索召回、记忆工具），插件经 agent/pre-step 把相关记忆注入右侧 DSH 核心；蒸馏复用核心的 ctx.llm，数据双写 ~/.dsh/memory/">
+</p>
 
-管线原则：所有蒸馏调用复用 DSH 自身的 `ctx.llm`；任何阶段失败只记日志、绝不阻塞
-Agent 循环；召回注入用标签包裹、捕获侧自动剥离，防止反馈循环。
+插件挂在 dsh 原生事件缝上（`session/event` 捕获、`agent/pre-step` 注入），
+蒸馏调用复用宿主 `ctx.llm`，全程对用户与模型透明。另注册三个模型可主动调用的
+记忆工具：`memory_search` / `conversation_search` / `memory_read_scene`。
 
-**未蒸馏缓冲持久化**：抽取失败的待重试消息与攒触发阈值中途的消息都暂存在按档分桶的
-缓冲里（`pending.json`，每次蒸馏尝试后原子落盘）——重启不丢，启动 20 秒后自动补跑一次，
-失败则维持"等下一轮同档对话"的语义。
+## 分层记忆（L0–L3）
 
-**重建**（设置页 → 记忆 → 概览 → 重建记忆）：以 L0 原始对话为事实源重新推导全部派生层。
-旧 `records/`、`scenes/`、`persona-*.md` 整体归档（改名 `*.bak.<时间戳>`，不删除），检索库
-L1 清空、checkpoint 重置，随后按会话分块、统一 auto 档重蒸馏 L1→L2→L3（收尾强制跑一轮
-L2 残余 + L3 冷启动）。重建分块走低优先级队列——期间正常对话的蒸馏优先进行；带确认弹窗
-（会话数/消息数/预计调用数）、进度条与取消（已重建部分保留）。
+<p align="center">
+  <img src="./assets/readme/layers.svg" width="100%"
+       alt="分层记忆四层：L0 原始对话（清洗落盘）→ L1 原子记忆（提取+去重合并，chat/work 两族）→ L2 场景块（Markdown 场景文档）→ L3 核心画像（每族一份）；层间由 LLM 驱动，宽度递减表示数据逐层精炼">
+</p>
 
-### 会话级记忆档位
+- **未蒸馏缓冲持久化**：抽取失败的待重试消息与攒触发阈值中途的消息都暂存在按档
+  分桶的缓冲里（`pending.json`，每次蒸馏尝试后原子落盘）——重启不丢，启动 20 秒后
+  自动补跑一次，失败则维持"等下一轮同档对话"的语义；
+- **重建**（设置页 → 记忆 → 概览 → 重建记忆）：以 L0 原始对话为事实源重新推导全部
+  派生层。旧 `records/`、`scenes/`、`persona-*.md` 整体归档（改名 `*.bak.<时间戳>`，
+  不删除），检索库清空、checkpoint 重置，随后按会话分块、统一 auto 档重蒸馏
+  L1→L2→L3。重建分块走低优先级队列——期间正常对话的蒸馏优先进行；带确认弹窗
+  （会话数/消息数/预计调用数）、进度条与取消（已重建部分保留）。
 
-每个会话可独立选择记忆档位，**写入与召回同档**：
+## 会话级记忆档位
 
-| 档位 | 蒸馏（写入） | 召回（注入） |
-| --- | --- | --- |
-| `自动`（默认） | 合并词表 prompt 单次抽取，个人三类 + 工作四类全开，按 type 前缀落族标签 | 两族全召回；画像/场景导航按类别归组、`<domain>` 分域结构化注入 |
-| `chat` | 窄 prompt 只提个人三类，只入 chat 族 | 只查 chat 记忆 + chat 画像/场景导航 |
-| `work` | 窄 prompt 只提工作四类，只入 work 族 | 只查 work 记忆 + work 画像/场景导航 |
-| `关闭` | 不写 L0、不蒸馏 | 不召回；三个记忆工具返回"已隐身"提示 |
+<p align="center">
+  <img src="./assets/readme/modes.svg" width="100%"
+       alt="四个记忆档位：auto（默认，双族七类写入、双族召回分域注入）、chat（仅个人三类）、work（仅工作四类）、off（不写不召回，工具返回已隐身）；写入与召回始终同档">
+</p>
 
-- **控件**：输入栏内、模式选择器右侧的 pill（`记忆·自动`），点击在上方浮出 macOS 风格
-  滑动选择器——拖拽松手吸附最近档位；
-- **默认档** = 配置 `family`（`auto|chat|work`，默认 `auto`）；每会话的选择按 sessionId
-  持久化到 `session-modes.json`，重启/恢复会话不丢；中途切档下一轮生效，已提取记忆留在原族；
-- 与全局开关叠加（全局是总闸）；L2/L3 完全分族，间族内容不渗透。
-
-### 记忆浏览器（设置页 → 记忆）
-
-多 Tab 页面，两族混合视图：**概览**（各层计数 + 记忆模式开关面板 + 蒸馏思考档位选择器，5 秒自动刷新）、
-**记忆**（L1 卡片列表，关键词/类型/情境筛选）、**场景**（L2 全文）、**画像**（L3 全文）、
-**日志**（`memory.log` 尾部 200 行）。开关与思考档位走官方 settings 服务（命名空间 `dsh-memory`，
-实时生效、重启保留）；开关生效规则 = **静态 config（部署上限）AND 运行时开关**；
-思考档位为运行时覆盖（选择器选"跟随配置"则用部署配置 `llm.reasoningEffort` 作默认），
-数据通道为 loopback RPC（`dsh-memory/*`）。
+- **控件**：输入栏内、模式选择器右侧的 pill（`记忆·自动`），点击在上方浮出 macOS
+  风格滑动选择器——拖拽松手吸附最近档位；
+- 每会话的选择按 sessionId 持久化到 `session-modes.json`，重启/恢复会话不丢；
+  与全局开关叠加（全局是总闸）；L2/L3 完全分族，间族内容不渗透。
 
 ## 快速开始
 
 需要 Node ≥ 22.16。两种调用方式任选（`npx` 前缀可替换下面任何 `dsh` 命令）：
 
 ```bash
-# 方式一：npx 直接跑官方 CLI（无需预装 dsh；可 pin 版本，如 dsh-layered-memory@0.5.4）
+# 方式一：npx 直接跑官方 CLI（无需预装 dsh；可 pin 版本，如 dsh-layered-memory@0.6.1）
 npx -y @deepseek-ai/dsh plugin --profile web add dsh-layered-memory
 
 # 方式二：已装 dsh CLI（dsh 是 pnpm 转发器，未装 pnpm 时先 npm i -g pnpm）
@@ -152,43 +144,22 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 
 ## 存储布局
 
-对齐 MemoryCore 官方双写架构：JSONL 追加文件（`conversations/`、`records/` 按天分片）是
-备份/恢复的事实源，**只增不改**；`memory.db`（node:sqlite + WAL + FTS5 BM25 + sqlite-vec
-余弦向量）是主检索引擎，去重合并的更新/删除只动检索库。
+<p align="center">
+  <img src="./assets/readme/storage.svg" width="100%"
+       alt="存储布局：双写架构（JSONL 事实源只增不改 + memory.db 主检索库）；文件形态含 conversations/records/scenes/persona/state/pending/session-modes/日志与重建归档；检索三策略 keyword/embedding/hybrid（RRF k=60）；降级链保证永不阻塞宿主">
+</p>
 
-- **检索三策略**（`recall.strategy`）：`keyword`（FTS5 BM25）/ `embedding`（vec0 余弦 KNN）/
-  `hybrid`（双路并行 + RRF k=60 融合，默认）；`conversation_search`（L0）同款融合；
-- **向量能力可选**：默认关闭（纯 FTS）。DSH 的 `ctx.llm` 无 embeddings 端点，启用需自备
-  任意 OpenAI 兼容 `/embeddings` 服务（配置 `embedding.*`）；配置变化自动 drop 向量表并
-  后台全量重嵌入；
-- **降级链**：sqlite-vec 加载失败 → 纯 FTS；embedding 调用失败 → 该次降级 FTS 并告警一次；
-  检索库初始化失败 → 记忆功能整体停用但 dsh 本体照常启动；
-- **替换缝**：`L1Store.search()` 是唯一检索入口。
-
-```
-memory/
-├── memory.db              # SQLite 检索库（L0/L1 元数据 + FTS5 + 可选向量；L1 带 family 列）
-├── conversations/2026-01-01.jsonl  # L0 原始对话事实源（每天一个文件，追加；不分族）
-├── records/2026-01-01.jsonl        # L1 原子记忆事实源（每天一个文件，追加；含 family 字段）
-├── scenes/chat/*.md       # L2 场景块（chat 族）
-├── scenes/work/*.md       # L2 场景块（work 族）
-├── persona-chat.md        # L3 画像（chat 族：用户画像）
-├── persona-work.md        # L3 画像（work 族：Team Operating Doctrine）
-├── state.json             # 管线 checkpoint（v2 分族：families.chat / families.work）
-├── pending.json           # 未蒸馏缓冲（按档分桶；重启恢复 + 启动自动补跑）
-├── session-modes.json     # 会话档位映射（sessionId → 档位，>90 天自动清理）
-├── records.bak.<ts>/      # 重建时归档的旧产物（scenes/persona 同款 *.bak.<ts>）
-└── memory.log             # 诊断日志（info+，超 2MB 轮转为 memory.log.1）
-```
+向量能力默认关闭（纯 FTS）。DSH 的 `ctx.llm` 无 embeddings 端点，启用需自备任意
+OpenAI 兼容 `/embeddings` 服务（配置 `embedding.*`）；配置变化自动 drop 向量表并
+后台全量重嵌入。
 
 ## 日志与排查
 
-dsh 宿主把插件日志打到控制台，插件将 info 及以上镜像到数据目录 `memory.log`。一轮对话的
-典型日志路径：`L0 捕获 turn=N …条` → `L0 落盘 N 条` → `蒸馏管线开始（…待重试 M 条）` →
-`LLM 调用 provider/model：输入 x → 输出 y 字符（z s）` → `L1 抽取完成（…新增 Y 条）` →
-`蒸馏管线结束`；下一轮有 `召回命中 N 条 L1`。LLM 空输出会带完整诊断（finish 原因 /
-token 计数 / reasoning 摘录）；JSON 解析失败附带模型原始输出前 400 字符；所有失败 warn
-携带错误堆栈首帧。
+dsh 宿主把插件日志打到控制台，插件将 info 及以上镜像到数据目录 `memory.log`。一轮
+对话的典型日志路径：`L0 捕获` → `L0 落盘` → `蒸馏管线开始` → `LLM 调用（输入/输出
+字符数、耗时）` → `L1 抽取完成` → `蒸馏管线结束`；下一轮有 `召回命中 N 条 L1`。
+LLM 空输出带完整诊断（finish 原因 / token 计数 / reasoning 摘录），JSON 解析失败
+附模型原始输出前 400 字符，失败 warn 均带堆栈首帧。
 
 ## 与 MemoryCore 的差异
 
@@ -196,7 +167,14 @@ token 计数 / reasoning 摘录）；JSON 解析失败附带模型原始输出�
 - L2/L3 由"LLM 操作文件工具"改为"LLM 输出操作 JSON / 完整文档，工程侧执行"；
 - 召回注入点在 `agent/pre-step` + agent 作用域 `systemPrompt.context`（DSH 原生事件/服务）；
 - 存储/检索即官方 sqlite 后端的单机裁剪版（裁掉多租户隔离列、TCVDB 云后端、审计表；
-  分词用自带 CJK 二元组替代 jieba，保持零原生依赖——仅 sqlite-vec 一个原生扩展，加载失败自动降级）。
+  分词用自带 CJK 二元组替代 jieba，保持零原生依赖——仅 sqlite-vec 一个原生扩展，
+  加载失败自动降级）。
+
+## 致谢
+
+记忆核心能力（分层蒸馏管线、Prompt 设计、双写存储架构）参考自
+[TencentCloud/TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory)
+项目中的 **MemoryCore**，感谢原项目开放的设计与实现。
 
 ## License
 

@@ -11,57 +11,60 @@ A **layered distillation memory plugin** for DeepSeek Harness (persistent compos
 plugin): conversations are processed in the background through L0 capture → L1 atomic
 memories → L2 scene consolidation → L3 persona distillation, and relevant memories are
 automatically injected into context before every model step — neither the user nor the
-model needs to do anything. Ported from the pipeline design of
-[MemoryCore](https://github.com/TencentDB-Agent-Memory) (TencentDB Agent Memory):
-prompts are kept as-is; only the L2/L3 "LLM manipulates files" flow is adapted to
-"LLM outputs, engineering side executes".
+model needs to do anything.
 
-## Core Capabilities
+> The core memory capabilities of this plugin (the L0–L3 layered distillation pipeline,
+> prompts, and dual-write storage design) are modeled after **MemoryCore** from
+> [TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory):
+> prompts are kept as-is; only the L2/L3 "LLM manipulates files" flow is adapted to
+> "LLM outputs, engineering side executes".
 
-### Layered Memory (L0–L3)
+## Runtime Data Flow
 
-| Layer | Content | Storage |
-| --- | --- | --- |
-| L0 | Per-turn user/assistant messages (cleaned, code blocks and injected tags stripped) | `conversations/YYYY-MM-DD.jsonl` + SQLite |
-| L1 | Scene segmentation + memory extraction (chat: persona/episodic/instruction; work: work_fact/work_task/work_method/work_artifact) + conflict-detection dedup & merge, each record family-tagged | `records/YYYY-MM-DD.jsonl` + SQLite (FTS5 + optional vectors, family column) |
-| L2 | New memories consolidated into Markdown scene documents (META blocks, heat management, merge caps), consolidated per family | `scenes/chat/*.md`, `scenes/work/*.md` |
-| L3 | Persona distilled from changed scenes (chat: user persona ≤2000 chars; work: Team Operating Doctrine ≤1200 chars), one per family | `persona-chat.md`, `persona-work.md` |
+<p align="center">
+  <img src="./assets/readme/flow.svg" width="100%"
+       alt="Runtime data flow: session events from User and Assistant (left) flow into the plugin (L0 capture, L1–L3 distillation, retrieval, memory tools), which injects relevant memories into the DeepSeek Harness core (right) at agent/pre-step; distillation reuses the core's ctx.llm and data is dual-written to ~/.dsh/memory/">
+</p>
 
-Pipeline principles: all distillation calls reuse DSH's own `ctx.llm`; any stage
-failure is logged only and never blocks the agent loop; recall injection is wrapped
-in tags that are automatically stripped on the capture side, preventing feedback loops.
+The plugin attaches to DSH-native event seams (`session/event` for capture,
+`agent/pre-step` for injection), reuses the host's `ctx.llm` for distillation, and stays
+fully transparent to both user and model. It also registers three model-callable memory
+tools: `memory_search` / `conversation_search` / `memory_read_scene`.
 
-### Per-Session Memory Modes
+## Layered Memory (L0–L3)
 
-Each session can independently choose a memory mode — **write and recall share the
-same mode**:
+<p align="center">
+  <img src="./assets/readme/layers.svg" width="100%"
+       alt="Four layers: L0 raw conversation (cleaned and persisted) → L1 atomic memories (extraction + dedup merge, chat/work families) → L2 scene blocks (Markdown scene docs) → L3 core persona (one per family); layers are connected by LLM calls and the shrinking card width shows progressive refinement">
+</p>
 
-| Mode | Distillation (write) | Recall (injection) |
-| --- | --- | --- |
-| `Auto` (default) | Single extraction with a merged-vocabulary prompt, all personal 3 + work 4 types enabled, family tag assigned by type prefix | Both families recalled; persona/scene navigation grouped by category and injected with structured `<domain>` blocks |
-| `chat` | Narrow prompt with personal 3 types only, chat family only | chat memories only + chat persona/scene navigation |
-| `work` | Narrow prompt with work 4 types only, work family only | work memories only + work persona/scene navigation |
-| `Off` | No L0 writes, no distillation | No recall; the three memory tools return a "cloaked" notice |
+- **Pending buffer persistence**: messages awaiting retry after a failed extraction, and
+  messages accumulating toward the next trigger threshold, are held in mode-bucketed
+  buffers (`pending.json`, atomically persisted after every distillation attempt) —
+  nothing is lost on restart; a catch-up run happens 20s after startup, and on failure
+  the buffer simply waits for the next same-mode conversation;
+- **Rebuild** (Settings → Memory → Overview → Rebuild): re-derives all derived layers
+  from the L0 raw conversations as the source of truth. Old `records/`, `scenes/`,
+  `persona-*.md` are archived as a whole (renamed `*.bak.<timestamp>`, never deleted),
+  the retrieval DB is cleared, checkpoints reset, then L1→L2→L3 are re-distilled
+  session-by-session in unified `auto` mode. Rebuild chunks run on a low-priority
+  queue — distillation for live conversations always goes first; the UI includes a
+  confirmation dialog (session/message/estimated-call counts), a progress bar, and
+  cancellation (completed parts are kept).
+
+## Per-Session Memory Modes
+
+<p align="center">
+  <img src="./assets/readme/modes.svg" width="100%"
+       alt="Four memory modes: auto (default; both families on write and recall), chat (personal 3 types only), work (work 4 types only), off (no writes, no recall, tools report cloaked); write and recall always share the same mode">
+</p>
 
 - **Control**: the pill next to the mode selector in the input bar (`Memory · Auto`);
   clicking opens a macOS-style sliding picker above — release to snap to the nearest
   mode;
-- **Default mode** = config `family` (`auto|chat|work`, default `auto`); each session's
-  choice is persisted by sessionId to `session-modes.json`, surviving restarts/session
-  restore; switching mid-session takes effect next turn, already-extracted memories
-  stay in their original family;
-- Stacks with the global switches (global is the master gate); L2/L3 are fully
-  family-isolated — content never leaks across families.
-
-### Memory Browser (Settings → Memory)
-
-Multi-tab page with a mixed view of both families: **Overview** (per-layer counts +
-memory mode switch panel, auto-refresh every 5s), **Memories** (L1 card list with
-keyword/type/scene filters), **Scenes** (L2 full text), **Persona** (L3 full text),
-**Log** (last 200 lines of `memory.log`). Switches go through the official settings
-service (namespace `dsh-memory`, effective immediately, persisted across restarts);
-effective rule = **static config (deployment ceiling) AND runtime switch**; data
-channel is loopback RPC (`dsh-memory/*`).
+- Each session's choice is persisted by sessionId to `session-modes.json`, surviving
+  restarts/session restore; stacks with the global switches (global is the master gate);
+  L2/L3 are fully family-isolated — content never leaks across families.
 
 ## Getting Started
 
@@ -69,7 +72,7 @@ Requires Node ≥ 22.16. Two invocation styles — the `npx` prefix can replace 
 any command below:
 
 ```bash
-# Option 1: run the official CLI directly via npx (no pre-installed dsh; version can be pinned, e.g. dsh-layered-memory@0.5.4)
+# Option 1: run the official CLI directly via npx (no pre-installed dsh; version can be pinned, e.g. dsh-layered-memory@0.6.1)
 npx -y @deepseek-ai/dsh plugin --profile web add dsh-layered-memory
 
 # Option 2: with the dsh CLI installed (dsh is a pnpm forwarder; npm i -g pnpm first if missing)
@@ -149,55 +152,33 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `embedding.model` | empty | embedding model name |
 | `embedding.dimensions` | `0` | Vector dimensions (required when enabled; must match model output) |
 | `llm.provider/model` | empty | Distillation model override (defaults to current selection) |
-| `llm.maxTokens` | `20000` | Output token cap per distillation call (unified across stages; a reasoning model's reasoning shares this budget — too low gets fully consumed by thinking, leaving 0 chars of text) |
+| `llm.maxTokens` | `256000` | Output token cap per distillation call (unified across stages; a reasoning model's reasoning shares this budget — too low gets fully consumed by thinking, leaving 0 chars of text) |
+| `llm.reasoningEffort` | `off` | Distillation reasoning-effort tier (deployment default): `off` / `high` / `max`; empty string = don't send (follow model default). Distillation is structured extraction, so thinking is off by default — a reasoning model (e.g. v4-flash) at its default `high` tier can consume the entire output budget on thinking, leaving 0 chars of text; set to empty string for models that don't recognize the effort parameter. Switchable at runtime in Settings → Memory → Overview ("follow config" falls back to this value) |
 | `llm.temperature` | `0.3` | Distillation temperature |
 | `llm.maxInputChars` | `700000` | Input character budget per distillation call (over-budget L1 inputs are chunked automatically) |
 | `tools` | `true` | Whether to register model-callable memory tools |
 
 ## Storage Layout
 
-Aligned with MemoryCore's official dual-write architecture: append-only JSONL files
-(`conversations/`, `records/` sharded by day) are the source of truth for
-backup/restore and are **never rewritten**; `memory.db` (node:sqlite + WAL + FTS5
-BM25 + sqlite-vec cosine vectors) is the primary retrieval engine — updates/deletes
-from dedup merges touch the retrieval DB only.
+<p align="center">
+  <img src="./assets/readme/storage.svg" width="100%"
+       alt="Storage layout: dual-write architecture (append-only JSONL source of truth + memory.db retrieval engine); file forms include conversations/records/scenes/persona/state/pending/session-modes/log and rebuild archives; three retrieval strategies keyword/embedding/hybrid (RRF k=60); a degradation chain never blocks the host">
+</p>
 
-- **Three retrieval strategies** (`recall.strategy`): `keyword` (FTS5 BM25) /
-  `embedding` (vec0 cosine KNN) / `hybrid` (both lanes in parallel + RRF k=60
-  fusion, default); `conversation_search` (L0) uses the same fusion;
-- **Vectors optional**: off by default (pure FTS). DSH's `ctx.llm` has no embeddings
-  endpoint; enabling requires any OpenAI-compatible `/embeddings` service (configure
-  `embedding.*`); config changes automatically drop the vector table and re-embed
-  everything in the background;
-- **Degradation chain**: sqlite-vec load failure → pure FTS; embedding call failure
-  → degrade to FTS for that call with a one-time warning; retrieval DB init failure
-  → memory features disabled entirely but dsh itself starts normally;
-- **Replacement seam**: `L1Store.search()` is the single retrieval entry point.
-
-```
-memory/
-├── memory.db              # SQLite retrieval DB (L0/L1 metadata + FTS5 + optional vectors; L1 has a family column)
-├── conversations/2026-01-01.jsonl  # L0 raw conversation source of truth (one file per day, append-only; not family-split)
-├── records/2026-01-01.jsonl        # L1 atomic memory source of truth (one file per day, append-only; family field included)
-├── scenes/chat/*.md       # L2 scene blocks (chat family)
-├── scenes/work/*.md       # L2 scene blocks (work family)
-├── persona-chat.md        # L3 persona (chat family: user persona)
-├── persona-work.md        # L3 persona (work family: Team Operating Doctrine)
-├── state.json             # pipeline checkpoint (v2 family-split: families.chat / families.work)
-├── session-modes.json     # session mode map (sessionId → mode, auto-pruned after >90 days)
-└── memory.log             # diagnostic log (info+, rotates to memory.log.1 beyond 2MB)
-```
+Vectors are off by default (pure FTS). DSH's `ctx.llm` has no embeddings endpoint;
+enabling requires any OpenAI-compatible `/embeddings` service (configure
+`embedding.*`); config changes automatically drop the vector table and re-embed
+everything in the background.
 
 ## Logging & Troubleshooting
 
 The dsh host prints plugin logs to the console; the plugin mirrors info and above to
 `memory.log` in its data directory. The typical log path of one conversation turn:
-`L0 捕获 turn=N …条` → `L0 落盘 N 条` → `蒸馏管线开始（…待重试 M 条）` →
-`LLM 调用 provider/model：输入 x → 输出 y 字符（z s）` → `L1 抽取完成（…新增 Y 条）` →
-`蒸馏管线结束`; the next turn shows `召回命中 N 条 L1`. Empty LLM output carries full
-diagnostics (finish reason / token counts / reasoning excerpt); JSON parse failures
-include the first 400 characters of the raw model output; all failure warns carry the
-first stack frame.
+`L0 capture` → `L0 flush` → `distillation pipeline start` → `LLM call (input/output
+chars, duration)` → `L1 extraction done` → `pipeline end`; the next turn shows
+`recall hit N L1 records`. Empty LLM output carries full diagnostics (finish reason /
+token counts / reasoning excerpt); JSON parse failures include the first 400 characters
+of the raw model output; all failure warns carry the first stack frame.
 
 ## Differences from MemoryCore
 
@@ -205,6 +186,13 @@ first stack frame.
 - L2/L3 changed from "LLM manipulates file tools" to "LLM outputs operation JSON / full documents, engineering side executes";
 - Recall injection happens at `agent/pre-step` + agent-scoped `systemPrompt.context` (DSH-native events/services);
 - Storage/retrieval is a single-machine slimmed version of the official sqlite backend (drops multi-tenant isolation columns, TCVDB cloud backend, audit tables; tokenization uses a bundled CJK bigram instead of jieba, keeping zero native dependencies — sqlite-vec is the only native extension, auto-degrading on load failure).
+
+## Credits
+
+The core memory capabilities (layered distillation pipeline, prompt design, and the
+dual-write storage architecture) are modeled after **MemoryCore** from
+[TencentCloud/TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory).
+Thanks to the original project for open-sourcing its design and implementation.
 
 ## License
 
