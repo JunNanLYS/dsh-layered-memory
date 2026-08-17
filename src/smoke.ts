@@ -21,11 +21,11 @@ import { registerMemoryRpc } from './stats.js';
 import { StateStore } from './store/state.js';
 import { dayKey } from './store/io.js';
 import { familyForType } from './types.js';
-import { CaptureBuffers, isCaptureRelevant, trimBuffer } from './hooks/capture.js';
+import { CaptureBuffers, isCaptureRelevant, registerCapture, trimBuffer } from './hooks/capture.js';
 import { sanitizeText, shouldCaptureL0, stripCodeBlocks } from './util/sanitize.js';
 import { parseJson } from './llm.js';
 import { chunkByCharBudget } from './pipeline/l1.js';
-import { pickNextTaskIndex } from './pipeline/runner.js';
+import { MemoryRunner, pickNextTaskIndex } from './pipeline/runner.js';
 import { estimateCalls, groupL0Sessions, RebuildController } from './pipeline/rebuild.js';
 import { loadPending, pendingPathFor, savePending } from './store/pending.js';
 import { formatExtractionPrompt, getExtractMemoriesSystemPrompt } from './prompts/l1-extraction.js';
@@ -900,6 +900,78 @@ async function main(): Promise<void> {
       dbR.close();
     } finally {
       await fs.rm(tmpRb, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  console.log('== 14. 停机顺序（L0 冲刷缝 + 调度停止标志） ==');
+  {
+    const tmpT4 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-shutdown-'));
+    try {
+      const db4 = new MemoryDb(path.join(tmpT4, 'memory.db'), 0, silentLogger);
+      db4.init();
+      const l0T4 = new L0Store(tmpT4, db4, undefined, silentLogger);
+      await l0T4.init();
+
+      // 14a. registerCapture 返回冲刷缝：合成 turn 事件 → flush() → JSONL 先落盘
+      let evHandler: ((session: unknown, event: unknown) => void) | undefined;
+      const ctxT4 = {
+        on: (_e: string, h: (session: unknown, event: unknown) => void) => {
+          evHandler = h;
+          return () => {};
+        },
+      } as never;
+      const liveT4 = { supported: true, get: () => ({ enabled: true, capture: true, distill: true, reasoningEffort: '' }) };
+      const modesT4 = new SessionModeStore(tmpT4, 'auto');
+      await modesT4.init();
+      let enqueued = 0;
+      const flush = registerCapture(
+        ctxT4,
+        { capture: { enabled: true, stripCodeBlocks: false, maxMessageChars: 4000 } } as never,
+        { enqueue: () => { enqueued++; } } as never,
+        l0T4,
+        silentLogger,
+        liveT4 as never,
+        modesT4,
+      );
+      assert(typeof flush === 'function', 'registerCapture 返回 L0 冲刷函数');
+      const nowT4 = Date.now();
+      evHandler!('sess-t4', { type: 'turn/start', time: nowT4, data: { turn: 1 } });
+      evHandler!('sess-t4', { type: 'user/message', time: nowT4 + 1, data: { id: 'u1', source: { kind: 'user' }, content: [{ type: 'text', text: '停机冲刷验证消息' }] } });
+      evHandler!('sess-t4', { type: 'turn/end', time: nowT4 + 2, data: { turn: 1 } });
+      assert(enqueued === 1, 'turn/end 后入队蒸馏');
+      await flush!();
+      assert(
+        existsSync(path.join(tmpT4, 'conversations', `${dayKey(nowT4)}.jsonl`)),
+        'flush() 等待 L0 串行链排空（排队消息先落盘再关库）',
+      );
+
+      // 14b. 调度停止标志：stop 后首任务完成、后续任务不再取
+      const stateT4 = new StateStore(StateStore.pathFor(tmpT4));
+      const runner2 = new MemoryRunner(
+        { effect: (f: () => (() => void)) => f() } as never,
+        {
+          dataDir: tmpT4,
+          extract: { enabled: false, minMessages: 1, backgroundMessages: 10, candidatePool: 5 },
+          l2: { enabled: false },
+          l3: { enabled: false },
+        } as never,
+        { state: stateT4 } as never,
+        silentLogger,
+        liveT4 as never,
+      );
+      await runner2.init();
+      let ran = 0;
+      runner2.setAfterRun(() => {
+        ran++;
+      });
+      runner2.enqueue('s', [], 'chat');
+      runner2.enqueue('s', [], 'chat');
+      runner2.stop(); // 同步置位：drain 在首任务完成后退出
+      await new Promise((r) => setTimeout(r, 50));
+      assert(ran === 1, `stop 后不再取新任务（完成 ${ran} 个）`);
+      db4.close();
+    } finally {
+      await fs.rm(tmpT4, { recursive: true, force: true }).catch(() => {});
     }
   }
 

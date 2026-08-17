@@ -48,6 +48,8 @@ export declare class MemoryRunner {
     private readonly live;
     private tasks;
     private draining;
+    /** 停止标志（dispose 序置位）：不再取新任务；进行中任务自然收尾，其 DB 写入失败由各层兜底捕获。 */
+    private stopped;
     private pending;
     private readonly pendingFile;
     private background;
@@ -68,6 +70,8 @@ export declare class MemoryRunner {
     enqueueRebuildTask(run: () => Promise<unknown>): void;
     /** 重建蒸馏轮：统一 auto 档，不受缓冲 200 上限（历史会话全量入桶，由 char 预算分块）。 */
     runRebuildTurn(sessionId: string, messages: ConversationMessage[]): Promise<number>;
+    /** 停止取新任务（插件 dispose 序调用；进行中任务照常跑完但不 await——LLM 慢调用不拖住宿主卸载）。 */
+    stop(): void;
     private pushTask;
     private drain;
     /** 缓冲落盘（每次蒸馏尝试后调用；失败只告警不阻断管线）。 */

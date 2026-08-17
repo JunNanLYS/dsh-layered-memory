@@ -19,7 +19,11 @@ export declare class CaptureBuffers {
     /** 取出该 turn 的全部事件（不含 turn/start 自身）；无匹配 start 时返回整个缓冲。 */
     takeTurn(sid: string, turn: number): SessionEvent[];
 }
-export declare function registerCapture(ctx: Context, cfg: MemoryConfig, runner: MemoryRunner, l0: L0Store, logger: MemoryLogger, live: LiveSettingsHandle, modes: SessionModeStore): void;
+/**
+ * 注册 L0 捕获。返回 L0 串行链的冲刷函数（dispose 序在关库前 await，
+ * 排队中的 turn 消息先落盘）；capture 关闭时返回 undefined。
+ */
+export declare function registerCapture(ctx: Context, cfg: MemoryConfig, runner: MemoryRunner, l0: L0Store, logger: MemoryLogger, live: LiveSettingsHandle, modes: SessionModeStore): (() => Promise<void>) | undefined;
 /**
  * 缓冲上限裁剪（防御性；RELEVANT_TYPES 过滤后基本不可达）。
  * 铁律：进行中轮次（turn/start 之后、turn/end 之前）的事件绝不裁——

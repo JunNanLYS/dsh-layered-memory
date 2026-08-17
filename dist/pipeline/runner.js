@@ -32,6 +32,8 @@ export class MemoryRunner {
     live;
     tasks = [];
     draining = false;
+    /** 停止标志（dispose 序置位）：不再取新任务；进行中任务自然收尾，其 DB 写入失败由各层兜底捕获。 */
+    stopped = false;
     pending = emptyPending();
     pendingFile;
     background = [];
@@ -104,7 +106,13 @@ export class MemoryRunner {
     runRebuildTurn(sessionId, messages) {
         return this.runTurn(sessionId, messages, 'auto', { noBufferCap: true });
     }
+    /** 停止取新任务（插件 dispose 序调用；进行中任务照常跑完但不 await——LLM 慢调用不拖住宿主卸载）。 */
+    stop() {
+        this.stopped = true;
+    }
     pushTask(task) {
+        if (this.stopped)
+            return;
         this.tasks.push(task);
         void this.drain();
     }
@@ -113,7 +121,7 @@ export class MemoryRunner {
             return;
         this.draining = true;
         try {
-            while (this.tasks.length > 0) {
+            while (!this.stopped && this.tasks.length > 0) {
                 const [task] = this.tasks.splice(pickNextTaskIndex(this.tasks), 1);
                 try {
                     await task.run();

@@ -87,6 +87,8 @@ export async function apply(ctx, config) {
     }
     // ── 记忆模式运行时开关（官方 settings 服务，live 生效；缺失时恒开） ──
     const live = registerLiveSettings(ctx, logger);
+    /** 插件停机标志：置位后不再发起后台 embeddings 调用（dispose 序最先设置）。 */
+    let disposed = false;
     // ── 会话档位存储（sessionId → auto/chat/work/off；默认档 = config.family） ──
     const modes = new SessionModeStore(dataDir, config.family, logger);
     if (storageOk) {
@@ -168,6 +170,8 @@ export async function apply(ctx, config) {
             if (caps.vectorSearch) {
                 void (async () => {
                     try {
+                        if (disposed)
+                            return;
                         // 增量：配置变化路径向量表已被 drop，全部记录均"缺失"，等效全量
                         const r1 = await stores.l1.reindex();
                         const r0 = await stores.l0.reindex();
@@ -197,6 +201,8 @@ export async function apply(ctx, config) {
             const backfill = () => {
                 void (async () => {
                     try {
+                        if (disposed)
+                            return;
                         const l1Missing = db.countL1VecMissing(db.getVecSkipSet('l1')) > 0;
                         const l0Missing = db.countL0VecMissing(db.getVecSkipSet('l0')) > 0;
                         if (!l1Missing && !l0Missing)
@@ -229,8 +235,9 @@ export async function apply(ctx, config) {
     const rebuild = storageOk && !db.isDegraded()
         ? new RebuildController(ctx, config, stores, db, runner, logger, live)
         : undefined;
+    let flushL0;
     if (storageOk) {
-        registerCapture(ctx, config, runner, stores.l0, logger, live, modes);
+        flushL0 = registerCapture(ctx, config, runner, stores.l0, logger, live, modes);
     }
     const recall = registerRecall(ctx, config, stores, logger, live, modes);
     runner.setAfterRun(recall.invalidateProfile);
@@ -240,4 +247,15 @@ export async function apply(ctx, config) {
         pending: () => runner.pendingCount,
     }, live, modes, dataDir, rebuild);
     logger.info(`[memory] L0~L3 分层蒸馏记忆插件就绪（L1 记忆 ${storageOk ? stores.l1.size : 0} 条 | 捕获=${storageOk && config.capture.enabled} | 蒸馏=${storageOk && config.extract.enabled} | 召回=${config.recall.enabled}）`);
+    // 停机顺序（M7）：置停机标志（后台 embeddings 不再发起）→ 停蒸馏取新任务 →
+    // 冲刷 L0 串行链（排队消息先落盘）→ 关库。cordis disposer 为 LIFO 逐个 await，
+    // 本 effect 晚注册故先执行；apply 中途失败时由上方早注册的 db.close 兜底（双关安全）。
+    ctx.effect(() => () => {
+        disposed = true;
+        runner.stop();
+        return (async () => {
+            await flushL0?.();
+            db.close();
+        })();
+    });
 }

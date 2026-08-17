@@ -65,6 +65,10 @@ export class CaptureBuffers {
   }
 }
 
+/**
+ * 注册 L0 捕获。返回 L0 串行链的冲刷函数（dispose 序在关库前 await，
+ * 排队中的 turn 消息先落盘）；capture 关闭时返回 undefined。
+ */
 export function registerCapture(
   ctx: Context,
   cfg: MemoryConfig,
@@ -73,7 +77,7 @@ export function registerCapture(
   logger: MemoryLogger,
   live: LiveSettingsHandle,
   modes: SessionModeStore,
-): void {
+): (() => Promise<void>) | undefined {
   if (!cfg.capture.enabled) return;
   const startFloor = Date.now();
   const buffers = new CaptureBuffers();
@@ -135,6 +139,11 @@ export function registerCapture(
       logger.warn(`[memory] session/event 处理失败: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
+
+  // 冲刷 = 等待串行链排空（链上每环自带 catch，永不 reject）。
+  // 注：极小概率在 await 期间又入队的新消息会落到链尾——其 JSONL 事实源照写、
+  // DB 写入由 upsert 内部兜底（关库后 warn），下次重建自愈。
+  return () => l0Queue;
 }
 
 /**

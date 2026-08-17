@@ -66,6 +66,8 @@ const STARTUP_RETRY_DELAY_MS = 20_000;
 export class MemoryRunner {
   private tasks: PipelineTask[] = [];
   private draining = false;
+  /** 停止标志（dispose 序置位）：不再取新任务；进行中任务自然收尾，其 DB 写入失败由各层兜底捕获。 */
+  private stopped = false;
   private pending: PendingBuckets = emptyPending();
   private readonly pendingFile: string;
   private background: ConversationMessage[] = [];
@@ -148,7 +150,13 @@ export class MemoryRunner {
     return this.runTurn(sessionId, messages, 'auto', { noBufferCap: true });
   }
 
+  /** 停止取新任务（插件 dispose 序调用；进行中任务照常跑完但不 await——LLM 慢调用不拖住宿主卸载）。 */
+  stop(): void {
+    this.stopped = true;
+  }
+
   private pushTask(task: PipelineTask): void {
+    if (this.stopped) return;
     this.tasks.push(task);
     void this.drain();
   }
@@ -157,7 +165,7 @@ export class MemoryRunner {
     if (this.draining) return;
     this.draining = true;
     try {
-      while (this.tasks.length > 0) {
+      while (!this.stopped && this.tasks.length > 0) {
         const [task] = this.tasks.splice(pickNextTaskIndex(this.tasks), 1);
         try {
           await task.run();
