@@ -51,7 +51,7 @@ L0 捕获 → L1 原子记忆 → L2 场景整合 → L3 画像蒸馏，模型�
 </p>
 
 - **控件**：输入栏内、模式选择器右侧的 pill（`记忆·自动`），点击在上方浮出 macOS
-  风格滑动选择器——拖拽松手吸附最近档位；
+  风格滑动选择器——拖拽松手吸附最近档位；深浅主题自适应；
 - 每会话的选择按 sessionId 持久化到 `session-modes.json`，重启/恢复会话不丢；
   与全局开关叠加（全局是总闸）；L2/L3 完全分族，间族内容不渗透。
 
@@ -135,6 +135,8 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 | `embedding.apiKey` | 空 | API Key |
 | `embedding.model` | 空 | embedding 模型名 |
 | `embedding.dimensions` | `0` | 向量维度（启用时必填，须与模型输出一致） |
+| `embedding.allowLocalModels` | `true` | 允许本地嵌入档（部署上限：关闭后设置页不能下载模型、不能切本地档） |
+| `embedding.mirror` | `https://hf-mirror.com` | 本地模型下载镜像根地址（可改回官方 `https://huggingface.co`） |
 | `llm.provider/model` | 空 | 蒸馏模型覆盖（默认用当前默认选择） |
 | `llm.maxTokens` | `256000` | 单次蒸馏输出 token 上限（全阶段统一；推理模型的 reasoning 与正文共享该预算，过低会被思考吃光导致正文 0 字符） |
 | `llm.reasoningEffort` | `off` | 蒸馏思考档位（部署默认）：`off` / `high` / `max`，空串不传（跟随模型默认）。蒸馏是结构化抽取任务，默认关思考——推理模型（如 v4-flash）默认 high 档的思考可把任意输出预算全部吃光导致正文 0 字符；非推理模型不认识 effort 时需设为空串。运行时可在设置页 → 记忆 → 概览临时切换（选"跟随配置"即回退本值） |
@@ -146,12 +148,40 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 
 <p align="center">
   <img src="./assets/readme/storage.svg" width="100%"
-       alt="存储布局：双写架构（JSONL 事实源只增不改 + memory.db 主检索库）；文件形态含 conversations/records/scenes/persona/state/pending/session-modes/日志与重建归档；检索三策略 keyword/embedding/hybrid（RRF k=60）；降级链保证永不阻塞宿主">
+       alt="存储布局：双写架构（JSONL 事实源只增不改 + memory.db 主检索库）；文件形态含 conversations/records/scenes/persona/state/pending/session-modes/embedding-source/模型目录/推理运行时/日志与重建归档；检索三策略 keyword/embedding/hybrid（RRF k=60）；降级链保证永不阻塞宿主">
 </p>
 
-向量能力默认关闭（纯 FTS）。DSH 的 `ctx.llm` 无 embeddings 端点，启用需自备任意
-OpenAI 兼容 `/embeddings` 服务（配置 `embedding.*`）；配置变化自动 drop 向量表并
-后台全量重嵌入。
+向量能力默认关闭（纯 FTS）。DSH 的 `ctx.llm` 无 embeddings 端点，语义检索由
+**三态嵌入源**提供（关闭 / 远程 / 本地），设置页可运行时切换——见下节。
+
+## 语义检索（嵌入源）
+
+设置页（记忆 → 概览 → 语义检索）选择嵌入源，即时生效、无需改配置重启：
+
+| 嵌入源 | 说明 |
+| --- | --- |
+| **关闭**（默认） | 不做任何向量嵌入，纯 BM25 关键词检索 |
+| **远程** | 自备任意 OpenAI 兼容 `/embeddings` 服务（`embedding.*` 四件套配齐才可选） |
+| **本地** | 内置模型目录选一款，ONNX 量化 **CPU 推理**——无需 API Key，数据不出本机 |
+
+本地模型目录是插件内置白名单（每款锁定 revision + 每文件 sha256，不可下载任意仓库）：
+
+| 模型 | 维度 | 上下文 | 体积 | 特点 |
+| --- | --- | --- | --- | --- |
+| BGE small 中文 | 512 | 512 | ~25MB | CPU 嵌入最快，适合先体验语义检索 |
+| EmbeddingGemma 300M | 768 | 2048 | ~330MB | 100+ 语言含中文，质量与开销均衡（上游 MemoryCore 同款） |
+| BGE-M3 | 1024 | 8192 | ~590MB | 中文质量最强，单条嵌入可达秒级 |
+
+- **下载**：模型卡一键下载（默认镜像 `hf-mirror.com`，断点续传 + sha256 完整性
+  校验），落盘数据目录 `models/<id>/`，不用了随时在设置页删除；
+- **按需运行时**：首次切换本地档才安装推理运行时（transformers.js，约 100~200MB，
+  装进数据目录 `runtime/`——不进插件依赖树，不碰插件安装目录）；
+- **活切换**：一键换源——自动后台全量重嵌（进度可见、可取消，期间检索自动降级
+  关键词，不影响对话；维度变化时向量表按新维度重建）；切换失败保持旧源，重启仍
+  按原源运行；
+- **生效规则 = 部署上限 AND 运行时选择**：`embedding.allowLocalModels=false` 可整体
+  禁用本地档、未配 `embedding.*` 四件套则远程档不可选（企业部署可收口），状态持久
+  化在 `embedding-source.json`。
 
 ## 日志与排查
 

@@ -61,7 +61,7 @@ tools: `memory_search` / `conversation_search` / `memory_read_scene`.
 
 - **Control**: the pill next to the mode selector in the input bar (`Memory · Auto`);
   clicking opens a macOS-style sliding picker above — release to snap to the nearest
-  mode;
+  mode; adapts to light/dark themes;
 - Each session's choice is persisted by sessionId to `session-modes.json`, surviving
   restarts/session restore; stacks with the global switches (global is the master gate);
   L2/L3 are fully family-isolated — content never leaks across families.
@@ -151,6 +151,8 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `embedding.apiKey` | empty | API key |
 | `embedding.model` | empty | embedding model name |
 | `embedding.dimensions` | `0` | Vector dimensions (required when enabled; must match model output) |
+| `embedding.allowLocalModels` | `true` | Allow the local embedding tier (deployment ceiling; when off, no model downloads and no local tier in settings) |
+| `embedding.mirror` | `https://hf-mirror.com` | Download mirror root for local models (can be changed back to `https://huggingface.co`) |
 | `llm.provider/model` | empty | Distillation model override (defaults to current selection) |
 | `llm.maxTokens` | `256000` | Output token cap per distillation call (unified across stages; a reasoning model's reasoning shares this budget — too low gets fully consumed by thinking, leaving 0 chars of text) |
 | `llm.reasoningEffort` | `off` | Distillation reasoning-effort tier (deployment default): `off` / `high` / `max`; empty string = don't send (follow model default). Distillation is structured extraction, so thinking is off by default — a reasoning model (e.g. v4-flash) at its default `high` tier can consume the entire output budget on thinking, leaving 0 chars of text; set to empty string for models that don't recognize the effort parameter. Switchable at runtime in Settings → Memory → Overview ("follow config" falls back to this value) |
@@ -162,13 +164,48 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 
 <p align="center">
   <img src="./assets/readme/storage.svg" width="100%"
-       alt="Storage layout: dual-write architecture (append-only JSONL source of truth + memory.db retrieval engine); file forms include conversations/records/scenes/persona/state/pending/session-modes/log and rebuild archives; three retrieval strategies keyword/embedding/hybrid (RRF k=60); a degradation chain never blocks the host">
+       alt="Storage layout: dual-write architecture (append-only JSONL source of truth + memory.db retrieval engine); file forms include conversations/records/scenes/persona/state/pending/session-modes/embedding-source/model catalog/inference runtime/log and rebuild archives; three retrieval strategies keyword/embedding/hybrid (RRF k=60); a degradation chain never blocks the host">
 </p>
 
 Vectors are off by default (pure FTS). DSH's `ctx.llm` has no embeddings endpoint;
-enabling requires any OpenAI-compatible `/embeddings` service (configure
-`embedding.*`); config changes automatically drop the vector table and re-embed
-everything in the background.
+semantic retrieval is provided by a **three-state embedding source** (off / remote /
+local), switchable at runtime in the settings page — see the next section.
+
+## Semantic Retrieval (Embedding Source)
+
+Pick the embedding source in Settings → Memory → Overview → Semantic Retrieval;
+it takes effect immediately, no config edit or restart:
+
+| Source | Description |
+| --- | --- |
+| **Off** (default) | No vector embedding at all; pure BM25 keyword retrieval |
+| **Remote** | Bring any OpenAI-compatible `/embeddings` service (selectable only when the `embedding.*` quartet is configured) |
+| **Local** | Pick from a built-in model catalog, ONNX-quantized **CPU inference** — no API key, data never leaves the machine |
+
+The local catalog is a built-in allowlist (each model pinned to a revision with
+per-file sha256; arbitrary repos cannot be downloaded):
+
+| Model | Dims | Context | Size | Notes |
+| --- | --- | --- | --- | --- |
+| BGE small Chinese | 512 | 512 | ~25MB | Fastest on CPU; good first taste of semantic retrieval |
+| EmbeddingGemma 300M | 768 | 2048 | ~330MB | 100+ languages incl. Chinese; balanced quality/cost (same as upstream MemoryCore) |
+| BGE-M3 | 1024 | 8192 | ~590MB | Best Chinese quality; a single embedding can take seconds |
+
+- **Download**: one click on the model card (default mirror `hf-mirror.com`, resumable
+  downloads + sha256 integrity checks); stored under `models/<id>/` in the data
+  directory, deletable from the settings page at any time;
+- **On-demand runtime**: the inference runtime (transformers.js, ~100–200MB) is
+  installed only on first switch to the local tier, into `runtime/` in the data
+  directory — never in the plugin's dependency tree or install directory;
+- **Live switching**: one click to swap sources — everything is re-embedded in the
+  background (visible progress, cancellable; retrieval silently degrades to keywords
+  in the meantime, conversations unaffected; a dimension change rebuilds the vector
+  table at the new size); a failed switch keeps the old source, which a restart
+  still uses;
+- **Effective = deployment ceiling AND runtime choice**: `embedding.allowLocalModels=false`
+  disables the local tier entirely; without the `embedding.*` quartet the remote tier
+  is unavailable (enterprise deployments can lock this down). The choice persists in
+  `embedding-source.json`.
 
 ## Logging & Troubleshooting
 
