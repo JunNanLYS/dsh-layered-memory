@@ -474,6 +474,8 @@ async function main(): Promise<void> {
           extract: { enabled: true, minMessages: 1, backgroundMessages: 10, candidatePool: 5 },
           recall: { enabled: true, maxResults: 5, includePersona: true, includeSceneNav: true, strategy: 'keyword', scoreThreshold: 0.3 },
           llm: { reasoningEffort: 'off' },
+          l2: { enabled: false, minNewMemories: 5 },
+          l3: { enabled: false, interval: 20 },
         } as never,
         { l0: l0s, l1: l1s, scenes: scenesS, persona: personaS, state: stateS },
         silentLogger,
@@ -493,6 +495,10 @@ async function main(): Promise<void> {
       const sg = await call('dsh-memory/settings-get') as never as { supported: boolean; settings: { enabled: boolean }; ceilings: { capture: boolean }; effort: { current: string; effective: string; fallback: string } };
       assert(sg.supported && sg.settings.enabled === true && sg.ceilings.capture === true, 'settings-get 返回开关与上限');
       assert(sg.effort.current === '' && sg.effort.effective === 'off' && sg.effort.fallback === 'off', 'settings-get 思考档位：空覆盖回退部署默认');
+
+      const st = await call('dsh-memory/stats') as never as { message: string; thresholds: { l2MinNewMemories: number; l3Interval: number } };
+      assert(st.message === 'running', 'stats 运行态消息（降级时为 degraded 提示，UI 渲染 badge）');
+      assert(st.thresholds.l2MinNewMemories === 5 && st.thresholds.l3Interval === 20, 'stats 下发实际阈值（概览分母不硬编码）');
 
       const smg = await call('dsh-memory/session-mode-get', { sessionId: 'sess-x' }) as never as { mode: string; defaultMode: string };
       assert(smg.mode === 'auto' && smg.defaultMode === 'auto', 'session-mode-get 未设置会话返回默认档');

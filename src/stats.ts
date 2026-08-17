@@ -53,6 +53,8 @@ export interface MemoryStats {
   memoriesSinceL3: number;
   pendingExtract: number;
   message: string;
+  /** 实际生效的阈值（概览进度分母用，避免 UI 硬编码与部署配置脱节）。 */
+  thresholds: { l2MinNewMemories: number; l3Interval: number };
 }
 
 /** 分族存储聚合（浏览器保持混合视图：两族拼接展示）。 */
@@ -175,6 +177,7 @@ async function buildStats(
     memoriesSinceL3: chat.memoriesSinceL3 + work.memoriesSinceL3,
     pendingExtract: status?.pending() ?? 0,
     message: degraded ? 'degraded：存储不可用，记忆功能已停用' : 'running',
+    thresholds: { l2MinNewMemories: cfg.l2.minNewMemories, l3Interval: cfg.l3.interval },
   };
 }
 

@@ -603,14 +603,18 @@ window.__ModuleLoader__.load({
       var setOpen = openState[1];
       var wrapRef = react.useRef(null);
 
-      react.useEffect(function () {
+      var load = react.useCallback(function () {
         if (!sessionId || !rpc) return;
+        setError(null);
         rpc("dsh-memory/session-mode-get", { sessionId: sessionId })
           .then(function (r) {
             if (r && r.ok && r.value) setMode(r.value.mode);
+            else setError(r && r.error ? r.error.message : "RPC error");
           })
-          .catch(function () {});
+          .catch(function (e) { setError(String((e && e.message) || e)); });
       }, [sessionId, rpc]);
+
+      react.useEffect(function () { load(); }, [load]);
 
       react.useEffect(function () {
         if (!open) return;
@@ -683,13 +687,16 @@ window.__ModuleLoader__.load({
           "button",
           {
             type: "button",
-            title: "本会话记忆档位（点击切换）",
-            onClick: function () { setOpen(!open); },
+            title: error ? "档位读取失败：" + error + "（点击重试）" : "本会话记忆档位（点击切换）",
+            onClick: function () {
+              if (error) load();
+              setOpen(!open);
+            },
             className: isAuto ? "dsh-mem-flow" : null,
             style: pillStyle,
           },
           "记忆·",
-          react.createElement("span", null, loaded ? info.label : "…"),
+          react.createElement("span", null, loaded ? info.label : error ? "⚠" : "…"),
         ),
         open
           ? react.createElement(ModeSlider, {
@@ -941,6 +948,7 @@ window.__ModuleLoader__.load({
 
       var rows = [];
       if (stats) {
+        var th = stats.thresholds || {};
         rows.push(["数据目录", stats.dataDir]);
         rows.push(["插件版本", "v" + stats.version]);
         rows.push(["默认档", modeLabel(stats.family)]);
@@ -951,10 +959,11 @@ window.__ModuleLoader__.load({
         rows.push(["上次 L1 抽取", fmtTime(stats.lastExtractAt)]);
         rows.push(["上次 L2 整合", fmtTime(stats.lastL2At)]);
         rows.push(["上次 L3 蒸馏", fmtTime(stats.lastL3At)]);
-        rows.push(["待 L2 新记忆", stats.memoriesSinceL2 + " / 5"]);
-        rows.push(["待 L3 新记忆", stats.memoriesSinceL3 + " / 20"]);
+        rows.push(["待 L2 新记忆", stats.memoriesSinceL2 + " / " + (th.l2MinNewMemories != null ? th.l2MinNewMemories : 5)]);
+        rows.push(["待 L3 新记忆", stats.memoriesSinceL3 + " / " + (th.l3Interval != null ? th.l3Interval : 20)]);
         rows.push(["待重试消息", String(stats.pendingExtract)]);
       }
+      var degraded = stats && stats.message && stats.message !== "running";
 
       var master = settingsData && settingsData.settings ? settingsData.settings.enabled : true;
       var ceilingNote = "";
@@ -1031,6 +1040,13 @@ window.__ModuleLoader__.load({
               )
             : null,
         react.createElement(RebuildPanel, { rpc: rpc }),
+        degraded
+          ? react.createElement(
+              "div",
+              { style: Object.assign({}, S.error, { marginBottom: 10 }) },
+              "⚠ " + stats.message + "——上方数据为最后一次成功读取的值，记忆功能当前未工作。",
+            )
+          : null,
         error
           ? react.createElement("div", { style: S.error }, "获取状态失败：" + error)
           : !stats
@@ -1309,11 +1325,18 @@ window.__ModuleLoader__.load({
       var contentState = react.useState(null);
       var content = contentState[0];
       var setContent = contentState[1];
+      var errState = react.useState(null);
+      var error = errState[0];
+      var setError = errState[1];
 
       var load = react.useCallback(function () {
+        setError(null);
         rpc("dsh-memory/persona", {})
-          .then(function (r) { if (r && r.ok) setContent(r.value.content); })
-          .catch(function () {});
+          .then(function (r) {
+            if (r && r.ok) setContent(r.value.content);
+            else setError(r && r.error ? r.error.message : "RPC error");
+          })
+          .catch(function (e) { setError(String((e && e.message) || e)); });
       }, [rpc]);
 
       react.useEffect(function () { load(); }, [load]);
@@ -1323,10 +1346,17 @@ window.__ModuleLoader__.load({
         react.createElement(
           "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
           react.createElement("span", { style: S.muted },
-            content === null ? "加载中…" : content ? content.length + " 字符" : "未生成画像"),
+            error ? "加载失败" : content === null ? "加载中…" : content ? content.length + " 字符" : "未生成画像"),
           react.createElement("div", { style: S.grow }),
           react.createElement("button", { style: S.button, onClick: load }, "刷新"),
         ),
+        error
+          ? react.createElement(
+              "div",
+              { style: Object.assign({}, S.error, { marginBottom: 10 }) },
+              "画像读取失败：" + error + "（点右上“刷新”重试）",
+            )
+          : null,
         content
           ? react.createElement("pre", { style: S.pre }, content)
           : content === null
@@ -1341,11 +1371,18 @@ window.__ModuleLoader__.load({
       var linesState = react.useState(null);
       var lines = linesState[0];
       var setLines = linesState[1];
+      var errState = react.useState(null);
+      var error = errState[0];
+      var setError = errState[1];
 
       var load = react.useCallback(function () {
+        setError(null);
         rpc("dsh-memory/log-tail", { lines: 200 })
-          .then(function (r) { if (r && r.ok) setLines(r.value.lines); })
-          .catch(function () { setLines([]); });
+          .then(function (r) {
+            if (r && r.ok) setLines(r.value.lines);
+            else setError(r && r.error ? r.error.message : "RPC error");
+          })
+          .catch(function (e) { setError(String((e && e.message) || e)); });
       }, [rpc]);
 
       react.useEffect(function () { load(); }, [load]);
@@ -1354,11 +1391,17 @@ window.__ModuleLoader__.load({
         "div", null,
         react.createElement(
           "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
-          react.createElement("span", { style: S.muted }, lines === null ? "加载中…" : "最近 " + lines.length + " 行（memory.log）"),
+          react.createElement("span", { style: S.muted }, error ? "加载失败" : lines === null ? "加载中…" : "最近 " + lines.length + " 行（memory.log）"),
           react.createElement("div", { style: S.grow }),
           react.createElement("button", { style: S.button, onClick: load }, "刷新"),
         ),
-        react.createElement("pre", { style: S.pre }, (lines || []).join("\n") || "(暂无日志)"),
+        error
+          ? react.createElement(
+              "div",
+              { style: Object.assign({}, S.error, { marginBottom: 10 }) },
+              "日志读取失败：" + error + "（点右上“刷新”重试）",
+            )
+          : react.createElement("pre", { style: S.pre }, (lines || []).join("\n") || "(暂无日志)"),
       );
     }
 

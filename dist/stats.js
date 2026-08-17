@@ -102,6 +102,7 @@ async function buildStats(cfg, stores, status) {
         memoriesSinceL3: chat.memoriesSinceL3 + work.memoriesSinceL3,
         pendingExtract: status?.pending() ?? 0,
         message: degraded ? 'degraded：存储不可用，记忆功能已停用' : 'running',
+        thresholds: { l2MinNewMemories: cfg.l2.minNewMemories, l3Interval: cfg.l3.interval },
     };
 }
 async function handleEndpoint(endpoint, payload, deps) {

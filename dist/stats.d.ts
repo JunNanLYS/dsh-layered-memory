@@ -36,6 +36,11 @@ export interface MemoryStats {
     memoriesSinceL3: number;
     pendingExtract: number;
     message: string;
+    /** 实际生效的阈值（概览进度分母用，避免 UI 硬编码与部署配置脱节）。 */
+    thresholds: {
+        l2MinNewMemories: number;
+        l3Interval: number;
+    };
 }
 /** 注册状态 RPC（web 侧 connection 服务可选，缺失时跳过，不影响插件主体）。 */
 export declare function registerMemoryRpc(ctx: Context, cfg: MemoryConfig, stores: {
