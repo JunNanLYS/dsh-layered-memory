@@ -195,14 +195,19 @@ async function handleEndpoint(endpoint, payload, deps) {
             const p = (payload ?? {});
             const limit = Math.min(Math.max(Number(p.limit) || 50, 1), 200);
             const offset = Math.max(Number(p.offset) || 0, 0);
-            // 关键词路径：复用检索唯一缝（与召回同源），取回后做场景过滤 + 手工分页
+            // 关键词路径：复用检索唯一缝（与召回同源），取回后做场景过滤 + 手工分页。
+            // 检索侧单次上限 200：分页窗口触达上限时显式标记 truncated（结果可能不完整），
+            // 不再静默返回空结果让用户误以为"没有更多"等于"不存在更多"。
             if (p.query && p.query.trim()) {
-                const hits = await stores.l1.search(p.query, Math.min(offset + limit + 1, 200), { type: p.type || undefined });
+                const SEARCH_CAP = 200;
+                const wanted = offset + limit + 1;
+                const hits = await stores.l1.search(p.query, Math.min(wanted, SEARCH_CAP), { type: p.type || undefined });
                 const filtered = p.scene ? hits.filter((h) => h.scene_name === p.scene) : hits;
                 return {
                     items: filtered.slice(offset, offset + limit).map(hitToUiRecord),
                     hasMore: filtered.length > offset + limit,
                     total: null,
+                    truncated: wanted > SEARCH_CAP,
                     scenes: offset === 0 ? stores.l1.distinctScenes() : undefined,
                 };
             }
@@ -211,6 +216,7 @@ async function handleEndpoint(endpoint, payload, deps) {
                 items: items.map(hitToUiRecord),
                 hasMore: offset + items.length < total,
                 total,
+                truncated: false,
                 scenes: offset === 0 ? stores.l1.distinctScenes() : undefined,
             };
         }

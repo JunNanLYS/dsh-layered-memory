@@ -18,6 +18,7 @@ import { MemoryDb } from './store/sqlite.js';
 import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts } from './store/search-utils.js';
 import { liveSettingsSchema, registerLiveSettings } from './settings.js';
 import { registerMemoryRpc } from './stats.js';
+import { registerMemoryTools } from './tools/index.js';
 import { StateStore } from './store/state.js';
 import { dayKey } from './store/io.js';
 import { familyForType } from './types.js';
@@ -547,9 +548,62 @@ async function main(): Promise<void> {
       try { await call('dsh-memory/nope'); } catch { unknown = true; }
       assert(unknown, '未知端点抛错');
 
+      // T11：搜索分页触达上限 → 显式截断标记（不再静默空结果）
+      const lqNear = await call('dsh-memory/list-records', { query: 'emoji', limit: 50, offset: 100 }) as never as { truncated: boolean };
+      assert(lqNear.truncated === false, '分页窗口在检索上限内 → 不标记截断');
+      const lqOver = await call('dsh-memory/list-records', { query: 'emoji', limit: 50, offset: 200 }) as never as { truncated: boolean };
+      assert(lqOver.truncated === true, '分页窗口超过检索上限 200 → 显式标记截断');
+
       db.close();
     } finally {
       await fs.rm(tmpRpc, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  console.log('== 10b. 记忆工具 off 档统一提示（M7） ==');
+  {
+    const tmpTool = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-tools-'));
+    try {
+      const dbT = new MemoryDb(path.join(tmpTool, 'memory.db'), 0, silentLogger);
+      dbT.init();
+      const l0T = new L0Store(tmpTool, dbT, undefined, silentLogger);
+      const l1T = new L1Store(tmpTool, dbT, undefined, 'keyword', silentLogger);
+      await Promise.all([l0T.init(), l1T.init()]);
+      const scenesT = { chat: new SceneStore(tmpTool, 'chat', silentLogger), work: new SceneStore(tmpTool, 'work', silentLogger) };
+      const personaT = { chat: new PersonaStore(tmpTool, 'chat'), work: new PersonaStore(tmpTool, 'work') };
+      await Promise.all([scenesT.chat.init(), scenesT.work.init(), personaT.chat.init(), personaT.work.init()]);
+      const modesT = new SessionModeStore(tmpTool, 'auto');
+      await modesT.init();
+      modesT.set('sess-off', 'off');
+      const t = Date.now();
+      await l1T.appendNew([{ id: 'tool-r1', content: '用户偏好 emoji 回复', type: 'instruction', priority: 90, scene_name: '偏好', timestamps: [t], createdAt: t, updatedAt: t }]);
+
+      const specs: Record<string, { execute: (args: Record<string, unknown>, exec: { agent?: { id?: string } }) => Promise<Record<string, unknown>>; output: { render: (_a: unknown, v: Record<string, unknown>) => Array<{ type: string; text: string }> } }> = {};
+      const ctxT = {
+        tools: {
+          register: (spec: { name: string }) => {
+            specs[spec.name] = spec as never;
+            return () => {};
+          },
+        },
+      } as never;
+      registerMemoryTools(ctxT, { tools: true } as never, { l0: l0T, l1: l1T, scenes: scenesT, persona: personaT }, silentLogger, modesT);
+      assert(Object.keys(specs).length === 3, '三工具注册');
+
+      const ms = await specs['memory_search'].execute({ query: 'emoji' }, { agent: { id: 'sess-off' } });
+      assert((ms.items as unknown[]).length === 0 && typeof ms.notice === 'string' && (ms.notice as string).includes('隐身'), `off 档 memory_search 返回统一提示（非空结果集）`);
+      const msRender = specs['memory_search'].output.render({}, ms)[0].text;
+      assert(msRender.includes('隐身'), 'off 档 memory_search 渲染提示文本');
+      const cs = await specs['conversation_search'].execute({ query: '消息' }, { agent: { id: 'sess-off' } });
+      assert((cs.items as unknown[]).length === 0 && typeof cs.notice === 'string', 'off 档 conversation_search 返回统一提示');
+      const rs = await specs['memory_read_scene'].execute({ path: 'persona.md' }, { agent: { id: 'sess-off' } });
+      assert(typeof rs.content === 'string' && (rs.content as string).includes('隐身'), 'off 档 memory_read_scene 保持提示（回归）');
+
+      const okSearch = await specs['memory_search'].execute({ query: 'emoji' }, { agent: { id: 'sess-auto' } }) as { items: Array<{ content: string }>; notice?: string };
+      assert(okSearch.items.length === 1 && okSearch.items[0].content.includes('emoji') && okSearch.notice === undefined, 'auto 档正常检索且无提示字段');
+      dbT.close();
+    } finally {
+      await fs.rm(tmpTool, { recursive: true, force: true }).catch(() => {});
     }
   }
 

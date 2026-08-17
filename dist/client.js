@@ -1099,6 +1099,9 @@ window.__ModuleLoader__.load({
       var loadingState = react.useState(false);
       var loading = loadingState[0];
       var setLoading = loadingState[1];
+      var truncState = react.useState(false);
+      var truncated = truncState[0];
+      var setTruncated = truncState[1];
       var errState = react.useState(null);
       var error = errState[0];
       var setError = errState[1];
@@ -1144,6 +1147,7 @@ window.__ModuleLoader__.load({
             setItems(function (prev) { return append ? prev.concat(v.items) : v.items; });
             setHasMore(!!v.hasMore);
             setTotal(v.total === undefined || v.total === null ? null : v.total);
+            setTruncated(!!v.truncated);
             if (v.scenes) setSceneOptions(v.scenes);
           })
           .catch(function (e) {
@@ -1174,8 +1178,7 @@ window.__ModuleLoader__.load({
       return react.createElement(
         "div", null,
         react.createElement(
-          "div", { style: S.toolbar },
-          react.createElement("input", {
+          "div", { style: S.toolbar },          react.createElement("input", {
             style: S.input,
             placeholder: "搜索记忆内容（BM25 关键词）…",
             value: query,
@@ -1218,6 +1221,13 @@ window.__ModuleLoader__.load({
           }, "刷新"),
         ),
         error ? react.createElement("div", { style: S.error }, error) : null,
+        truncated
+          ? react.createElement(
+              "div",
+              { style: S.hint },
+              "搜索分页已达检索上限（200 条），更早的结果未显示——请用更精确的关键词或类型/情境过滤。",
+            )
+          : null,
         items.length === 0 && !loading && !error
           ? react.createElement("p", { style: S.intro }, "暂无记忆。对话几轮后，蒸馏管线会自动抽取记忆。")
           : items.map(function (m) {

@@ -67,16 +67,17 @@ export function registerMemoryTools(
                 additionalProperties: false,
               },
             },
+            notice: { type: 'string', description: '非搜索结果的状态提示（如本会话记忆已关闭）' },
           },
           additionalProperties: false,
         },
         render: (_args, value) => [
-          { type: 'text', text: renderMemoryItems(value.items ?? []) },
+          { type: 'text', text: value.notice ?? renderMemoryItems(value.items ?? []) },
         ],
       },
       execute: async (args, exec) => {
         const family = familyOfCaller(exec.agent?.id);
-        if (family === null) return { items: [] };
+        if (family === null) return { items: [], notice: OFF_NOTICE };
         const limit = Math.min(Math.max(args.limit ?? 5, 1), 20);
         const hits = await stores.l1.search(args.query, limit, { type: args.type || undefined, family: family ?? undefined });
         return {
@@ -118,15 +119,16 @@ export function registerMemoryTools(
                 additionalProperties: false,
               },
             },
+            notice: { type: 'string', description: '非搜索结果的状态提示（如本会话记忆已关闭）' },
           },
           additionalProperties: false,
         },
         render: (_args, value) => [
-          { type: 'text', text: renderConversationItems(value.items ?? []) },
+          { type: 'text', text: value.notice ?? renderConversationItems(value.items ?? []) },
         ],
       },
       execute: async (args, exec) => {
-        if (familyOfCaller(exec.agent?.id) === null) return { items: [] };
+        if (familyOfCaller(exec.agent?.id) === null) return { items: [], notice: OFF_NOTICE };
         const limit = Math.min(Math.max(args.limit ?? 5, 1), 20);
         const records = await stores.l0.search(args.query, limit);
         return {
