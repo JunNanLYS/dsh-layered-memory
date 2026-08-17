@@ -69,6 +69,13 @@
   注意返回的是**同步函数**（`() => Promise<void>` 的异步 disposer），不能 `.then` 链。
 - Client：`ctx.connection.rpc.call('/rpc', endpoint, payload)` → `Promise<RpcResult>`。
 - connection 是可选服务且可能晚于插件就绪：先探测一次 + 监听 `internal/service` 补注册。
+- **`authority: 'loopback'` 的安全边界在宿主传输层，插件侧无需再加调用方校验**
+  （2026-08-17 对照 `dsh-client-connection/lib/index.js` 的 `isTrustedApiRequest` 验证）：
+  每个 loopback 通道的请求进 handler 前先过三重栅栏——① Host 头必须是 loopback
+  （localhost / [::1] / 127/8，拦 DNS rebinding）；② `Sec-Fetch-Site: cross-site` 直接拒；
+  ③ 带 Origin 头（浏览器跨站请求必带）时必须与 Host 同源。恶意网页从 `https://evil.com`
+  调本机 `http://127.0.0.1:3080` 的 RPC 会拿到 403。本机无 Origin 头的非浏览器进程
+  可以调用——这是 loopback 的固有信任边界（同机进程本就能直接读数据文件）。
 
 ### 类型系统陷阱：Context 声明合并要靠 import 拉进编译
 `ctx.get('connection')` 想拿到类型，必须在文件里 `import type {} from '@deepseek-ai/dsh-client-connection'`
@@ -99,7 +106,7 @@
 2. **Config 单测**：`Config['~standard'].validate(最小config)` 直接在 node 里跑，
    模拟 cordis 的真实加载路径，确认默认值填充。
 3. **组合检查**：`dsh --profile web --dump-config` 看插件条目是否在最终组合树里。
-4. **短启动实测**：后台拉起 `dsh --profile web`，看副作用证据（本例：`~/.dsh/memory/{l0,l1,scenes}`
+4. **短启动实测**：后台拉起 `dsh --profile web`，看副作用证据（本例：`~/.dsh/memory/{conversations,records,scenes}`
    被创建 = apply 成功）。**插件日志不走 stdout**（stdout 只有 `dsh web: http://...`），
    走 dsh 内部 sink，别等 console。
 5. **fiber 状态**："没报错但也没生效"时按 skill 手册查 PENDING（inject 未满足）。

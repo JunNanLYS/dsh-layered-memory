@@ -44,7 +44,7 @@ L0 捕获 → L1 原子记忆 → L2 场景整合 → L3 画像蒸馏，模型�
 - **控件**：输入栏内、模式选择器右侧的 pill（`记忆·自动`），点击在上方浮出 macOS
   风格滑动选择器——拖拽松手吸附最近档位；深浅主题自适应；
 - 每会话的选择按 sessionId 持久化到 `session-modes.json`，重启/恢复会话不丢；
-  与全局开关叠加（全局是总闸）；L2/L3 完全分族，间族内容不渗透。
+  与全局开关叠加（全局是总闸）；L2/L3 完全分族，跨族内容不渗透。
 
 ## 快速开始
 
@@ -128,6 +128,8 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 | `l3.interval` | `20` | L3 蒸馏间隔（新记忆条数） |
 | `recall.enabled` | `true` | 自动召回 |
 | `recall.maxResults` | `5` | 每步召回注入的 L1 条数 |
+| `recall.includePersona` | `true` | 召回时注入画像上下文（`<user-persona>`） |
+| `recall.includeSceneNav` | `true` | 召回时注入场景导航（`<scene-navigation>`） |
 | `recall.strategy` | `hybrid` | 检索策略：`keyword` / `embedding` / `hybrid` |
 | `recall.scoreThreshold` | `0.3` | 召回分数阈值（低于不注入；仅 keyword/embedding 策略生效，hybrid 融合前不过滤；工具路径不过滤） |
 | `embedding.enabled` | `false` | 向量检索开关；关闭即纯 FTS 运行 |
@@ -135,6 +137,8 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 | `embedding.apiKey` | 空 | API Key |
 | `embedding.model` | 空 | embedding 模型名 |
 | `embedding.dimensions` | `0` | 向量维度（启用时必填，须与模型输出一致） |
+| `embedding.maxInputChars` | `5000` | 单条文本最大字符数（超长截断） |
+| `embedding.timeoutMs` | `10000` | 单次 embedding 调用超时（ms） |
 | `embedding.allowLocalModels` | `true` | 允许本地嵌入档（部署上限：关闭后设置页不能下载模型、不能切本地档） |
 | `embedding.mirror` | `https://hf-mirror.com` | 本地模型下载镜像根地址（可改回官方 `https://huggingface.co`） |
 | `llm.provider/model` | 空 | 蒸馏模型覆盖（默认用当前默认选择） |
@@ -142,6 +146,7 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 | `llm.reasoningEffort` | `off` | 蒸馏思考档位（部署默认）：`off` / `high` / `max`，空串不传（跟随模型默认）。蒸馏是结构化抽取任务，默认关思考——推理模型（如 v4-flash）默认 high 档的思考可把任意输出预算全部吃光导致正文 0 字符；非推理模型不认识 effort 时需设为空串。运行时可在设置页 → 记忆 → 概览临时切换（选"跟随配置"即回退本值） |
 | `llm.temperature` | `0.3` | 蒸馏温度 |
 | `llm.maxInputChars` | `700000` | 单次蒸馏输入字符预算（超限的 L1 输入自动分块抽取） |
+| `llm.timeoutMs` | `120000` | 单次蒸馏调用超时（ms） |
 | `tools` | `true` | 是否注册模型可调用的记忆工具 |
 
 ## 存储布局

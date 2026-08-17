@@ -3,6 +3,32 @@
 本文件记录 dsh-layered-memory（0.5.0 前名为 dsh-memory-plugin）的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+全量审查（2026-08-17）修复批次：文档补正 + 存储性能 + 运行时安装供应链加固。
+
+### 性能
+
+- **`PRAGMA synchronous=NORMAL`**（WAL 官方推荐档）：批量写从每事务一次 fsync 降为每
+  checkpoint 一次，重嵌入/导入提速；代价仅是断电时丢最后若干已提交事务（只丢不损）；
+- **reindex 向量写事务化**：L1/L0 重嵌入的逐行裸写改为按块（16/32 行）单事务批量
+  （整批失败回退逐条，好行不丢），配合上一条大幅缩短大库重嵌耗时。
+
+### 安全
+
+- **本地嵌入运行时改 `npm ci` + 随包 lockfile**：`resources/runtime-package-lock.json`
+  （构建期拷入 dist/）把 `@huggingface/transformers` 的完整传递依赖树冻结在作者侧——
+  原 `npm install pkg@精确版本` 只锁直接依赖，传递依赖按 semver 浮动，registry 端后续
+  发布/投毒会随安装时间漂移。ci 失败（lock 漂移等）自动回退 install（可用性优先）。
+
+### 文档
+
+- CHANGELOG 补 [0.5.3] / [0.5.4] 条目（此前缺失，npm 已发版）；
+- README 中英配置表补 5 项：`recall.includePersona` / `recall.includeSceneNav` /
+  `embedding.maxInputChars` / `embedding.timeoutMs` / `llm.timeoutMs`；
+- 修正中文版"间族"错别字（应为"跨族"）；开发经验文档的旧存储布局路径
+  （`l0/ l1/` → `conversations/ records/`）；CONTEXT.md 的 persona 文件名更新为分族形态。
+
 ## [0.7.0] — 2026-08-17
 
 本地嵌入模型与活切换（最大特性）、Light/Dark 双主题、全量代码审查修复（issue #1-#24）。
@@ -75,13 +101,35 @@
 - **未蒸馏缓冲持久化**：失败待重试 + 攒阈值中途的消息按档分桶暂存 `pending.json`
   （每次蒸馏尝试后原子落盘），重启不丢，启动 20 秒后自动补跑；
 - **记忆全量重建**（设置页 → 记忆 → 概览 → 重建记忆）：以 L0 为事实源重导全部派生层，
-  旧产物整体归档不删除，低优先级分块（让位正常对话），带确认弹窗/进度/取消。
+  旧产物整体归档不删除，低优先级分块（让位正常对话），带确认弹窗/进度/取消；
+  统一按智能档（auto）重蒸馏、按会话分块（会话按首条时间排序），重建期间新对话走正常轮次。
 
 ### 变更
 
 - 记忆选择器 UI 重做：auto 档边缘 conic 冷蓝流光、Apple 玻璃浮层（三层结构修
   Chromium backdrop-filter 采样失效）、滑块拖拽 1:1 跟手 + 松手动量投影吸附；
   线/停点/标签颜色主题化。
+
+## [0.5.4] — 2026-08-16
+
+发布工程化：npm Trusted Publishing（GitHub Actions OIDC）上线——push `v*` tag 自动发布，
+免 token / 免 2FA；tag 与 package.json 版本一致性校验仅 tag 触发时生效（`workflow_dispatch`
+手动试跑可走到 publish 鉴权链路，用于验证 OIDC）。无用户可见变更。
+
+## [0.5.3] — 2026-08-16
+
+### 修复
+
+- L1 抽取后立即持久化阈值计数（进程中途退出不回滚，重启不重复抽取）；
+- 蒸馏输出预算统一走 `llm.maxTokens`（默认 20000，防推理模型的 reasoning 吃光预算致正文 0 字符）。
+
+### 新增
+
+- auto 档画像/场景导航注入结构化：按类别归组 + `<domain family>` 分域标签，替代两族粗暴拼接。
+
+### 文档
+
+- README 安装方式改为 npm 优先（GitHub / 本地路径为备选），`files` 附 hero 资源。
 
 ## [0.5.2] — 2026-08-16
 

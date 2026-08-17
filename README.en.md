@@ -139,6 +139,8 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `l3.interval` | `20` | L3 distillation interval (new-memory count) |
 | `recall.enabled` | `true` | Auto recall |
 | `recall.maxResults` | `5` | L1 records injected per step |
+| `recall.includePersona` | `true` | Inject persona context on recall (`<user-persona>`) |
+| `recall.includeSceneNav` | `true` | Inject scene navigation on recall (`<scene-navigation>`) |
 | `recall.strategy` | `hybrid` | Retrieval strategy: `keyword` / `embedding` / `hybrid` |
 | `recall.scoreThreshold` | `0.3` | Recall score threshold (below is not injected; applies to keyword/embedding only, not pre-fusion hybrid; tool path unfiltered) |
 | `embedding.enabled` | `false` | Vector retrieval switch; off = pure FTS |
@@ -146,6 +148,8 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `embedding.apiKey` | empty | API key |
 | `embedding.model` | empty | embedding model name |
 | `embedding.dimensions` | `0` | Vector dimensions (required when enabled; must match model output) |
+| `embedding.maxInputChars` | `5000` | Max characters per text (overlong inputs truncated) |
+| `embedding.timeoutMs` | `10000` | Per-call embedding timeout (ms) |
 | `embedding.allowLocalModels` | `true` | Allow the local embedding tier (deployment ceiling; when off, no model downloads and no local tier in settings) |
 | `embedding.mirror` | `https://hf-mirror.com` | Download mirror root for local models (can be changed back to `https://huggingface.co`) |
 | `llm.provider/model` | empty | Distillation model override (defaults to current selection) |
@@ -153,6 +157,7 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `llm.reasoningEffort` | `off` | Distillation reasoning-effort tier (deployment default): `off` / `high` / `max`; empty string = don't send (follow model default). Distillation is structured extraction, so thinking is off by default — a reasoning model (e.g. v4-flash) at its default `high` tier can consume the entire output budget on thinking, leaving 0 chars of text; set to empty string for models that don't recognize the effort parameter. Switchable at runtime in Settings → Memory → Overview ("follow config" falls back to this value) |
 | `llm.temperature` | `0.3` | Distillation temperature |
 | `llm.maxInputChars` | `700000` | Input character budget per distillation call (over-budget L1 inputs are chunked automatically) |
+| `llm.timeoutMs` | `120000` | Per-call distillation timeout (ms) |
 | `tools` | `true` | Whether to register model-callable memory tools |
 
 ## Storage Layout
