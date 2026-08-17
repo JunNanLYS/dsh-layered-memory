@@ -454,9 +454,10 @@ window.__ModuleLoader__.load({
             // 填充：从滑轨左端铺到圆球右缘（width = thumbLeft + THUMB，整球落在
             // 填充末端上与其重合，无空隙不割裂；auto 档恰好全轨蓝、不超出轨道）；
             // 颜色从左往右渐变：左侧浅（fill-1）到球侧深（fill-2）；
-            // 关闭档不渲染（活跃停点为 off 时无填充，拖拽预览与气泡档名同源）；
+            // 显隐分两支：静态关闭档（off 且未拖拽）不渲染；拖拽中无论预览到哪档
+            // 恒显示（松手落 off 才随提交消失）；
             // 松手吸附时 width 与圆球 left 同走 120ms ease（防球与填充瞬时分家）
-            activeIdx > 0
+            activeIdx > 0 || drag !== null
               ? react.createElement("div", {
                   style: {
                     position: "absolute",

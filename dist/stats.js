@@ -38,6 +38,7 @@ export function registerMemoryRpc(ctx, cfg, stores, logger, status, live, modes,
                     dataDir: dataDir ?? resolveDataDir(cfg),
                     logger,
                     rebuild,
+                    embedManager,
                 });
                 return { ok: true, value };
             }

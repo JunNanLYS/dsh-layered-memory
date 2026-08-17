@@ -109,6 +109,7 @@ export function registerMemoryRpc(
             dataDir: dataDir ?? resolveDataDir(cfg),
             logger,
             rebuild,
+            embedManager,
           });
           return { ok: true, value };
         } catch (err) {
