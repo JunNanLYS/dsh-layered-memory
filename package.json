@@ -1,6 +1,6 @@
 {
   "name": "dsh-layered-memory",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "L0~L3 分层蒸馏记忆插件 for DeepSeek Harness：自动捕获对话（L0）、抽取原子记忆（L1）、整合场景块（L2）、蒸馏核心画像/团队方法论（L3），并在模型步骤前自动召回注入。移植自 MemoryCore (TencentDB Agent Memory) 的管线设计。",
   "type": "module",
   "main": "dist/index.js",

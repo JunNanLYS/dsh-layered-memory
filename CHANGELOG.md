@@ -3,7 +3,7 @@
 本文件记录 dsh-layered-memory（0.5.0 前名为 dsh-memory-plugin）的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.7.1] — 2026-08-17
 
 全量审查（2026-08-17）修复批次：文档补正 + 存储性能 + 运行时安装供应链加固。
 
