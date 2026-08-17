@@ -351,6 +351,9 @@ window.__ModuleLoader__.load({
       var dragState = react.useState(null);
       var drag = dragState[0];
       var setDrag = dragState[1];
+      // 粒子层 canvas ref + 几何快照 ref（rAF 循环跨帧读最新值，不重建 effect）
+      var canvasRef = react.useRef(null);
+      var geoRef = react.useRef(null);
 
       var clampX = function (x) {
         if (x < 0) return 0;
@@ -392,6 +395,104 @@ window.__ModuleLoader__.load({
       var thumbLeft = drag !== null ? drag.x : (modeIndex(props.mode) / (MODES.length - 1)) * INNER_W;
       var activeIdx = Math.min(MODES.length - 1, Math.max(0, Math.round((thumbLeft / INNER_W) * (MODES.length - 1))));
       var info = MODES[activeIdx];
+
+      // 粒子层几何快照：每帧渲染时更新，rAF 循环跨帧读取（避免按帧重建 effect）
+      geoRef.current = {
+        origin: thumbLeft + THUMB / 2, // 发射点 = 圆球中心
+        rightEdge: thumbLeft + THUMB, // 粒子活动区右界 = 填充右缘（不越过圆球）
+        show: activeIdx > 0 || drag !== null, // 与填充显隐同源
+        dragging: drag !== null,
+      };
+
+      // 粒子层动画循环：DPR 适配 + ResizeObserver + 主题观察；reduced-motion 只画静帧。
+      // 依赖数组为空——几何/拖拽态经 geoRef 传递，effect 全生命周期只建一次
+      react.useEffect(function () {
+        var canvas = canvasRef.current;
+        if (!canvas) return undefined;
+        var ctx = canvas.getContext && canvas.getContext("2d");
+        if (!ctx) return undefined;
+        var reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+        var width = 1;
+        var height = 1;
+        var frame = 0;
+
+        var resize = function () {
+          var b = canvas.getBoundingClientRect();
+          var ratio = Math.min(window.devicePixelRatio || 1, 2);
+          width = Math.max(1, b.width);
+          height = Math.max(1, b.height);
+          canvas.width = Math.max(1, Math.round(width * ratio));
+          canvas.height = Math.max(1, Math.round(height * ratio));
+          ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        };
+
+        var draw = function (time) {
+          var st = geoRef.current || { origin: 0, rightEdge: 0, show: false, dragging: false };
+          ctx.clearRect(0, 0, width, height);
+          if (!st.show || st.rightEdge <= 0) return;
+          var dark = document.body.hasAttribute("data-ds-dark-theme");
+          ctx.save();
+          ctx.beginPath();
+          // 裁剪到填充区（胶囊形，与滑轨同圆角——矩形裁剪会在圆角末端溢出）
+          if (ctx.roundRect) ctx.roundRect(0, 0, st.rightEdge, height, height / 2);
+          else ctx.rect(0, 0, st.rightEdge, height);
+          ctx.clip();
+          // 光尘拖尾：从圆球中心向左穿行（透明→品牌蓝→亮端指向圆球），拖拽时提速加长
+          var speed = st.dragging ? 0.14 : 0.05;
+          var span = Math.max(30, st.rightEdge + 24);
+          for (var i = 0; i < 12; i++) {
+            var travel = (time * speed * (0.78 + (i % 5) * 0.09) + i * 23) % span;
+            var x = st.origin - travel;
+            if (x < -20) continue;
+            var y = 3 + ((i * 13 + Math.sin(time * 0.003 + i) * 5) % Math.max(7, height - 6));
+            var len = 4 + (i % 4) * 4 + (st.dragging ? 6 : 0);
+            var alpha = 0.26 + (i % 5) * 0.1;
+            var g = ctx.createLinearGradient(x, 0, x + len, 0);
+            g.addColorStop(0, dark ? "rgba(110,133,255,0)" : "rgba(61,91,224,0)");
+            g.addColorStop(0.68, dark
+              ? "rgba(129,149,255," + alpha + ")"
+              : "rgba(61,91,224," + (alpha * 0.72) + ")");
+            g.addColorStop(1, dark
+              ? "rgba(214,222,255," + Math.min(1, alpha + 0.26) + ")"
+              : "rgba(158,178,255," + Math.min(0.85, alpha + 0.2) + ")");
+            ctx.fillStyle = g;
+            ctx.fillRect(x, y, len, i % 3 === 0 ? 2 : 1);
+          }
+          // 发射点柔光：圆球左缘一小团辉光（粒子从这发出）
+          var glow = ctx.createRadialGradient(st.origin, height / 2, 0, st.origin, height / 2, 12);
+          glow.addColorStop(0, dark ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.78)");
+          glow.addColorStop(0.3, dark ? "rgba(129,149,255,0.38)" : "rgba(77,107,254,0.28)");
+          glow.addColorStop(1, "rgba(77,107,254,0)");
+          ctx.fillStyle = glow;
+          ctx.fillRect(st.origin - 14, 0, 28, height);
+          ctx.restore();
+        };
+
+        var loop = function (time) {
+          draw(time);
+          frame = window.requestAnimationFrame(loop);
+        };
+        var redrawStatic = function () {
+          if (reduced.matches) draw(performance.now());
+        };
+        var ro = new ResizeObserver(function () {
+          resize();
+          redrawStatic();
+        });
+        var themeObs = new MutationObserver(function () {
+          redrawStatic(); // 静帧模式下主题翻转要重画（动画循环每帧自读主题）
+        });
+        ro.observe(canvas);
+        themeObs.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
+        resize();
+        draw(performance.now());
+        if (!reduced.matches) frame = window.requestAnimationFrame(loop);
+        return function () {
+          window.cancelAnimationFrame(frame);
+          ro.disconnect();
+          themeObs.disconnect();
+        };
+      }, []);
 
       // 停点刻度：轨道上的 4 个小点提示可吸附位置；档位名改由拖动气泡显示
       var stops = [];
@@ -474,6 +575,19 @@ window.__ModuleLoader__.load({
                 })
               : null,
             stops,
+            // 粒子层：轨道内从圆球向左流动的光尘（pointerEvents none 不挡拖拽）
+            react.createElement("canvas", {
+              ref: canvasRef,
+              style: {
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: "100%",
+                height: "100%",
+                pointerEvents: "none",
+                zIndex: 2,
+              },
+            }),
             // 圆球：被粗滑轨包裹（RAIL_H > THUMB），品牌蓝描边，拖拽时阴影加重
             react.createElement("div", {
               style: {

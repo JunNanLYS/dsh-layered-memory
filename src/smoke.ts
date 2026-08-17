@@ -1502,6 +1502,13 @@ async function main(): Promise<void> {
     assert(!clientSrc.includes('width: thumbLeft + THUMB / 2'), '旧半程重合公式已移除');
     assert(!clientSrc.includes('right: 0,'), '右侧填充锚定公式已移除');
     assert(clientSrc.includes('activeIdx > 0 || drag !== null'), '静态关闭档不渲染填充，拖拽中恒显示');
+    // 粒子层：canvas 光尘从圆球向左穿行（参考 dsh-reasoning-effort / Claude 思考强度滑块）
+    assert(clientSrc.includes('react.createElement("canvas"'), '粒子层 canvas 元素');
+    assert(clientSrc.includes('cancelAnimationFrame') && clientSrc.includes('requestAnimationFrame'), 'rAF 循环带清理');
+    assert(clientSrc.includes('ctx.roundRect') && clientSrc.includes('height / 2)'), '胶囊形裁剪（roundRect 半径 = 半轨高）');
+    assert(clientSrc.includes('st.origin - travel'), '粒子从圆球中心向左位移');
+    assert((clientSrc.match(/pointerEvents: "none",\s*\n\s*zIndex: 2,/g) ?? []).length >= 1, 'canvas 不挡指针（拖拽路径不受粒子层干扰）');
+    assert(clientSrc.includes('prefers-reduced-motion: reduce') && clientSrc.includes('redrawStatic'), 'reduced-motion 静帧降级');
     // 浮层对称内边距：滑轨垂直居中，气泡经 overflow: visible 溢出到浮层上方
     assert(clientSrc.includes('padding: "14px 16px"'), '浮层上下内边距对称（紧凑尺寸）');
     assert(!clientSrc.includes('38px 16px'), '气泡预留顶部内边距已移除');

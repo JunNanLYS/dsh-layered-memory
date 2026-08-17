@@ -41,6 +41,33 @@
 - **吸附动画**：松手时 `width` 与圆球 `left` 同条件同走 `width/left 120ms ease`
   （拖拽中两者 `transition: none` 保 1:1 跟手）——等差恒定，填充右缘与球右缘不分离。
 
+## 粒子层（canvas 光尘）
+
+轨道内**从圆球向左流动的光尘拖尾**（参考 dsh-reasoning-effort / Claude 思考强度滑块），
+让填充看起来在向圆球"输送能量"：
+
+- **载体**：`<canvas>` 覆盖滑轨（`inset: 0`、`pointerEvents: "none"` 不挡拖拽，
+  zIndex 2——填充 1 之上、圆球 3 之下）；DPR 适配（ratio ≤ 2）+ `ResizeObserver`
+  重设画布 + `setTransform`。
+- **动画循环**：`requestAnimationFrame`，effect 依赖数组为空（全生命周期一次），
+  几何/拖拽态经 `geoRef` 每帧渲染写入、循环跨帧读取；卸载时 `cancelAnimationFrame`
+  + disconnect 观察器。主题翻转由 body `data-ds-dark-theme` 的 MutationObserver
+  兜底（动画循环每帧自读）。
+- **粒子**：12 条水平拖尾，`x = origin - travel`（origin = 圆球中心）——
+  从圆球**向左**穿行；`travel = (time * speed * 变速 + i * 23) % span`，
+  speed 拖拽 0.14 / 静止 0.05 px/ms，拖拽时拖尾 +6px；
+  y 取伪随机列（`i * 13 + sin(time * 0.003 + i) * 5` 取模），1~2px 高。
+- **拖尾着色**：`createLinearGradient` 三停——左端透明 → 品牌蓝（0.68，暗色
+  `rgba(129,149,255,α)` / 浅色 `rgba(61,91,224,α*0.72)`）→ 亮端指向圆球
+  （暗色 `rgba(214,222,255)` / 浅色 `rgba(158,178,255)`），α = 0.26 + (i%5)*0.1。
+- **发射点柔光**：origin 处 12px 半径径向渐变（白核 → 品牌蓝 → 透明）。
+- **裁剪**：`roundRect(0, 0, 填充右缘, height, height/2)` 胶囊形（与滑轨同圆角，
+  矩形裁剪会在圆角末端溢出）；不支持 roundRect 的环境回退矩形裁剪。
+- **显隐与填充同源**：`show = activeIdx > 0 || drag !== null`——静态关闭档无粒子，
+  拖拽中恒有；粒子活动区右界 = 填充右缘（thumbLeft + THUMB，**不越过圆球**）。
+- **降级**：`prefers-reduced-motion: reduce` 不启动循环，只画一帧静帧
+  （状态/主题变化时由观察器触发重画）。
+
 ## 拖拽交互
 
 - Pointer capture；`xFromClientX` 按 track rect 连续映射（clamp 0..INNER_W）；
