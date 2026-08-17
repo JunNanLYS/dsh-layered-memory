@@ -463,14 +463,11 @@ export class MemoryDb {
                         this.stmtInsertL1Vec.run(record.id, vecToBuffer(embedding), toIso(record.updatedAt));
                     }
                 }
+                // FTS 删除/插入与元数据同事务：失败必须整体回滚——若只吞 FTS 错误照常 COMMIT，
+                // 已执行的 DELETE 会让该 id 的索引行被删未补，记录从此全文检索不可见（静默丢数据）。
                 if (this.ftsAvailable) {
-                    try {
-                        this.stmtL1FtsDelete.run(record.id);
-                        this.stmtL1FtsInsert.run(tokenizeForFts(record.content), record.content, record.id, record.type, record.priority, record.scene_name, record.sessionId ?? 'default', record.version ?? 0, ts.str, ts.start, ts.end, JSON.stringify(record.metadata ?? {}), record.family ?? familyForType(record.type));
-                    }
-                    catch (ftsErr) {
-                        this.logger?.warn(`${TAG} L1 FTS 写入失败（非致命）id=${record.id}: ${ftsErr instanceof Error ? ftsErr.message : String(ftsErr)}`);
-                    }
+                    this.stmtL1FtsDelete.run(record.id);
+                    this.stmtL1FtsInsert.run(tokenizeForFts(record.content), record.content, record.id, record.type, record.priority, record.scene_name, record.sessionId ?? 'default', record.version ?? 0, ts.str, ts.start, ts.end, JSON.stringify(record.metadata ?? {}), record.family ?? familyForType(record.type));
                 }
                 this.db.exec('COMMIT');
             }
@@ -716,13 +713,9 @@ export class MemoryDb {
                     }
                 }
                 if (this.ftsAvailable) {
-                    try {
-                        this.stmtL0FtsDelete.run(r.id);
-                        this.stmtL0FtsInsert.run(tokenizeForFts(r.content), r.content, r.id, r.sessionId, r.role, r.recordedAt, r.timestamp);
-                    }
-                    catch (ftsErr) {
-                        this.logger?.warn(`${TAG} L0 FTS 写入失败（非致命）id=${r.id}: ${ftsErr instanceof Error ? ftsErr.message : String(ftsErr)}`);
-                    }
+                    // 同 upsertL1：FTS 失败冒泡触发整批回滚，禁止"删了没补"的索引空洞。
+                    this.stmtL0FtsDelete.run(r.id);
+                    this.stmtL0FtsInsert.run(tokenizeForFts(r.content), r.content, r.id, r.sessionId, r.role, r.recordedAt, r.timestamp);
                 }
             }
             this.db.exec('COMMIT');

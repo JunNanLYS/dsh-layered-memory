@@ -233,6 +233,43 @@ async function main(): Promise<void> {
     await fs.rm(tmp, { recursive: true, force: true }).catch(() => undefined);
   }
 
+  console.log('== 3b. FTS 写入失败事务回滚（索引与元数据同生共死） ==');
+  {
+    const tmpF = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-fts-'));
+    try {
+      const dbF = new MemoryDb(path.join(tmpF, 'memory.db'), 0, silentLogger);
+      dbF.init();
+      const t = Date.now();
+      assert(
+        dbF.upsertL1({ id: 'f1', content: '先写入一条正常记录', type: 'persona', priority: 70, scene_name: 's', timestamps: [t], createdAt: t, updatedAt: t }),
+        '基线 L1 upsert 成功',
+      );
+      assert(
+        dbF.upsertL0Batch([{ sessionId: 's1', recordedAt: '', id: 'lf1', role: 'user', content: '基线 L0', timestamp: t }]),
+        '基线 L0 批量写入成功',
+      );
+      // 破坏 FTS 表模拟插入失败（ftsAvailable 能力位仍为 true，走 FTS 写入分支）
+      const raw = (dbF as unknown as { db: DatabaseSync }).db;
+      raw.exec('DROP TABLE l1_fts');
+      raw.exec('DROP TABLE l0_fts');
+      const before1 = dbF.countL1();
+      const before0 = dbF.countL0();
+      assert(
+        !dbF.upsertL1({ id: 'f2', content: 'FTS 失败的记录', type: 'persona', priority: 70, scene_name: 's', timestamps: [t], createdAt: t, updatedAt: t }),
+        'L1 FTS 失败 → upsert 返回 false',
+      );
+      assert(dbF.countL1() === before1, 'L1 元数据随事务回滚（无半提交：不出现"元数据在、索引被删未补"的检索空洞）');
+      assert(
+        !dbF.upsertL0Batch([{ sessionId: 's1', recordedAt: '', id: 'lf2', role: 'user', content: 'FTS 失败的 L0', timestamp: t }]),
+        'L0 FTS 失败 → 批量写入返回 false',
+      );
+      assert(dbF.countL0() === before0, 'L0 批量整批回滚');
+      dbF.close();
+    } finally {
+      await fs.rm(tmpF, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   console.log('== 6b. 向量 / hybrid / reindex（sqlite-vec） ==');
   const tmp2 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-vec-'));
   try {
