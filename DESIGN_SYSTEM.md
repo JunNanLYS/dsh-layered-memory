@@ -166,17 +166,20 @@ primitives 里**没有** Switch/Tabs/Card/Badge/Select（官方消费方同样�
 | `.dsh-mem-tab`（+ `-on`） | Tab（下划线式） | active：字重 600 + 主文字色 + 2px 品牌蓝下划线 |
 | `.dsh-mem-card`（+ `-hover`） | 卡片 | 浅投影；`-hover` 变体 = 可交互卡片 hover 描边加深 |
 | `.dsh-mem-tag`（+ 7 类型类） | 记忆类型标签 | 见 §4 |
-| `.dsh-mem-flow` | pill 边缘流光（日常/工作/智能共用；关闭无） | 品牌蓝族 conic 旋转光带；内层必须**不透明**底（`color-mix(bg-card 92%, var(--dsh-mem-pill-tint))`，`--dsh-mem-pill-tint` 由 pill inline 按档位给定）盖住光带防文字被光斑干扰（实测事故）；不支持 `@property` 的浏览器整条 background 退化（2026 常青浏览器均已支持） |
-| `.dsh-mem-popover` | 滑动选择器浮层 | **dsh 原生菜单同配方**：不透明 `--dsh-mem-bg-pop`（dsw-specific-menu）+ inverted 描边 + lv3 阴影 + 圆角 12；旧玻璃材质已废 |
-| `.dsh-mem-bubble` | 拖动气泡 | 拖拽时在圆球上方显示当前档位（tooltip-bg 底 + 白字 + 下尖角 `::after`），随圆球移动，松手消失 |
+| `.dsh-mem-flow` | pill 边缘流光（日常/工作/智能共用；关闭无） | 品牌蓝族 conic 旋转光带；内层必须**不透明**底（`color-mix(bg-card 97%, var(--dsh-mem-pill-tint) 3%)`，`--dsh-mem-pill-tint` 由 pill inline 按档位给定）盖住光带防文字被光斑干扰（实测事故）；不支持 `@property` 的浏览器整条 background 退化（2026 常青浏览器均已支持） |
+| `.dsh-mem-pill-off` | off 档 pill | dsh 透明按钮：`border: none; background: transparent` 显式压掉 button UA 默认灰底/描边（实测事故：裸 button 在宿主页露出默认 chrome），hover 才出 `--dsh-mem-bg-hover` 淡底，带 `:focus-visible` 环；加载态（档位未加载）同款 |
+| `.dsh-mem-popover` | 滑动选择器浮层 | **dsh 原生菜单同配方**：不透明 `--dsh-mem-bg-pop`（dsw-specific-menu）+ inverted 描边 + lv3 阴影 + 圆角 12；上下内边距对称（14px，滑轨垂直居中、尺寸紧凑）；旧玻璃材质已废 |
+| `.dsh-mem-bubble` | 拖动气泡 | 拖拽时在圆球上方显示当前档位（tooltip-bg 底 + 白字 + 下尖角 `::after`），随圆球移动，松手消失；经浮层 `overflow: visible` **溢出到浮层上方**（不再用顶部预留内边距撑高浮层） |
 | `.dsh-mem-rb-*` | 重建面板族 | card/bar/fill/muted + NModal 回退用 overlay/modal |
 
 滑动选择器（ModeSlider）：粗滑轨 22px **包裹** 14px 可视圆球（THUMB=16 含描边）；
-滑轨填充从左到圆球当前位置（品牌蓝左浅右深 `--dsh-mem-fill-1/2` 渐变）；
+滑轨填充从滑轨左端铺到**圆球右缘**（`width = thumbLeft + THUMB`，整球落在填充末端上与其
+重合无割裂；auto 档恰好全轨蓝、任何档位不超出轨道），品牌蓝左浅右深（球侧最深）
+`--dsh-mem-fill-1/2` 渐变；**关闭档不渲染填充**（活跃停点为 off 时无填充，拖拽预览与气泡档名同源）；
 4 个停点刻度在轨内；拖拽交互（Pointer capture / EMA 速度 / 动量投影 ±半档）不变。
 
 交互态约定：**pointer 按压必有反馈**（`scale(0.98)`，80ms）；键盘可达
-（btn/tab 用 `:focus-visible` 环，input/select 用 `:focus` 即时环）；
+（btn/tab/pill 用 `:focus-visible` 环——pill 的流光态与 off 态各有规则，input/select 用 `:focus` 即时环）；
 disabled 统一 `opacity 0.45 + not-allowed`。
 
 ## 8. 动效
@@ -186,7 +189,7 @@ disabled 统一 `opacity 0.45 + not-allowed`。
 | 主题切换过渡 | `.dsh-mem-root, .dsh-mem-root *` 上 `background-color/border-color/color/box-shadow .18s ease`（只挂 paint 属性，不碰 transform） | `prefers-reduced-motion` → `none` |
 | 按压反馈 | `transform .08s ease`（`.dsh-mem-btn` 自有 transition） | 同上（reduced-motion 块末置压制） |
 | 流光 | `dshMemFlow 3s linear infinite`（`@property --dsh-mem-angle` 注册角度插值） | 同上 → `animation: none` |
-| 滑块吸附 | 圆球 `left 120ms ease`（拖拽中 `transition: none` 保 1:1 跟手） | inline 优先级高于样式表媒体查询，无法被压制（已知限制，见 §10） |
+| 滑块吸附 | 圆球 `left` 与填充 `width` 同步 `120ms ease`（拖拽中两者 `transition: none` 保 1:1 跟手） | inline 优先级高于样式表媒体查询，无法被压制（已知限制，见 §10） |
 | 重建进度 | `.dsh-mem-rb-fill` `width .4s ease` | 同上（末置块压制） |
 | 开关旋钮 | inline `left .15s` | 同上（无法压制，同滑块） |
 
@@ -201,14 +204,14 @@ disabled 统一 `opacity 0.45 + not-allowed`。
   ——全部复算达标（§2~§4 表内数值）。
 - 图形对比度（≥3:1）：焦点环、Tab 下划线、流光边。
 - 实底白字（≥4.5:1）：accent-fill 双主题（原生 primary 按钮由宿主保证）。
-- 焦点可见：btn/tab `:focus-visible` 2px 环；input/select `:focus`。
+- 焦点可见：btn/tab/pill（流光态与 off 态）`:focus-visible` 2px 环；input/select `:focus`。
 - `prefers-reduced-motion` 降级（§8）。
 - 可见文案**零 em-dash**（用 `-`、`：` 或改句；smoke 断言字符串字面量）。
 
 ## 10. 已知限制（改动前必读）
 
-1. **inline transition 不受 reduced-motion 压制**：开关旋钮（`S.knob`）与滑块圆球
-   的 transition 是 React inline style，样式表媒体查询物理上盖不过行内优先级。
+1. **inline transition 不受 reduced-motion 压制**：开关旋钮（`S.knob`）、滑块圆头与
+   滑轨填充（width）的 transition 是 React inline style，样式表媒体查询物理上盖不过行内优先级。
    修复需要组件侧读 `matchMedia`，当前接受（位移动画幅度小、时长短）。
 2. **浅色三级灰 `#6e7781` 余量薄**（4.547:1）：GitHub 标准灰，当前合规；
    宿主背景若比纯白略暗需复核。

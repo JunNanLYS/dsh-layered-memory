@@ -1475,7 +1475,7 @@ async function main(): Promise<void> {
     assert(tagDark.length >= 7, `标签暗色覆盖 ≥7（实际 ${tagDark.length}）`);
     // 无障碍：reduced-motion / focus-visible（btn/tab 键盘焦点环；输入框用 :focus 即时环）
     assert(clientSrc.includes('prefers-reduced-motion'), 'reduced-motion 降级');
-    assert((clientSrc.match(/:focus-visible/g) ?? []).length >= 2, 'focus-visible 焦点环（btn/tab）');
+    assert((clientSrc.match(/:focus-visible/g) ?? []).length >= 3, 'focus-visible 焦点环（btn/tab/pill 两态）');
     // 档位显示名中文化（配置键 off/chat/work/auto 保持英文——键值对并存断言）
     for (const label of ['关闭', '日常', '工作', '智能']) {
       assert(clientSrc.includes('label: "' + label + '"'), `档位显示名：${label}`);
@@ -1489,9 +1489,22 @@ async function main(): Promise<void> {
     assert(clientSrc.includes('--dsh-mem-bg-pop: var(--dsw-specific-menu'), '浮层底链 dsw-specific-menu');
     assert(clientSrc.includes('.dsh-mem-bubble'), '拖动气泡类');
     assert(clientSrc.includes('var RAIL_H = 22') && clientSrc.includes('var THUMB = 16'), '粗滑轨（RAIL_H 22 > THUMB 16）');
-    assert(clientSrc.includes('linear-gradient(90deg, var(--dsh-mem-fill-1), var(--dsh-mem-fill-2))'), '滑轨填充左浅右深渐变');
+    assert(clientSrc.includes('linear-gradient(90deg, var(--dsh-mem-fill-1), var(--dsh-mem-fill-2))'), '滑轨填充左浅右深渐变（球侧最深）');
+    assert(!clientSrc.includes('var(--dsh-mem-fill-2), var(--dsh-mem-fill-1)'), '渐变端色序未被反转');
+    // 填充：从滑轨左端铺到圆球右缘（重合无割裂）；off 档不渲染（auto 恰全轨蓝不超界）
+    assert(clientSrc.includes('width: thumbLeft + THUMB'), '填充右缘=圆球右缘（整球落在填充末端上）');
+    assert(!clientSrc.includes('width: thumbLeft + THUMB / 2'), '旧半程重合公式已移除');
+    assert(!clientSrc.includes('right: 0,'), '右侧填充锚定公式已移除');
+    assert(clientSrc.includes('activeIdx > 0'), '关闭档不渲染填充（活跃停点为 off 时无填充）');
+    // 浮层对称内边距：滑轨垂直居中，气泡经 overflow: visible 溢出到浮层上方
+    assert(clientSrc.includes('padding: "14px 16px"'), '浮层上下内边距对称（紧凑尺寸）');
+    assert(!clientSrc.includes('38px 16px'), '气泡预留顶部内边距已移除');
     assert(!clientSrc.includes('top: 26'), '滑轨下方档位标签已删除（改拖动气泡）');
-    // pill：off 档透明化、其余三档共用流光（--dsh-mem-pill-tint 混色通道）
+    // pill：off 档透明化（压掉 UA 按钮默认底/边框，hover 淡底）、其余三档共用流光
+    assert(clientSrc.includes('.dsh-mem-pill-off { border: none; background: transparent; }'), 'off 档透明按钮类');
+    assert(clientSrc.includes('.dsh-mem-pill-off:hover { background: var(--dsh-mem-bg-hover); }'), 'off 档 hover 淡底');
+    assert(clientSrc.includes('.dsh-mem-flow:focus-visible'), '流光态焦点环（与 off 态对称）');
+    assert(clientSrc.includes('"dsh-mem-pill-off"'), 'off 档类接线到 pill');
     assert(clientSrc.includes('var isFlow = loaded && !isOff'), 'off 档排除流光');
     assert(clientSrc.includes('--dsh-mem-pill-tint'), '流光内底混色通道');
     assert(!clientSrc.includes('.dsh-mem-glass'), '玻璃浮层类已移除（换原生实底浮层）');

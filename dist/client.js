@@ -429,8 +429,9 @@ window.__ModuleLoader__.load({
         },
         react.createElement(
           "div",
-          // dsh 原生菜单同配方浮层：不透明实底（dsw-specific-menu）+ inverted 描边 + lv3 阴影
-          { className: "dsh-mem-popover", style: { position: "relative", padding: "38px 16px 14px" } },
+          // dsh 原生菜单同配方浮层：不透明实底（dsw-specific-menu）+ inverted 描边 + lv3 阴影；
+          // 上下内边距对称（滑轨垂直居中、浮层紧凑），拖动气泡经 overflow: visible 溢出到浮层上方
+          { className: "dsh-mem-popover", style: { position: "relative", padding: "14px 16px" } },
           react.createElement(
             "div",
             {
@@ -450,20 +451,27 @@ window.__ModuleLoader__.load({
               onPointerUp: onPointerUp,
               onPointerCancel: onPointerUp,
             },
-            // 填充：从左到圆球当前位置，品牌蓝左浅右深渐变
-            react.createElement("div", {
-              style: {
-                position: "absolute",
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: thumbLeft + THUMB / 2,
-                borderRadius: 999,
-                background: "linear-gradient(90deg, var(--dsh-mem-fill-1), var(--dsh-mem-fill-2))",
-                pointerEvents: "none",
-                zIndex: 1,
-              },
-            }),
+            // 填充：从滑轨左端铺到圆球右缘（width = thumbLeft + THUMB，整球落在
+            // 填充末端上与其重合，无空隙不割裂；auto 档恰好全轨蓝、不超出轨道）；
+            // 颜色从左往右渐变：左侧浅（fill-1）到球侧深（fill-2）；
+            // 关闭档不渲染（活跃停点为 off 时无填充，拖拽预览与气泡档名同源）；
+            // 松手吸附时 width 与圆球 left 同走 120ms ease（防球与填充瞬时分家）
+            activeIdx > 0
+              ? react.createElement("div", {
+                  style: {
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: thumbLeft + THUMB,
+                    borderRadius: 999,
+                    background: "linear-gradient(90deg, var(--dsh-mem-fill-1), var(--dsh-mem-fill-2))",
+                    pointerEvents: "none",
+                    zIndex: 1,
+                    transition: drag === null ? "width 120ms ease" : "none",
+                  },
+                })
+              : null,
             stops,
             // 圆球：被粗滑轨包裹（RAIL_H > THUMB），品牌蓝描边，拖拽时阴影加重
             react.createElement("div", {
@@ -539,7 +547,7 @@ window.__ModuleLoader__.load({
         "  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #6e7781);",
         "  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #d0403f);",
         // 档位色 = 灰 → 品牌蓝 的渐变阶（chat/work 过渡蓝 / auto 品牌蓝）；
-        // 文字对比度按 pill 真实底色（流光内底 = bg-card 95% + 档位色 5%）复算 AA 达标
+        // 文字对比度按 pill 真实底色（流光内底 = bg-card 97% + 档位色 3%）复算 AA 达标
         "  --dsh-mem-mode-chat: #5a69b0;",
         "  --dsh-mem-mode-work: #5263ca;",
         "  --dsh-mem-mode-auto: #3d5be0;",
@@ -652,6 +660,13 @@ window.__ModuleLoader__.load({
         "      rgba(110,133,255,0.9), rgba(61,91,224,0.9)) border-box;",
         "  animation: dshMemFlow 3s linear infinite;",
         "}",
+        // ── off 档 pill：dsh 透明按钮——无底无边框只留文字，hover 才出 interactive 淡底 ──
+        //（button 裸元素会露出 UA 默认灰底+描边，必须显式压掉）
+        ".dsh-mem-pill-off { border: none; background: transparent; }",
+        ".dsh-mem-pill-off:hover { background: var(--dsh-mem-bg-hover); }",
+        ".dsh-mem-pill-off:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
+        // 流光态焦点环（同一物理按钮的两态焦点反馈对称，配方同 .dsh-mem-btn）
+        ".dsh-mem-flow:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
         // ── 浮层（dsh 原生菜单同配方：不透明实底 + inverted 描边（浅色不可见）+ lv3 阴影） ──
         ".dsh-mem-popover {",
         "  border-radius: 12px;",
@@ -812,7 +827,7 @@ window.__ModuleLoader__.load({
               if (error) load();
               setOpen(!open);
             },
-            className: isFlow ? "dsh-mem-flow" : null,
+            className: isFlow ? "dsh-mem-flow" : "dsh-mem-pill-off",
             style: pillStyle,
           },
           "记忆 · ",
