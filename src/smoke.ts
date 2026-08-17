@@ -16,7 +16,7 @@ import { SceneStore, sanitizeFilename } from './store/scenes.js';
 import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
 import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts } from './store/search-utils.js';
-import { liveSettingsSchema } from './settings.js';
+import { liveSettingsSchema, registerLiveSettings } from './settings.js';
 import { registerMemoryRpc } from './stats.js';
 import { StateStore } from './store/state.js';
 import { dayKey } from './store/io.js';
@@ -1055,6 +1055,52 @@ async function main(): Promise<void> {
     } finally {
       await fs.rm(tmpT5, { recursive: true, force: true }).catch(() => {});
     }
+  }
+
+  console.log('== 16. settings 命名空间 fiber 重启重挂（M10） ==');
+  {
+    // 复现要点（与 dsh-settings 实测实现一致）：注册挂服务自身生命周期
+    // （不随调用方 fiber 销毁）、同 ns 二次 register 抛 already registered
+    const registrations = new Map<string, { value: Record<string, unknown>; watchers: Set<(v: unknown) => void> }>();
+    const mkSvc = () => ({
+      register: (ns: string, _schema: unknown, _opts?: unknown) => {
+        if (registrations.has(ns)) throw new Error(`settings namespace "${ns}" is already registered`);
+        const reg = { value: { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' }, watchers: new Set<(v: unknown) => void>() };
+        registrations.set(ns, reg);
+        return {
+          get: () => reg.value,
+          watch: (cb: (v: unknown) => void) => {
+            reg.watchers.add(cb);
+            return () => {
+              reg.watchers.delete(cb);
+            };
+          },
+          update: async (patch: Record<string, unknown>) => {
+            reg.value = { ...reg.value, ...patch };
+            for (const w of reg.watchers) w(reg.value);
+          },
+        };
+      },
+    });
+    const mkCtx = (svc: unknown) =>
+      ({ get: (n: string) => (n === 'settings' ? svc : undefined), on: () => () => {} }) as never;
+
+    const h1 = registerLiveSettings(mkCtx(mkSvc()), silentLogger);
+    assert(h1.supported === true, '首次注册成功');
+    await h1.update({ enabled: false });
+    assert(h1.get().enabled === false, '写入用户开关（enabled=false）');
+
+    // fiber 重启：旧 handle 弃用（注册仍在服务侧），新 fiber 再挂——修复前在此撞
+    // already registered 并停在 stub（用户开关被静默忽略直到重启进程）
+    const h2 = registerLiveSettings(mkCtx(mkSvc()), silentLogger);
+    assert(h2.supported === true, 'fiber 重启后重挂成功（复用进程内注册）');
+    assert(h2.get().enabled === false, '重挂后读到用户已存开关（不静默回退全开）');
+    await h2.update({ enabled: true });
+    assert(h2.get().enabled === true, '重挂后写恢复正常');
+
+    // 服务缺失路径保持：恒开 stub
+    const h3 = registerLiveSettings(mkCtx(undefined), silentLogger);
+    assert(h3.supported === false && h3.get().enabled === true, '服务缺失保持全开（既有行为不变）');
   }
 
   console.log(failures === 0 ? '\n全部通过 ✅' : `\n${failures} 个失败 ❌`);
