@@ -45,6 +45,7 @@ import { errDetail, SIZE_CHECK_INTERVAL, withFileLog } from './util/filelog.js';
 import { parseJson } from './llm.js';
 import { chunkByCharBudget } from './pipeline/l1.js';
 import { MemoryRunner, pickNextTaskIndex } from './pipeline/runner.js';
+import { advanceWarmupThreshold, effectiveExtractThreshold } from './pipeline/trigger.js';
 import { estimateCalls, groupL0Sessions, RebuildController } from './pipeline/rebuild.js';
 import { groupPendingBySession, loadPending, pendingPathFor, savePending } from './store/pending.js';
 import { formatExtractionPrompt, getExtractMemoriesSystemPrompt } from './prompts/l1-extraction.js';
@@ -832,11 +833,11 @@ async function main(): Promise<void> {
         chat: [],
         work: [{ id: 'm2', role: 'assistant', content: '攒阈值', timestamp: 2, sessionId: 's-a' }],
       });
-      const loaded = await loadPending(pFile);
+      const { buckets: loaded } = await loadPending(pFile);
       assert(loaded.auto.length === 1 && loaded.auto[0].id === 'm1' && loaded.work.length === 1 && loaded.work[0].content === '攒阈值', 'pending 往返保真');
 
       await fs.writeFile(pFile, '{oops', 'utf-8');
-      const bad = await loadPending(pFile, silentLogger);
+      const { buckets: bad } = await loadPending(pFile, silentLogger);
       assert(bad.auto.length === 0 && bad.chat.length === 0 && bad.work.length === 0, '坏 JSON → 空桶不抛');
 
       await fs.writeFile(
@@ -847,7 +848,7 @@ async function main(): Promise<void> {
         }),
         'utf-8',
       );
-      const mixed = await loadPending(pFile, silentLogger);
+      const { buckets: mixed } = await loadPending(pFile, silentLogger);
       assert(mixed.auto.length === 1 && mixed.auto[0].id === 'ok', '非法记录（role/类型）被丢弃');
 
       // 13a-2. 会话标识往返 + 旧格式迁移（无 sessionId → legacy 组）+ 按会话分组切片
@@ -860,14 +861,14 @@ async function main(): Promise<void> {
         chat: [{ id: 'old', role: 'user', content: '旧格式', timestamp: 9, sessionId: 'sess-x' }],
         work: [],
       });
-      const withSid = await loadPending(pFile, silentLogger);
+      const { buckets: withSid } = await loadPending(pFile, silentLogger);
       assert(withSid.auto.length === 3 && withSid.auto[0].sessionId === 'sess-1', '会话标识往返保真');
       await fs.writeFile(
         pFile,
         JSON.stringify({ version: 1, buckets: { auto: [{ id: 'legacy-1', role: 'user', content: '旧数据', timestamp: 4 }], chat: [], work: [] } }),
         'utf-8',
       );
-      const legacy = await loadPending(pFile, silentLogger);
+      const { buckets: legacy } = await loadPending(pFile, silentLogger);
       assert(legacy.auto.length === 1 && legacy.auto[0].sessionId === 'legacy', '旧格式条目归 legacy 会话组');
       const grouped = groupPendingBySession(withSid.auto);
       assert(
@@ -1052,6 +1053,69 @@ async function main(): Promise<void> {
       dbR.close();
     } finally {
       await fs.rm(tmpRb, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  console.log('== 13g. 按会话切片触发 + warmup 渐进爬坡（集成，fake llm） ==');
+  {
+    assert(effectiveExtractThreshold(1, 6) === 1 && effectiveExtractThreshold(2, 6) === 2, '爬坡中取 min(爬坡值, 稳态)');
+    assert(effectiveExtractThreshold(0, 6) === 6, '毕业（0）取稳态值');
+    assert(advanceWarmupThreshold(1, 6) === 2 && advanceWarmupThreshold(2, 6) === 4, '成功抽取后翻倍');
+    assert(advanceWarmupThreshold(4, 6) === 0 && advanceWarmupThreshold(0, 6) === 0, '达稳态毕业（0）且保持');
+
+    const tmpT3 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-warmup-'));
+    try {
+      let llmCalls = 0;
+      const ctxT3 = {
+        on: () => () => {},
+        effect: (f: () => () => void) => f(),
+        llm: {
+          stream: async function* () {
+            llmCalls++;
+            yield { type: 'block-end', block: { type: 'text', text: '[]' } };
+            yield { type: 'finish', reason: { kind: 'stop' } };
+          },
+        },
+      } as never;
+      const liveT3 = { supported: true, get: () => ({ enabled: true, capture: true, distill: true, reasoningEffort: '' }) };
+      const stateT3 = new StateStore(StateStore.pathFor(tmpT3));
+      const runnerT3 = new MemoryRunner(
+        ctxT3,
+        {
+          dataDir: tmpT3,
+          extract: { enabled: true, minMessages: 6, backgroundMessages: 10, candidatePool: 5 },
+          l2: { enabled: false },
+          l3: { enabled: false },
+          llm: { provider: 'p', model: 'm', maxTokens: 1000, reasoningEffort: '', temperature: 0.3, maxInputChars: 100000, timeoutMs: 5000 },
+        } as never,
+        { state: stateT3 } as never,
+        silentLogger,
+        liveT3 as never,
+      );
+      await runnerT3.init();
+      const settle = () => new Promise((r) => setTimeout(r, 25));
+      const msg = (id: string, ts: number) => ({ id, role: 'user' as const, content: `消息${id}`, timestamp: ts });
+
+      // 爬坡起点 1：A 首条消息立即触发抽取，切片消费、warmup→2
+      runnerT3.enqueue('A', [msg('a1', 1)], 'chat');
+      await settle();
+      assert(llmCalls === 1 && runnerT3.pendingCount === 0, `首轮即出记忆（calls=${llmCalls}，桶清空）`);
+      // 阈值 2：B 插入 1 条不触发（B 切片 1 < 2）；A 再 1 条（A 切片 1 < 2）也不触发
+      runnerT3.enqueue('B', [msg('b1', 2)], 'chat');
+      await settle();
+      runnerT3.enqueue('A', [msg('a2', 3)], 'chat');
+      await settle();
+      assert(llmCalls === 1 && runnerT3.pendingCount === 2, `未达阈值不触发，两会话切片并存（calls=${llmCalls}，桶 ${runnerT3.pendingCount}）`);
+      // A 第 3 条 → A 切片 2 ≥ 2 触发：只抽 A 的切片，B 的 1 条留存；warmup→4
+      runnerT3.enqueue('A', [msg('a3', 4)], 'chat');
+      await settle();
+      assert(llmCalls === 2 && runnerT3.pendingCount === 1, `只消费 A 切片，B 切片留存（calls=${llmCalls}，桶 ${runnerT3.pendingCount}）`);
+      // 爬坡状态持久化：重读 pending.json 验证 chat=4
+      const { warmup: wReload } = await loadPending(pendingPathFor(tmpT3), silentLogger);
+      assert(wReload.chat === 4, `warmup 随 pending.json 持久化（chat=${wReload.chat}）`);
+      runnerT3.stop();
+    } finally {
+      await fs.rm(tmpT3, { recursive: true, force: true }).catch(() => {});
     }
   }
 
@@ -1492,11 +1556,11 @@ async function main(): Promise<void> {
       };
       rp.pending.chat = Array.from({ length: 260 }, (_, i) => ({ id: `p${i}`, role: 'user', content: 'x', timestamp: i }));
       await rp.persistPending(false);
-      const loadedA = await loadPending(rp.pendingFile, silentLogger);
+      const { buckets: loadedA } = await loadPending(rp.pendingFile, silentLogger);
       assert(loadedA.chat.length === 200 && loadedA.chat[0].id === 'p60', `非重建轮持久化前按桶截断保尾部（${loadedA.chat.length} 条，首条 ${loadedA.chat[0]?.id}）`);
       rp.pending.chat = Array.from({ length: 260 }, (_, i) => ({ id: `q${i}`, role: 'user', content: 'x', timestamp: i }));
       await rp.persistPending(true);
-      const loadedB = await loadPending(rp.pendingFile, silentLogger);
+      const { buckets: loadedB } = await loadPending(rp.pendingFile, silentLogger);
       assert(loadedB.chat.length === 260, `重建轮（noBufferCap）豁免截断（${loadedB.chat.length} 条）`);
     } finally {
       await fs.rm(tmpT13, { recursive: true, force: true }).catch(() => {});

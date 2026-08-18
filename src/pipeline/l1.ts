@@ -87,9 +87,8 @@ export async function runExtraction(
   mode: ExtractMode,
 ): Promise<ExtractionResult> {
   if (!cfg.extract.enabled) return { stored: 0, skipped: true, sceneName: chainHead(states, mode), newRecords: [] };
-  if (pending.length < cfg.extract.minMessages) {
-    return { stored: 0, skipped: true, sceneName: chainHead(states, mode), newRecords: [] };
-  }
+  // 触发阈值（渐进爬坡 + 按会话切片计数）由 runner 判定（trigger.ts）；
+  // 此处不再重复 gate——重建轮 force 与 warmup 早期轮次都会传入小于稳态值的切片。
 
   // 纯档强制族 = 档位族；auto 档抽取后的记录族按 type 前缀判定
   const forcedFamily: MemoryFamily | undefined = mode === 'auto' ? undefined : mode;
