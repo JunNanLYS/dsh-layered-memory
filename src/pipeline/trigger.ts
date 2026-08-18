@@ -38,6 +38,19 @@ export function modeSwitchAction(oldMode: string, newMode: string): ModeSwitchAc
   return 'flush';
 }
 
+// ── 背景参考按会话现查（ADR-0003：抽取背景从 L0 按会话取，剔除切片自身） ──
+
+/** 从"该会话最近消息"里剔除切片自身成员后取尾部 n 条作为抽取背景。
+ *  剔除防止抽取目标混入背景（L0 在 turn/end 已先落盘，现查必含切片）。 */
+export function pickSessionBackground<T extends { id: string }>(
+  recent: readonly T[],
+  sliceIds: ReadonlySet<string>,
+  n: number,
+): T[] {
+  if (n <= 0) return [];
+  return recent.filter((m) => !sliceIds.has(m.id)).slice(-n);
+}
+
 // ── 闲置兜底（CONTEXT.md「闲置兜底」：接住"没攒够阈值用户就离开"的尾部） ──
 
 export interface IdleSliceInfo {

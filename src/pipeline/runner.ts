@@ -33,7 +33,14 @@ import type { SceneStore } from '../store/scenes.js';
 import type { StateStore } from '../store/state.js';
 import type { ConversationMessage, ExtractMode, MemoryFamily, MemoryLogger } from '../types.js';
 import { errDetail } from '../util/filelog.js';
-import { advanceWarmupThreshold, effectiveExtractThreshold, idleSessionsToFlush, modeSwitchAction, type IdleSliceInfo } from './trigger.js';
+import {
+  advanceWarmupThreshold,
+  effectiveExtractThreshold,
+  idleSessionsToFlush,
+  modeSwitchAction,
+  pickSessionBackground,
+  type IdleSliceInfo,
+} from './trigger.js';
 import { runExtraction } from './l1.js';
 import type { FamilyStates } from './l1.js';
 import { runSceneConsolidation } from './l2.js';
@@ -88,7 +95,6 @@ export class MemoryRunner {
   /** 每会话最后活动时间（闲置兜底判定用）。 */
   private lastActivity = new Map<string, number>();
   private readonly pendingFile: string;
-  private background: ConversationMessage[] = [];
   /** 分族 checkpoint（init 后可用；重建收尾也从这里读活引用）。 */
   states!: FamilyStates;
   private afterRun: (() => void) | undefined;
@@ -378,8 +384,8 @@ export class MemoryRunner {
 
   /**
    * 抽取并消费一个会话切片：成功才把切片移出桶并推进爬坡阈值；失败保留切片待重试。
-   * 调用方已保证切片达到生效阈值（或 force）。背景参考按全局数组维护（按会话现查在
-   * 后续版本替换——本方法签名预留 slice 语义使其替换面收敛于此）。
+   * 调用方已保证切片达到生效阈值（或 force）。背景参考按会话从 L0 现查并剔除切片
+   * 自身（ADR-0003：会话间互不污染、重启不丢背景）。
    */
   private async extractSessionSlice(
     sessionId: string,
@@ -393,16 +399,23 @@ export class MemoryRunner {
     if (slice.length === 0) return [];
     const rest = bucket.filter((m) => m.sessionId !== sessionId);
     try {
+      // 背景参考：该会话最近消息（多取切片条数补偿被剔除者），剔除切片自身
+      const background = this.stores.l0
+        ? pickSessionBackground(
+            await this.stores.l0.recentBySession(sessionId, cfg.extract.backgroundMessages + slice.length),
+            new Set(slice.map((m) => m.id)),
+            cfg.extract.backgroundMessages,
+          )
+        : [];
       const t = Date.now();
-      const result = await runExtraction(this.ctx, cfg, this.stores.l1, this.states, slice, this.background, this.logger, mode);
+      const result = await runExtraction(this.ctx, cfg, this.stores.l1, this.states, slice, background, this.logger, mode);
       if (!result.skipped) {
         this.pending[mode] = rest;
         // 重建轮（force）不是有机对话，不推进爬坡
         if (!opts?.force) this.warmup[mode] = advanceWarmupThreshold(this.warmup[mode], cfg.extract.minMessages);
       }
-      this.background = [...this.background.slice(-cfg.extract.backgroundMessages), ...slice];
       this.logger.info(
-        `[memory] L1 阶段完成（session=${sessionId}，mode=${mode}，切片 ${slice.length} 条，阈值 ${effectiveThreshold}，${Date.now() - t}ms）`,
+        `[memory] L1 阶段完成（session=${sessionId}，mode=${mode}，切片 ${slice.length} 条，背景 ${background.length} 条，阈值 ${effectiveThreshold}，${Date.now() - t}ms）`,
       );
       // 缓冲与爬坡每次尝试后立即落盘：进程中途退出不丢待重试/攒阈值状态
       await this.persistPending(opts?.noBufferCap);

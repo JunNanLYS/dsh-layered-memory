@@ -45,7 +45,7 @@ import { errDetail, SIZE_CHECK_INTERVAL, withFileLog } from './util/filelog.js';
 import { parseJson } from './llm.js';
 import { chunkByCharBudget } from './pipeline/l1.js';
 import { MemoryRunner, pickNextTaskIndex } from './pipeline/runner.js';
-import { advanceWarmupThreshold, effectiveExtractThreshold, idleSessionsToFlush, modeSwitchAction } from './pipeline/trigger.js';
+import { advanceWarmupThreshold, effectiveExtractThreshold, idleSessionsToFlush, modeSwitchAction, pickSessionBackground } from './pipeline/trigger.js';
 import { estimateCalls, groupL0Sessions, RebuildController } from './pipeline/rebuild.js';
 import { groupPendingBySession, loadPending, pendingPathFor, savePending } from './store/pending.js';
 import { formatExtractionPrompt, getExtractMemoriesSystemPrompt } from './prompts/l1-extraction.js';
@@ -173,6 +173,17 @@ async function main(): Promise<void> {
     const l0hits = await l0.search('分层记忆', 5);
     assert(l0hits.length >= 1 && l0hits[0].content.includes('L0 分层记忆'), `L0 FTS 检索命中 ${l0hits.length} 条，首条正确`);
     assert((await l0.countToday()) === 2, 'L0 今日计数（SQL COUNT）');
+    // 按会话取最近消息（蒸馏背景现查用）：会话隔离 + 时间升序 + limit
+    await l0.append('sess-2', [
+      { id: 'n1', role: 'user', content: '另一个会话的消息', timestamp: Date.now() + 2 },
+      { id: 'n2', role: 'assistant', content: '不该混进 sess-1 背景', timestamp: Date.now() + 3 },
+    ]);
+    const rec1 = await l0.recentBySession('sess-1', 10);
+    assert(rec1.length === 2 && rec1[0].id === 'm1' && rec1[1].id === 'm2', 'recentBySession 会话隔离且时间升序');
+    assert(rec1.every((m) => m.content.includes('L0') || m.content.includes('原始对话') || m.content.includes('分层记忆')), '他会话消息不出现');
+    const recLim = await l0.recentBySession('sess-1', 1);
+    assert(recLim.length === 1 && recLim[0].id === 'm2', 'recentBySession limit 取尾部');
+    assert((await l0.recentBySession('no-such', 10)).length === 0, '未知会话返回空');
     assert(
       existsSync(path.join(tmp, 'conversations', `${dayKey(Date.now())}.jsonl`)),
       'L0 JSONL 事实源按天落盘（conversations/）',
@@ -1156,6 +1167,17 @@ async function main(): Promise<void> {
     assert(flushH.length === 1 && flushH[0] === 'gone', `闲置扫描：静默达标才清，off 档跳过，活动优先于消息时间（${flushH.join(',')}）`);
     assert(idleSessionsToFlush(slicesH, actH, nowH, 0, () => false).length === 0, 'idleMs=0 关闭兜底');
     assert(idleSessionsToFlush([{ sessionId: 'x', count: 0, lastMessageAt: 0 }], new Map(), nowH, idleH, () => false).length === 0, '空切片不触发');
+    // 背景选取：剔除切片自身、取尾部 n 条
+    const bgAll = [
+      { id: 'p1', role: 'user' as const, content: '早', timestamp: 1 },
+      { id: 'p2', role: 'user' as const, content: '中', timestamp: 2 },
+      { id: 'p3', role: 'user' as const, content: '晚', timestamp: 3 },
+    ];
+    const bgPicked = pickSessionBackground(bgAll, new Set(['p3']), 2);
+    assert(bgPicked.length === 2 && bgPicked[0].id === 'p1' && bgPicked[1].id === 'p2', '背景剔除切片自身成员');
+    const bgTail = pickSessionBackground(bgAll, new Set(['p3']), 1);
+    assert(bgTail.length === 1 && bgTail[0].id === 'p2', '背景取尾部 n 条');
+    assert(pickSessionBackground(bgAll, new Set(), 0).length === 0, 'n=0 无背景');
   }
 
   console.log('== 14. 停机顺序（L0 冲刷缝 + 调度停止标志） ==');

@@ -1109,6 +1109,32 @@ export class MemoryDb {
     }
   }
 
+  /** 按会话取最近消息（时间升序返回；走 idx_l0_session_id 索引）。
+   *  蒸馏背景参考专用——按会话现查替代全局内存数组（ADR-0003）。 */
+  recentL0BySession(sessionId: string, limit: number): L0MessageRecord[] {
+    if (this.degraded || limit <= 0) return [];
+    try {
+      const rows = this.db
+        .prepare(
+          'SELECT record_id, session_id, role, message_text, recorded_at, timestamp FROM l0_conversations WHERE session_id = ? ORDER BY timestamp DESC, rowid DESC LIMIT ?',
+        )
+        .all(sessionId, limit) as Array<{ record_id: string; session_id: string; role: string; message_text: string; recorded_at: string; timestamp: number }>;
+      return rows
+        .map((r) => ({
+          sessionId: r.session_id,
+          recordedAt: r.recorded_at,
+          id: r.record_id,
+          role: r.role as L0MessageRecord['role'],
+          content: r.message_text,
+          timestamp: r.timestamp ?? 0,
+        }))
+        .reverse();
+    } catch (err) {
+      this.logger?.warn(`[memory] L0 按会话取最近消息失败（返回空）: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  }
+
   /** L0 全量列举（重建快照用；按时间升序，事务一致性避开 JSONL 追加竞态）。 */
   listL0All(): L0MessageRecord[] {
     if (this.degraded) return [];
