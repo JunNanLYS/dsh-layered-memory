@@ -46,6 +46,12 @@ export interface MemoryConfig {
     enabled: boolean;
     /** 每步自动召回注入的 L1 条数。 */
     maxResults: number;
+    /** 单条注入记忆的字符上限（超限截断并提示用工具查全文）；0 = 不限。 */
+    maxCharsPerMemory: number;
+    /** 整轮注入总字符上限（超限按相关性丢尾部）；0 = 不限。 */
+    maxTotalRecallChars: number;
+    /** 召回总预算（ms）：超时跳过本轮注入、不阻塞对话；0 = 不限时。 */
+    timeoutMs: number;
     includePersona: boolean;
     includeSceneNav: boolean;
     /** 检索策略：keyword（FTS5 BM25）| embedding（向量）| hybrid（双路 + RRF 融合）。 */
@@ -117,6 +123,10 @@ export const memorySchema = Schema.object({
   recall: Schema.object({
     enabled: Schema.boolean().default(true),
     maxResults: Schema.number().min(1).max(20).default(5),
+    // 预算与超时（ADR-0001 / 规格 A 节）：截断是引流——工具路径返回全文
+    maxCharsPerMemory: Schema.number().min(0).max(100_000).default(500),
+    maxTotalRecallChars: Schema.number().min(0).max(100_000).default(2000),
+    timeoutMs: Schema.number().min(0).max(60_000).default(5000),
     includePersona: Schema.boolean().default(true),
     includeSceneNav: Schema.boolean().default(true),
     strategy: Schema.union(['keyword', 'embedding', 'hybrid']).default('hybrid'),

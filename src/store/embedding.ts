@@ -12,9 +12,15 @@ export interface EmbeddingProviderInfo {
   dimensions: number;
 }
 
+/** 单次嵌入调用的可选参数：timeoutMs 只允许缩短服务配置的超时（内层钳制），
+ *  永不放大——召回路径用它给 FTS 降级留时间（规格 A 节）。本地实现可忽略。 */
+export interface EmbedCallOptions {
+  timeoutMs?: number;
+}
+
 export interface EmbeddingService {
-  embed(text: string): Promise<Float32Array>;
-  embedBatch(texts: string[]): Promise<Float32Array[]>;
+  embed(text: string, callOpts?: EmbedCallOptions): Promise<Float32Array>;
+  embedBatch(texts: string[], callOpts?: EmbedCallOptions): Promise<Float32Array[]>;
   getDimensions(): number;
   getProviderInfo(): EmbeddingProviderInfo;
   isReady(): boolean;
@@ -75,15 +81,17 @@ export class RemoteEmbeddingService implements EmbeddingService {
     return true;
   }
 
-  async embed(text: string): Promise<Float32Array> {
-    const [vec] = await this.embedBatch([text]);
+  async embed(text: string, callOpts?: EmbedCallOptions): Promise<Float32Array> {
+    const [vec] = await this.embedBatch([text], callOpts);
     return vec;
   }
 
-  async embedBatch(texts: string[]): Promise<Float32Array[]> {
+  async embedBatch(texts: string[], callOpts?: EmbedCallOptions): Promise<Float32Array[]> {
     if (texts.length === 0) return [];
     const input = texts.map((t) => t.slice(0, this.opts.maxInputChars));
     const base = this.opts.baseUrl.replace(/\/+$/, '');
+    // 内层钳制只缩短不放大：召回路径传短超时，给 FTS 降级留时间
+    const timeoutMs = Math.min(this.opts.timeoutMs, callOpts?.timeoutMs ?? this.opts.timeoutMs);
     const res = await fetch(`${base}/embeddings`, {
       method: 'POST',
       headers: {
@@ -91,7 +99,7 @@ export class RemoteEmbeddingService implements EmbeddingService {
         authorization: `Bearer ${this.opts.apiKey}`,
       },
       body: JSON.stringify({ model: this.opts.model, input }),
-      signal: AbortSignal.timeout(this.opts.timeoutMs),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
@@ -148,10 +156,11 @@ export class EmbedHelper {
     return this.embed.isReady();
   }
 
-  /** 查询向量；失败或空向量返回 undefined（调用方降级 FTS）。 */
-  async query(text: string): Promise<Float32Array | undefined> {
+  /** 查询向量；失败或空向量返回 undefined（调用方降级 FTS）。
+   *  timeoutMs 为内层钳制（仅缩短服务超时），召回路径使用。 */
+  async query(text: string, timeoutMs?: number): Promise<Float32Array | undefined> {
     try {
-      const vec = await this.embed.embed(text);
+      const vec = await this.embed.embed(text, timeoutMs != null ? { timeoutMs } : undefined);
       return vec.length > 0 ? vec : undefined;
     } catch (err) {
       this.warn(`查询向量计算失败，降级 FTS: ${errMsg(err)}`);

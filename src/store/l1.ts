@@ -25,6 +25,8 @@ export interface L1SearchOptions {
   /** 分数阈值（仅召回路径传；keyword/embedding 策略生效，FTS 含小语料例外；
    *  hybrid 按官方语义在 RRF 融合前不过滤）。 */
   scoreThreshold?: number;
+  /** 嵌入查询内层钳制（ms，只缩短不放大；召回路径传入给 FTS 降级留时间）。 */
+  embeddingTimeoutMs?: number;
 }
 
 /** 官方过度召回倍数：候选池 = limit × 3（官方 tool 路径同款）。 */
@@ -158,7 +160,7 @@ export class L1Store {
       return this.postProcess(applyFtsThreshold(fts, threshold, limit), opts?.type, limit);
     }
     if (strategy === 'embedding') {
-      const vec = await this.helper.query(query);
+      const vec = await this.helper.query(query, opts?.embeddingTimeoutMs);
       if (!vec) {
         // embedding 调用失败：降级 FTS，不阻断
         const fts = this.db.searchL1Fts(query, candidateK, opts?.family);
@@ -172,7 +174,7 @@ export class L1Store {
     // → 融合分归一化：rank1 双列表命中 = 1.0，单列表命中 ≤ 0.5，保持 0~1 语义
     const [ftsList, vecRaw] = await Promise.all([
       Promise.resolve(this.db.searchL1Fts(query, candidateK, opts?.family)),
-      this.helper.query(query),
+      this.helper.query(query, opts?.embeddingTimeoutMs),
     ]);
     const vecList = vecRaw ? this.db.searchL1Vector(vecRaw, candidateK, opts?.family) : [];
     const merged = rrfMerge([ftsList, vecList], (h) => h.id);

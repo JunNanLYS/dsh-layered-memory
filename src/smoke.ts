@@ -10,10 +10,10 @@ import { DatabaseSync } from 'node:sqlite';
 import type { SessionEvent } from '@deepseek-ai/dsh-session';
 import type { MemoryConfig } from './config.js';
 import { memorySchema } from './config.js';
+import { EmbedHelper, NoopEmbeddingService, type EmbeddingService } from './store/embedding.js';
+import { applyRecallBudget, raceRecallTimeout, RECALL_TRUNCATION_SUFFIX, truncateRecallLine } from './util/recall-budget.js';
 import { Bm25Index } from './store/bm25.js';
 import { ModelDownloadQueue } from './store/download-queue.js';
-import type { EmbeddingService } from './store/embedding.js';
-import { NoopEmbeddingService } from './store/embedding.js';
 import {
   EmbeddingManager,
   EmbeddingSourceStore,
@@ -1201,6 +1201,48 @@ async function main(): Promise<void> {
     }
   }
 
+  console.log('== 15b. 召回预算与超时（ADR-0001 / 规格 A 节） ==');
+  {
+    // 单条截断：code point 安全（不劈代理对），带工具引导后缀
+    assert(truncateRecallLine('短行', 10) === '短行', '预算内行原样保留');
+    const longLine = '记'.repeat(300);
+    const cut = truncateRecallLine(longLine, 100);
+    assert(Array.from(cut).length === 100 && cut.includes(RECALL_TRUNCATION_SUFFIX), '超限行截断到上限并带引导后缀');
+    const emojiLine = '😀'.repeat(100);
+    const emojiCut = truncateRecallLine(emojiLine, 50);
+    assert(Array.from(emojiCut).length === 50 && !emojiCut.includes('\uFFFD'), '代理对不被劈开（无 U+FFFD）');
+    // 总量预算：装填制，装不下的尾部丢弃；剩余不足最小行长的整条丢
+    const b1 = applyRecallBudget(['a'.repeat(100), 'b'.repeat(100), 'c'.repeat(100)], { maxCharsPerMemory: 0, maxTotalRecallChars: 0 });
+    assert(b1.length === 3, '预算 0/0 = 不限');
+    const b2 = applyRecallBudget(['a'.repeat(100), 'b'.repeat(100), 'c'.repeat(100)], { maxCharsPerMemory: 0, maxTotalRecallChars: 160 });
+    assert(b2.length === 2 && b2[1].includes(RECALL_TRUNCATION_SUFFIX), '总量预算内截断装填、尾部丢弃');
+    const b3 = applyRecallBudget(['x'.repeat(600)], { maxCharsPerMemory: 500, maxTotalRecallChars: 0 });
+    assert(Array.from(b3[0]).length === 500 && b3[0].includes(RECALL_TRUNCATION_SUFFIX), '单条预算截断');
+    // 超时：慢检索 → undefined（跳过本轮）；快检索原值；0 = 不限时
+    assert((await raceRecallTimeout(new Promise((r) => setTimeout(() => r('late'), 300)), 20)) === undefined, '超时返回 undefined（跳过本轮注入）');
+    assert((await raceRecallTimeout(Promise.resolve('ok'), 1000)) === 'ok', '限时内原值返回');
+    assert((await raceRecallTimeout(new Promise((r) => setTimeout(() => r('slow'), 50)), 0)) === 'slow', 'timeoutMs=0 不限时');
+    // 嵌入内层钳制透传：EmbedHelper.query 的 timeoutMs 传给底层服务（仅缩短语义在远程实现内）
+    let captured: { timeoutMs?: number } | undefined;
+    const fakeEmbed: EmbeddingService = {
+      async embed(_text: string, callOpts?: { timeoutMs?: number }) {
+        captured = callOpts;
+        return new Float32Array([1]);
+      },
+      async embedBatch() {
+        return [];
+      },
+      getDimensions: () => 1,
+      getProviderInfo: () => ({ provider: 'fake', model: 'm', dimensions: 1 }),
+      isReady: () => true,
+    };
+    const helper = new EmbedHelper(fakeEmbed);
+    await helper.query('q', 1234);
+    assert(captured?.timeoutMs === 1234, '查询钳制透传到嵌入服务');
+    await helper.query('q');
+    assert(captured?.timeoutMs === undefined, '未传钳制时不附加调用参数');
+  }
+
   console.log('== 16. settings 命名空间 fiber 重启 / 服务实例迁移重挂（M10） ==');
   {
     // 复现要点（与 dsh-settings 实测实现一致）：注册挂服务自身生命周期
@@ -1415,6 +1457,13 @@ async function main(): Promise<void> {
     assert(!tryValidate({ capture: { maxMessageChars: 10 } }), '低于下限的 maxMessageChars 被拒');
     assert(!tryValidate({ embedding: { dimensions: -8 } }), '负 dimensions 被拒');
     assert(tryValidate({ embedding: { dimensions: 0 } }), 'dimensions=0（纯 FTS）合法');
+    // 召回预算/超时默认值（ADR-0001）
+    const defCfg = (memorySchema as unknown as { '~standard': { validate: (i: unknown) => { value?: { recall?: { maxCharsPerMemory?: number; maxTotalRecallChars?: number; timeoutMs?: number } } } } })['~standard'].validate({});
+    const defRecall = defCfg?.value?.recall;
+    assert(
+      defRecall?.maxCharsPerMemory === 500 && defRecall?.maxTotalRecallChars === 2000 && defRecall?.timeoutMs === 5000,
+      '召回预算/超时默认值（500/2000/5000）',
+    );
   }
 
   // 19b. pending 持久化前按桶截断（非重建轮）/ 重建轮豁免 —— 挂在 §14 的 runner2 之后
