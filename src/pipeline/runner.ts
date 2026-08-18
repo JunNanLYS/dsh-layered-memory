@@ -33,7 +33,7 @@ import type { SceneStore } from '../store/scenes.js';
 import type { StateStore } from '../store/state.js';
 import type { ConversationMessage, ExtractMode, MemoryFamily, MemoryLogger } from '../types.js';
 import { errDetail } from '../util/filelog.js';
-import { advanceWarmupThreshold, effectiveExtractThreshold } from './trigger.js';
+import { advanceWarmupThreshold, effectiveExtractThreshold, idleSessionsToFlush, modeSwitchAction, type IdleSliceInfo } from './trigger.js';
 import { runExtraction } from './l1.js';
 import type { FamilyStates } from './l1.js';
 import { runSceneConsolidation } from './l2.js';
@@ -74,6 +74,8 @@ export function effectiveCfg(cfg: MemoryConfig, live: LiveSettingsHandle): Memor
 const PENDING_BUCKET_CAP = 200;
 /** 启动补跑延迟：避开宿主启动期忙乱。 */
 const STARTUP_RETRY_DELAY_MS = 20_000;
+/** 闲置扫描 tick 粒度（实际落袋延迟 = idleSeconds + 至多一个 tick）。 */
+const IDLE_TICK_MS = 30_000;
 
 export class MemoryRunner {
   private tasks: PipelineTask[] = [];
@@ -97,6 +99,8 @@ export class MemoryRunner {
     private readonly stores: MemoryStores,
     private readonly logger: MemoryLogger,
     private readonly live: LiveSettingsHandle,
+    /** 会话档位只读句柄（闲置扫描跳过 off 档会话；挂起语义）。 */
+    private readonly modes?: { get(sessionId: string): string },
   ) {
     this.pendingFile = pendingPathFor(resolveDataDir(cfg));
   }
@@ -159,8 +163,8 @@ export class MemoryRunner {
   }
 
   /** 一轮对话结束后入队（L0 落盘由 capture 在 turn/end 即时完成，不排蒸馏队列）。 */
-  enqueue(sessionId: string, messages: ConversationMessage[], mode: ExtractMode): void {
-    this.pushTask({ kind: 'live', run: () => this.runTurn(sessionId, messages, mode) });
+  enqueue(sessionId: string, messages: ConversationMessage[], mode: ExtractMode, opts?: { force?: boolean }): void {
+    this.pushTask({ kind: 'live', run: () => this.runTurn(sessionId, messages, mode, opts) });
   }
 
   /** 重建任务入队（低优先级：让位于正常轮次；由 RebuildController 分块驱动）。 */
@@ -177,6 +181,69 @@ export class MemoryRunner {
   /** 停止取新任务（插件 dispose 序调用；进行中任务照常跑完但不 await——LLM 慢调用不拖住宿主卸载）。 */
   stop(): void {
     this.stopped = true;
+  }
+
+  /** 启动闲置兜底定时器（index.ts 装配；idleSeconds=0 关闭）。 */
+  startIdleTimer(): void {
+    const idleMs = (this.cfg.extract.idleSeconds ?? 0) * 1000;
+    if (!(idleMs > 0)) return;
+    this.ctx.effect(() => {
+      const timer = setInterval(() => this.flushIdleSlices(Date.now(), idleMs), IDLE_TICK_MS);
+      return () => clearInterval(timer);
+    });
+  }
+
+  /** 闲置扫描：静默达标且有切片的会话按捕获档位落袋（off 档会话挂起跳过）。 */
+  private flushIdleSlices(now: number, idleMs: number): void {
+    if (this.stopped) return;
+    const liveNow = this.live.get();
+    if (!(liveNow.enabled && liveNow.distill)) return;
+    // 聚合每会话跨桶切片（sessionId 全局唯一）
+    const infos = new Map<string, IdleSliceInfo>();
+    for (const mode of PENDING_MODES) {
+      for (const m of this.pending[mode]) {
+        const info = infos.get(m.sessionId) ?? { sessionId: m.sessionId, count: 0, lastMessageAt: 0 };
+        info.count++;
+        info.lastMessageAt = Math.max(info.lastMessageAt, m.timestamp);
+        infos.set(m.sessionId, info);
+      }
+    }
+    if (infos.size === 0) return;
+    const targets = idleSessionsToFlush(
+      [...infos.values()],
+      this.lastActivity,
+      now,
+      idleMs,
+      (sid) => this.modes?.get(sid) === 'off',
+    );
+    for (const sid of targets) {
+      this.logger.info(`[memory] 闲置兜底：会话 ${sid} 静默达标，未蒸馏切片落袋`);
+      for (const mode of PENDING_MODES) {
+        if (this.pending[mode].some((m) => m.sessionId === sid)) {
+          this.enqueue(sid, [], mode, { force: true });
+        }
+      }
+    }
+  }
+
+  /**
+   * 档位切换同步（session-modes 的 set() 回调，ADR-0003）：
+   * 非 off 间切换 → 该会话切片立即按捕获档位蒸馏（新档位从空切片起步）；
+   * 切到 off → 挂起（切片留存，闲置扫描跳过）；从 off 切回 → 挂起片按捕获档位落袋。
+   */
+  onModeChange(sessionId: string, oldMode: string, newMode: string): void {
+    const action = modeSwitchAction(oldMode, newMode);
+    if (action === 'none') return;
+    if (action === 'park') {
+      this.logger.info(`[memory] 档位切换 ${oldMode}→off：会话 ${sessionId} 未蒸馏切片挂起`);
+      return;
+    }
+    this.logger.info(`[memory] 档位切换 ${oldMode}→${newMode}（${action}）：会话 ${sessionId} 切片按捕获档位落袋`);
+    for (const mode of PENDING_MODES) {
+      if (this.pending[mode].some((m) => m.sessionId === sessionId)) {
+        this.enqueue(sessionId, [], mode, { force: true });
+      }
+    }
   }
 
   private pushTask(task: PipelineTask): void {

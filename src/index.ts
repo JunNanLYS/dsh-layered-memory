@@ -299,8 +299,12 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
       : undefined;
   embedManagerRef = embedManager;
 
-  const runner = new MemoryRunner(ctx, config, stores, logger, live);
+  const runner = new MemoryRunner(ctx, config, stores, logger, live, modes);
   await runner.init();
+  // 档位切换同步（ADR-0003）：切走按捕获档位落袋 / 切 off 挂起 / 切回清挂起
+  modes.setModeChangeHandler((sessionId, oldMode, newMode) => runner.onModeChange(sessionId, oldMode, newMode));
+  // 闲置兜底：静默达标会话的未蒸馏切片自动落袋（idleSeconds=0 关闭）
+  runner.startIdleTimer();
 
   // 重建控制器（存储降级时不建——RPC 端点走 supported=false 分支）
   const rebuild =

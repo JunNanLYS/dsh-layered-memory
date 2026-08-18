@@ -24,6 +24,8 @@ export interface MemoryConfig {
     /** 稳态触发阈值：单会话攒够多少条新消息才跑一次 L1 抽取（省 token）。
      *  起步阶段生效阈值从 1 翻倍爬坡到此值（渐进阈值，ADR-0003）。 */
     minMessages: number;
+    /** 闲置兜底：会话静默多少秒后把未蒸馏切片落袋（接住"没攒够阈值用户就离开"）；0 = 关闭。 */
+    idleSeconds: number;
     /** L1 抽取时的背景消息条数（供上下文推断，不参与提取）。 */
     backgroundMessages: number;
     /** 去重候选池大小（每条新记忆的相似候选数）。 */
@@ -108,6 +110,7 @@ export const memorySchema = Schema.object({
   extract: Schema.object({
     enabled: Schema.boolean().default(true),
     minMessages: Schema.number().min(1).max(100).default(6),
+    idleSeconds: Schema.number().min(0).max(86_400).default(300),
     backgroundMessages: Schema.number().min(0).max(50).default(10),
     candidatePool: Schema.number().min(1).max(20).default(5),
   }),

@@ -31,6 +31,8 @@ export class SessionModeStore {
   private readonly entries = new Map<string, ModeEntry>();
   private readonly loaded: MemoryMode;
   private persistFailed = false;
+  /** 档位切换回调（index.ts 装配 runner 的同步动作：切片落袋/挂起，ADR-0003）。 */
+  private onModeChange?: (sessionId: string, oldMode: MemoryMode, newMode: MemoryMode) => void;
   /** 串行化持久化写（避免并发原子写撞临时文件名）。 */
   private writeChain: Promise<void> = Promise.resolve();
 
@@ -67,10 +69,25 @@ export class SessionModeStore {
     return this.entries.get(sessionId)?.mode ?? this.loaded;
   }
 
+  /** 注册档位切换回调（同步调用；回调异常只记日志不阻断写穿）。 */
+  setModeChangeHandler(cb: (sessionId: string, oldMode: MemoryMode, newMode: MemoryMode) => void): void {
+    this.onModeChange = cb;
+  }
+
   /** 设置会话档位（写穿持久化；持久化失败保持内存态生效）。 */
   set(sessionId: string, mode: MemoryMode): void {
+    const old = this.get(sessionId);
     this.entries.set(sessionId, { mode, updatedAt: Date.now() });
     this.writeChain = this.writeChain.then(() => this.persist());
+    if (old !== mode && this.onModeChange) {
+      try {
+        this.onModeChange(sessionId, old, mode);
+      } catch (err) {
+        this.logger?.warn(
+          `[memory] 档位切换回调失败: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
   }
 
   /** 等待在途持久化写完成（测试/停机用）。 */

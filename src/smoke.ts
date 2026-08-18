@@ -45,7 +45,7 @@ import { errDetail, SIZE_CHECK_INTERVAL, withFileLog } from './util/filelog.js';
 import { parseJson } from './llm.js';
 import { chunkByCharBudget } from './pipeline/l1.js';
 import { MemoryRunner, pickNextTaskIndex } from './pipeline/runner.js';
-import { advanceWarmupThreshold, effectiveExtractThreshold } from './pipeline/trigger.js';
+import { advanceWarmupThreshold, effectiveExtractThreshold, idleSessionsToFlush, modeSwitchAction } from './pipeline/trigger.js';
 import { estimateCalls, groupL0Sessions, RebuildController } from './pipeline/rebuild.js';
 import { groupPendingBySession, loadPending, pendingPathFor, savePending } from './store/pending.js';
 import { formatExtractionPrompt, getExtractMemoriesSystemPrompt } from './prompts/l1-extraction.js';
@@ -1113,10 +1113,49 @@ async function main(): Promise<void> {
       // 爬坡状态持久化：重读 pending.json 验证 chat=4
       const { warmup: wReload } = await loadPending(pendingPathFor(tmpT3), silentLogger);
       assert(wReload.chat === 4, `warmup 随 pending.json 持久化（chat=${wReload.chat}）`);
+
+      // 档位切换同步：切 off 挂起（切片留存、无 LLM 调用）；切回按捕获档位落袋
+      runnerT3.enqueue('B', [msg('b2', 5)], 'chat'); // B 切片 2 条（阈值 4 攒批中）
+      await settle();
+      assert(runnerT3.pendingCount === 2 && llmCalls === 2, '切换前 B 攒批中（不触发）');
+      runnerT3.onModeChange('B', 'chat', 'off');
+      await settle();
+      assert(llmCalls === 2 && runnerT3.pendingCount === 2, `切 off 挂起：切片留存不蒸馏（calls=${llmCalls}）`);
+      runnerT3.onModeChange('B', 'off', 'chat');
+      await settle();
+      assert(llmCalls === 3 && runnerT3.pendingCount === 0, `切回按捕获档位落袋（calls=${llmCalls}，桶清空）`);
+      // 非 off 档间切换同样立即落袋
+      runnerT3.enqueue('A', [msg('a4', 6)], 'chat');
+      await settle();
+      assert(runnerT3.pendingCount === 1, 'A 新切片 1 条（阈值 4 攒批中）');
+      runnerT3.onModeChange('A', 'chat', 'work');
+      await settle();
+      assert(llmCalls === 4 && runnerT3.pendingCount === 0, `切走按捕获档位（chat 桶）落袋（calls=${llmCalls}）`);
+
       runnerT3.stop();
     } finally {
       await fs.rm(tmpT3, { recursive: true, force: true }).catch(() => {});
     }
+  }
+
+  console.log('== 13h. 档位切换动作表 + 闲置扫描（纯函数） ==');
+  {
+    assert(modeSwitchAction('chat', 'work') === 'flush' && modeSwitchAction('auto', 'chat') === 'flush', '非 off 档间切换 → flush');
+    assert(modeSwitchAction('chat', 'off') === 'park' && modeSwitchAction('auto', 'off') === 'park', '切到 off → park（挂起）');
+    assert(modeSwitchAction('off', 'chat') === 'unpark' && modeSwitchAction('off', 'auto') === 'unpark', '从 off 切回 → unpark（清挂起）');
+    assert(modeSwitchAction('chat', 'chat') === 'none' && modeSwitchAction('off', 'off') === 'none', '同档 → none');
+    const nowH = 1_000_000;
+    const idleH = 300_000;
+    const slicesH = [
+      { sessionId: 'gone', count: 3, lastMessageAt: nowH - idleH - 1 },
+      { sessionId: 'fresh', count: 2, lastMessageAt: nowH - 10 },
+      { sessionId: 'offS', count: 2, lastMessageAt: nowH - idleH - 1 },
+    ];
+    const actH = new Map<string, number>([['fresh', nowH - 5]]);
+    const flushH = idleSessionsToFlush(slicesH, actH, nowH, idleH, (sid) => sid === 'offS');
+    assert(flushH.length === 1 && flushH[0] === 'gone', `闲置扫描：静默达标才清，off 档跳过，活动优先于消息时间（${flushH.join(',')}）`);
+    assert(idleSessionsToFlush(slicesH, actH, nowH, 0, () => false).length === 0, 'idleMs=0 关闭兜底');
+    assert(idleSessionsToFlush([{ sessionId: 'x', count: 0, lastMessageAt: 0 }], new Map(), nowH, idleH, () => false).length === 0, '空切片不触发');
   }
 
   console.log('== 14. 停机顺序（L0 冲刷缝 + 调度停止标志） ==');

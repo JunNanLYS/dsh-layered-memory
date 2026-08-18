@@ -20,3 +20,52 @@ export function advanceWarmupThreshold(current: number, steady: number): number 
   const next = current * 2;
   return next >= steady ? 0 : next;
 }
+
+// ── 档位切换同步（CONTEXT.md「捕获档位」：切片始终按捕获档位蒸馏，不重贴标签） ──
+
+export type ModeSwitchAction = 'flush' | 'park' | 'unpark' | 'none';
+
+/**
+ * 档位切换动作表（ADR-0003）：
+ * - 非 off 档间切换 → flush（该会话切片立即按捕获档位蒸馏，新档位从空切片起步）
+ * - 切到 off → park（切片挂起：用户刚说"停止记忆"，把存量再蒸馏违背意图）
+ * - 从 off 切回 → unpark（挂起片按捕获档位落袋）
+ */
+export function modeSwitchAction(oldMode: string, newMode: string): ModeSwitchAction {
+  if (oldMode === newMode) return 'none';
+  if (newMode === 'off') return 'park';
+  if (oldMode === 'off') return 'unpark';
+  return 'flush';
+}
+
+// ── 闲置兜底（CONTEXT.md「闲置兜底」：接住"没攒够阈值用户就离开"的尾部） ──
+
+export interface IdleSliceInfo {
+  sessionId: string;
+  /** 该会话跨桶合计的切片条数。 */
+  count: number;
+  /** 切片内最晚消息时间（无活动记录时的兜底锚点，如重启后的残留切片）。 */
+  lastMessageAt: number;
+}
+
+/**
+ * 闲置扫描：静默达标且有切片的会话。off 档会话跳过（挂起语义）；
+ * 活动时间优先取运行时记录，缺省回退切片内最晚消息时间。
+ */
+export function idleSessionsToFlush(
+  slices: IdleSliceInfo[],
+  lastActivity: ReadonlyMap<string, number>,
+  now: number,
+  idleMs: number,
+  isOffSession: (sessionId: string) => boolean,
+): string[] {
+  if (!(idleMs > 0)) return [];
+  const out: string[] = [];
+  for (const s of slices) {
+    if (s.count <= 0) continue;
+    if (isOffSession(s.sessionId)) continue;
+    const activity = lastActivity.get(s.sessionId) ?? s.lastMessageAt;
+    if (now - activity >= idleMs) out.push(s.sessionId);
+  }
+  return out;
+}
