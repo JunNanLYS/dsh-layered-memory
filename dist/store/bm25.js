@@ -1,5 +1,6 @@
 /**
- * 轻量 BM25 检索（无外部依赖）：拉丁词 + CJK 二元组分词。
+ * 轻量 BM25 检索：与 FTS 共用同一分词器（util/text.ts 的 tokenize，
+ * jieba 词 + CJK 二元组并集）。
  * 仅用于 L2 场景摘要的上下文选取（小语料）；L0/L1 检索走 SQLite FTS5/向量。
  */
 import { tokenize } from '../util/text.js';

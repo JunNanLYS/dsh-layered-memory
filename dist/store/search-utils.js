@@ -3,8 +3,9 @@
  * - rrfMerge：RRF（Reciprocal Rank Fusion，k=60）多路结果融合，hybrid 检索用；
  * - bm25RankToScore：FTS5 bm25 rank（负值=更相关）转 0~1 分数；
  * - buildFtsQuery / tokenizeForFts：FTS5 查询构造与写入侧分词。
- *   官方用 jieba 分词；这里用项目自带的 CJK 二元组 + 英文词分词（util/text.ts），
- *   读写两侧共用同一分词器，保证查询 token 与索引 token 对齐，且零原生依赖。
+ *   分词走 util/text.ts 的 tokenize（jieba 词 + CJK 二元组并集，@node-rs/jieba
+ *   预编译二进制，加载失败自动回退纯二元组），读写两侧共用同一分词器，
+ *   保证查询 token 与索引 token 对齐；FTS 索引按分词器版本戳自动重建（sqlite.ts）。
  */
 import { tokenize } from '../util/text.js';
 /** 标准 RRF 常数（原论文值）；k 越大越偏向低排名项（分布更平滑）。 */

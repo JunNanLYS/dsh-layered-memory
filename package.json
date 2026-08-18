@@ -51,6 +51,7 @@
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.1",
+    "@node-rs/jieba": "^2.0.2",
     "sqlite-vec": "^0.1.7-alpha.2"
   },
   "peerDependencies": {

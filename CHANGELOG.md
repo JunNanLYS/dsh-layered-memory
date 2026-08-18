@@ -3,6 +3,27 @@
 本文件记录 dsh-layered-memory（0.5.0 前名为 dsh-memory-plugin）的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+中文检索分词从 CJK 二元组升级为 jieba 词级分词（与 MemoryCore 官方实现对齐）。
+
+### 变更
+
+- **分词器切换为 jieba**（`@node-rs/jieba`，Rust napi 预编译二进制；纯第三方库进
+  `dependencies`，与 sqlite-vec 同类）：`tokenize()` 产出 **jieba 词元 ∪ 拉丁词 ∪
+  CJK 二元组** 的有序去重并集——词元给 BM25 提供高 idf 的整词命中（"负载均衡"作为
+  整词参与评分），二元组保住子词召回底线（查询"负载"仍能命中只含"负载均衡"词元的
+  行）；去重防 2 字词与其自身二元组对同一出现双计词频。查询侧 `buildFtsQuery`、
+  写入侧 `tokenizeForFts`、L2 场景选取 `bm25.ts` 共用同一分词器，索引与查询
+  token 天然对齐；
+- **jieba 加载失败自动回退纯二元组**（无预编译二进制平台）：惰性单例、进程内模式
+  定死不漂移，`MemoryDb.init()` 启动日志记录实际生效模式；
+- **FTS 分词器版本戳**（`embedding_meta` 表 `fts_tokenizer` 键：`jieba-v1` /
+  `bigram-v1`）：启动时比对戳 ≠ 当前生效分词器 → `l1_fts` / `l0_fts` drop 后从
+  `l1_records` / `l0_conversations` 源表全量回灌（新增 `backfillL0Fts`，iterate
+  流式防大库内存峰值）。无戳旧库视同 `bigram-v1`，升级到 jieba 后首次启动自动
+  重建（与 family 列迁移同款语义）；JSONL 事实源与向量索引不受影响。
+
 ## [0.7.1] — 2026-08-17
 
 全量审查（2026-08-17）修复批次：文档补正 + 存储性能 + 运行时安装供应链加固。

@@ -81,8 +81,13 @@ export declare class MemoryDb {
     private hasColumn;
     /** 重建后的 l1_fts 从 l1_records 全量回灌（仅在 drop 重建时调用）。 */
     private backfillL1Fts;
+    /** 重建后的 l0_fts 从 l0_conversations 全量回灌（仅 drop 重建时调用；iterate 流式防大库内存峰值）。 */
+    private backfillL0Fts;
     private readEmbeddingMeta;
     private writeEmbeddingMeta;
+    /** 通用字符串 kv（embedding_meta 表兼作元数据 kv 存储，如 FTS 分词器版本戳）。 */
+    private readMetaString;
+    private writeMetaString;
     /**
      * 持久化 embedding meta（语义：物理向量表当前对应的 provider/维度）。
      * 活切换在 swapProvider 成功后即写（表已是新维度）；启动/补齐链在

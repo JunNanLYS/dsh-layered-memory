@@ -51,6 +51,7 @@ import { formatBatchConflictPrompt, getConflictDetectionSystemPrompt } from './p
 import { buildScenePrompt, formatSceneSummaries } from './prompts/scene.js';
 import { buildPersonaPrompt } from './prompts/persona.js';
 import { blocksToText, tokenize } from './util/text.js';
+import { tokenizerStamp } from './util/tokenizer.js';
 
 let failures = 0;
 
@@ -112,6 +113,13 @@ async function main(): Promise<void> {
   const hitsEn = index.search('coffee', 2);
   assert(hitsEn.length > 0 && hitsEn[0].id === 'c', `BM25 英文检索命中 (${hitsEn.map((h) => h.id).join(',')})`);
   assert(tokenize('Hello world 你好世界').length >= 3, '分词输出');
+  const segU = tokenize('机器学习');
+  assert(
+    segU.includes('机器') && segU.includes('学习') && segU.includes('器学'),
+    `词 + 二元组并集分词（jieba 与回退模式均成立，${segU.join('/')}）`,
+  );
+  assert(tokenize('咖啡 咖啡').filter((t) => t === '咖啡').length === 1, '分词有序去重（2 字词与其二元组同形不双计）');
+  assert(tokenize('！！——').length === 0, '纯标点 token 被过滤');
 
   console.log('== 1b. 检索纯函数（官方公式移植） ==');
   assert(bm25RankToScore(-1) > bm25RankToScore(-0.2), 'bm25RankToScore 单调（负值更相关）');
@@ -710,6 +718,19 @@ async function main(): Promise<void> {
         const legacyChat = await l1g.search('咖啡', 5, { family: 'chat' });
         assert(legacyChat.length >= 1 && legacyChat[0].id === 'oldc', '旧库 chat 记录归 chat 族');
         dbg.close();
+        // 无戳旧库（jieba 引入前）视同 bigram-v1：分词器变更触发 FTS 重建后戳已写入
+        const rawVerify = new DatabaseSync(legacyPath);
+        try {
+          const stampRow = rawVerify
+            .prepare("SELECT value FROM embedding_meta WHERE key = 'fts_tokenizer'")
+            .get() as { value: string } | undefined;
+          assert(
+            stampRow !== undefined && stampRow.value === tokenizerStamp(),
+            `FTS 分词器版本戳已写入（${stampRow?.value}）`,
+          );
+        } finally {
+          rawVerify.close();
+        }
       } finally {
         await fs.rm(tmpLegacy, { recursive: true, force: true }).catch(() => {});
       }
