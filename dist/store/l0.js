@@ -99,6 +99,10 @@ export class L0Store {
         const d = new Date();
         return this.db.countL0Since(new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString());
     }
+    /** 该会话最近 n 条消息（时间升序；蒸馏背景参考用，按会话现查——ADR-0003）。 */
+    async recentBySession(sessionId, limit) {
+        return this.db.recentL0BySession(sessionId, limit);
+    }
     /** 检索：FTS + 向量 hybrid（RRF 融合），返回按相关性排序的消息。 */
     async search(query, limit) {
         const caps = this.db.getCapabilities();

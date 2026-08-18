@@ -10,6 +10,8 @@ export interface L1SearchOptions {
     /** 分数阈值（仅召回路径传；keyword/embedding 策略生效，FTS 含小语料例外；
      *  hybrid 按官方语义在 RRF 融合前不过滤）。 */
     scoreThreshold?: number;
+    /** 嵌入查询内层钳制（ms，只缩短不放大；召回路径传入给 FTS 降级留时间）。 */
+    embeddingTimeoutMs?: number;
 }
 export declare class L1Store {
     private readonly db;

@@ -3,26 +3,56 @@
 本文件记录 dsh-layered-memory（0.5.0 前名为 dsh-memory-plugin）的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [0.8.0] — 2026-08-18
 
-中文检索分词从 CJK 二元组升级为 jieba 词级分词（与 MemoryCore 官方实现对齐）。
+记忆优化包（规格 `docs/spec-2026-08-18-memory-optimization.md`，决策记录 ADR-0001/0002/0003）：
+召回消息侧注入 + 蒸馏触发改造（渐进阈值 + 全链路会话隔离）+ 分层输出预算 + FTS 写路径修复。
+
+### 新增
+
+- **召回消息侧注入**（ADR-0001）：相关记忆以带插件署名的合成消息（`form: 'recall'`）
+  排在每条新的用户消息之前注入会话流——用户能直接看到"记忆生效了"。`<relevant-memories>`
+  标签 + "仅供参考"引导语；纯工具步 / reject 决策透传；只在有新用户消息的步骤触发
+  （轮首 + steering 插话）。系统提示只保留稳定内容（画像/导航/门控指南），
+  `memory:recall` 动态槽撤除；
+- **召回预算**：`recall.maxCharsPerMemory`（默认 500）/ `recall.maxTotalRecallChars`
+  （默认 2000）——超限截断并以 `…（已截断；可用 memory_search 或 conversation_search
+  查看详情）` 引导模型用工具查全文（截断是引流：工具路径返回完整记录）；总量超限丢
+  低分尾部；code point 安全截断；
+- **召回超时**：`recall.timeoutMs`（默认 5000，0 不限时）总预算，超时跳过本轮注入；
+  远程嵌入 fetch 内层钳制 3000ms（给 FTS 降级留时间），本地推理不钳；
+- **蒸馏渐进阈值**（ADR-0003）：生效阈值 1→2→4→稳态爬坡（`extract.minMessages` 语义
+  升级为稳态阈值，默认 1→6）——新用户首轮即出记忆，稳态攒批省调用；爬坡状态随
+  pending.json 持久化；
+- **闲置兜底**：`extract.idleSeconds`（默认 300，0 关闭）——会话静默达标后未蒸馏切片
+  自动落袋，off 档会话挂起跳过；
+- **档位切换切片同步**：非 off 档间切换 → 该会话切片立即按捕获档位蒸馏；切到 off →
+  挂起；从 off 切回 → 挂起片按捕获档位落袋（切片永不跨档位混装）；
+- **分层输出预算**：抽取 16k / 去重 8k / L2 32k / L3 16k；思考档 high/max 自动 ×4
+  （reasoning 吃光预算的历史事故防线）；`llm.maxTokens` 默认 256k→65536 降为兜底总闸。
+
+### 修复
+
+- **跨会话污染**（现存缺陷）：抽取背景消息原为全局内存数组（A 会话内容给 B 会话当
+  背景且重启即丢），现按会话从 L0 现查（走会话索引）并剔除切片自身；蒸馏触发按会话
+  切片计数、只抽取达标会话的切片——五条通道（阈值/idle/背景/档位切换/重试残留）
+  全部会话隔离（ADR-0003）；
+- **FTS 写路径 O(N²) 放大**：防御性 FTS 删除改主表存在性点查预判（record_id 在 FTS
+  表 UNINDEXED，按 id DELETE 是全表扫描——重建/重嵌/导入等全新增路径原为每条记录白付
+  一次全扫）。外部行为逐项不变（ADR-0002；rowid 映射方案因陈旧映射静默错删风险否决）。
 
 ### 变更
 
-- **分词器切换为 jieba**（`@node-rs/jieba`，Rust napi 预编译二进制；纯第三方库进
-  `dependencies`，与 sqlite-vec 同类）：`tokenize()` 产出 **jieba 词元 ∪ 拉丁词 ∪
-  CJK 二元组** 的有序去重并集——词元给 BM25 提供高 idf 的整词命中（"负载均衡"作为
-  整词参与评分），二元组保住子词召回底线（查询"负载"仍能命中只含"负载均衡"词元的
-  行）；去重防 2 字词与其自身二元组对同一出现双计词频。查询侧 `buildFtsQuery`、
-  写入侧 `tokenizeForFts`、L2 场景选取 `bm25.ts` 共用同一分词器，索引与查询
-  token 天然对齐；
-- **jieba 加载失败自动回退纯二元组**（无预编译二进制平台）：惰性单例、进程内模式
-  定死不漂移，`MemoryDb.init()` 启动日志记录实际生效模式；
-- **FTS 分词器版本戳**（`embedding_meta` 表 `fts_tokenizer` 键：`jieba-v1` /
-  `bigram-v1`）：启动时比对戳 ≠ 当前生效分词器 → `l1_fts` / `l0_fts` drop 后从
-  `l1_records` / `l0_conversations` 源表全量回灌（新增 `backfillL0Fts`，iterate
-  流式防大库内存峰值）。无戳旧库视同 `bigram-v1`，升级到 jieba 后首次启动自动
-  重建（与 family 列迁移同款语义）；JSONL 事实源与向量索引不受影响。
+- 工具指南改三条件门控（`tools 开启 && 画像 ∥ 导航 ∥ 本轮召回命中`）：空库用户与
+  关闭工具的用户不再每步支付这份固定 token；
+- pending.json 持久化条目增加 `sessionId` 字段（旧格式自动归入 legacy 会话组），
+  另随桶持久化渐进阈值状态；
+- 启动补跑改为按会话切片分组入队；
+- **中文检索分词从 CJK 二元组升级为 jieba 词级分词**（与 MemoryCore 官方实现对齐）：
+  `@node-rs/jieba`（Rust napi 预编译二进制）产出 **jieba 词元 ∪ 拉丁词 ∪ CJK 二元组**
+  有序去重并集——词元给 BM25 高 idf 整词命中，二元组保子词召回底线；加载失败自动回退
+  纯二元组（进程内模式定死不漂移）；FTS 分词器版本戳（`fts_tokenizer`：`jieba-v1` /
+  `bigram-v1`）戳不符时自动 drop 重建回灌，无戳旧库视同 `bigram-v1` 首启自动迁移。
 
 ## [0.7.1] — 2026-08-17
 

@@ -34,6 +34,8 @@ export declare class MemoryDb {
     private readonly logger?;
     private stmtUpsertL1;
     private stmtGetL1;
+    /** 主表存在性点查（防御性 FTS 删除的前置判断，走主键索引）。 */
+    private stmtL1Exists;
     private stmtDeleteL1Meta;
     private stmtDeleteL1Vec?;
     private stmtInsertL1Vec?;
@@ -44,6 +46,8 @@ export declare class MemoryDb {
     private stmtL1FtsSearchFamily;
     private stmtUpsertL0;
     private stmtGetL0;
+    /** 主表存在性点查（同 L1：防御性 FTS 删除的前置判断）。 */
+    private stmtL0Exists;
     private stmtDeleteL0Vec?;
     private stmtInsertL0Vec?;
     private stmtSearchL0Vec?;
@@ -144,6 +148,9 @@ export declare class MemoryDb {
     countL0(): number;
     /** 统计 recorded_at >= iso 的消息数（状态面板"今日捕获"用）。 */
     countL0Since(iso: string): number;
+    /** 按会话取最近消息（时间升序返回；走 idx_l0_session_id 索引）。
+     *  蒸馏背景参考专用——按会话现查替代全局内存数组（ADR-0003）。 */
+    recentL0BySession(sessionId: string, limit: number): L0MessageRecord[];
     /** L0 全量列举（重建快照用；按时间升序，事务一致性避开 JSONL 追加竞态）。 */
     listL0All(): L0MessageRecord[];
     /** 重建成本预估（一次全表聚合：会话数 / 消息数 / 字符量）。 */

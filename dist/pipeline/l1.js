@@ -3,7 +3,7 @@
  * 移植 MemoryCore 的 l1 runner 语义（抽取 prompt → batch 冲突检测 → apply）。
  */
 import { randomBytes } from 'node:crypto';
-import { callLLM, parseJsonLogged } from '../llm.js';
+import { callLLM, layerMaxTokens, LAYER_MAX_TOKENS_DEDUP, LAYER_MAX_TOKENS_EXTRACT, parseJsonLogged } from '../llm.js';
 import { formatExtractionPrompt, getExtractMemoriesSystemPrompt } from '../prompts/l1-extraction.js';
 import { formatBatchConflictPrompt, getConflictDetectionSystemPrompt } from '../prompts/l1-dedup.js';
 import { familyForType } from '../types.js';
@@ -37,9 +37,8 @@ export function chunkByCharBudget(messages, budgetChars) {
 export async function runExtraction(ctx, cfg, store, states, pending, background, logger, mode) {
     if (!cfg.extract.enabled)
         return { stored: 0, skipped: true, sceneName: chainHead(states, mode), newRecords: [] };
-    if (pending.length < cfg.extract.minMessages) {
-        return { stored: 0, skipped: true, sceneName: chainHead(states, mode), newRecords: [] };
-    }
+    // 触发阈值（渐进爬坡 + 按会话切片计数）由 runner 判定（trigger.ts）；
+    // 此处不再重复 gate——重建轮 force 与 warmup 早期轮次都会传入小于稳态值的切片。
     // 纯档强制族 = 档位族；auto 档抽取后的记录族按 type 前缀判定
     const forcedFamily = mode === 'auto' ? undefined : mode;
     // 情境链锚点桶：纯档用本族；auto 用最近活跃的族（chainHead 同源）
@@ -64,6 +63,7 @@ export async function runExtraction(ctx, cfg, store, states, pending, background
         const raw = await callLLM(ctx, cfg, {
             system: getExtractMemoriesSystemPrompt(mode),
             user: userPrompt,
+            maxTokens: layerMaxTokens(LAYER_MAX_TOKENS_EXTRACT, cfg.llm.reasoningEffort),
             logger,
         });
         const scenes = parseJsonLogged(raw, 'L1 抽取', logger);
@@ -101,6 +101,7 @@ export async function runExtraction(ctx, cfg, store, states, pending, background
     const dedupRaw = await callLLM(ctx, cfg, {
         system: getConflictDetectionSystemPrompt(mode),
         user: dedupPrompt,
+        maxTokens: layerMaxTokens(LAYER_MAX_TOKENS_DEDUP, cfg.llm.reasoningEffort),
         logger,
     });
     const decisions = parseJsonLogged(dedupRaw, 'L1 去重判定', logger);

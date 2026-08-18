@@ -1,6 +1,7 @@
 import { resolveDataDir } from '../config.js';
-import { emptyPending, loadPending, PENDING_MODES, pendingPathFor, savePending } from '../store/pending.js';
+import { emptyPending, freshWarmup, groupPendingBySession, loadPending, PENDING_MODES, pendingPathFor, savePending, } from '../store/pending.js';
 import { errDetail } from '../util/filelog.js';
+import { advanceWarmupThreshold, effectiveExtractThreshold, idleSessionsToFlush, modeSwitchAction, pickSessionBackground, } from './trigger.js';
 import { runExtraction } from './l1.js';
 import { runSceneConsolidation } from './l2.js';
 import { runPersona } from './l3.js';
@@ -24,28 +25,37 @@ export function effectiveCfg(cfg, live) {
 const PENDING_BUCKET_CAP = 200;
 /** 启动补跑延迟：避开宿主启动期忙乱。 */
 const STARTUP_RETRY_DELAY_MS = 20_000;
+/** 闲置扫描 tick 粒度（实际落袋延迟 = idleSeconds + 至多一个 tick）。 */
+const IDLE_TICK_MS = 30_000;
 export class MemoryRunner {
     ctx;
     cfg;
     stores;
     logger;
     live;
+    modes;
     tasks = [];
     draining = false;
     /** 停止标志（dispose 序置位）：不再取新任务；进行中任务自然收尾，其 DB 写入失败由各层兜底捕获。 */
     stopped = false;
     pending = emptyPending();
+    /** 各档位桶渐进阈值（1 起步翻倍至稳态毕业；ADR-0003，随 pending.json 持久化）。 */
+    warmup = freshWarmup();
+    /** 每会话最后活动时间（闲置兜底判定用）。 */
+    lastActivity = new Map();
     pendingFile;
-    background = [];
     /** 分族 checkpoint（init 后可用；重建收尾也从这里读活引用）。 */
     states;
     afterRun;
-    constructor(ctx, cfg, stores, logger, live) {
+    constructor(ctx, cfg, stores, logger, live, 
+    /** 会话档位只读句柄（闲置扫描跳过 off 档会话；挂起语义）。 */
+    modes) {
         this.ctx = ctx;
         this.cfg = cfg;
         this.stores = stores;
         this.logger = logger;
         this.live = live;
+        this.modes = modes;
         this.pendingFile = pendingPathFor(resolveDataDir(cfg));
     }
     async init() {
@@ -60,12 +70,13 @@ export class MemoryRunner {
         }
         // 恢复未蒸馏缓冲（上次进程退出前未蒸馏的消息，含失败待重试与攒阈值中途的）
         try {
-            const loaded = await loadPending(this.pendingFile, this.logger);
+            const { buckets: loaded, warmup } = await loadPending(this.pendingFile, this.logger);
             for (const key of PENDING_MODES) {
                 if (loaded[key].length > PENDING_BUCKET_CAP)
                     loaded[key] = loaded[key].slice(-PENDING_BUCKET_CAP);
             }
             this.pending = loaded;
+            this.warmup = warmup;
             if (this.pendingCount > 0) {
                 this.logger.info(`[memory] 未蒸馏缓冲已恢复 ${this.pendingCount} 条（auto=${this.pending.auto.length}/chat=${this.pending.chat.length}/work=${this.pending.work.length}），${STARTUP_RETRY_DELAY_MS / 1000}s 后自动补跑`);
                 this.scheduleStartupRetry();
@@ -75,13 +86,18 @@ export class MemoryRunner {
             this.logger.warn(`[memory] 未蒸馏缓冲恢复失败（空桶起步）: ${errDetail(err)}`);
         }
     }
-    /** 启动补跑：对每个非空桶入队一次蒸馏尝试（受 live 开关与阈值约束，失败不无限重试）。 */
+    /** 启动补跑：对每个非空桶的每个会话切片入队一次蒸馏尝试（受 live 开关与
+     *  生效阈值约束；不足阈值的消息等用户继续或闲置兜底，失败不无限重试）。 */
     scheduleStartupRetry() {
         const modes = PENDING_MODES.filter((m) => this.pending[m].length > 0);
         this.ctx.effect(() => {
             const timer = setTimeout(() => {
-                for (const mode of modes)
-                    this.enqueue('startup-retry', [], mode);
+                // 到点后按当前桶内容重新分组（期间可能有新轮次已消费切片）
+                for (const mode of modes) {
+                    for (const g of groupPendingBySession(this.pending[mode])) {
+                        this.enqueue(g.sessionId, [], mode);
+                    }
+                }
             }, STARTUP_RETRY_DELAY_MS);
             return () => clearTimeout(timer);
         });
@@ -95,20 +111,80 @@ export class MemoryRunner {
         this.afterRun = fn;
     }
     /** 一轮对话结束后入队（L0 落盘由 capture 在 turn/end 即时完成，不排蒸馏队列）。 */
-    enqueue(sessionId, messages, mode) {
-        this.pushTask({ kind: 'live', run: () => this.runTurn(sessionId, messages, mode) });
+    enqueue(sessionId, messages, mode, opts) {
+        this.pushTask({ kind: 'live', run: () => this.runTurn(sessionId, messages, mode, opts) });
     }
     /** 重建任务入队（低优先级：让位于正常轮次；由 RebuildController 分块驱动）。 */
     enqueueRebuildTask(run) {
         this.pushTask({ kind: 'rebuild', run });
     }
-    /** 重建蒸馏轮：统一 auto 档，不受缓冲 200 上限（历史会话全量入桶，由 char 预算分块）。 */
+    /** 重建蒸馏轮：统一 auto 档，全量强制蒸馏（不受阈值约束——历史小会话也必须出记忆）、
+     *  不受缓冲 200 上限（历史会话全量入桶，由 char 预算分块）。 */
     runRebuildTurn(sessionId, messages) {
-        return this.runTurn(sessionId, messages, 'auto', { noBufferCap: true });
+        return this.runTurn(sessionId, messages, 'auto', { noBufferCap: true, force: true });
     }
     /** 停止取新任务（插件 dispose 序调用；进行中任务照常跑完但不 await——LLM 慢调用不拖住宿主卸载）。 */
     stop() {
         this.stopped = true;
+    }
+    /** 启动闲置兜底定时器（index.ts 装配；idleSeconds=0 关闭）。 */
+    startIdleTimer() {
+        const idleMs = (this.cfg.extract.idleSeconds ?? 0) * 1000;
+        if (!(idleMs > 0))
+            return;
+        this.ctx.effect(() => {
+            const timer = setInterval(() => this.flushIdleSlices(Date.now(), idleMs), IDLE_TICK_MS);
+            return () => clearInterval(timer);
+        });
+    }
+    /** 闲置扫描：静默达标且有切片的会话按捕获档位落袋（off 档会话挂起跳过）。 */
+    flushIdleSlices(now, idleMs) {
+        if (this.stopped)
+            return;
+        const liveNow = this.live.get();
+        if (!(liveNow.enabled && liveNow.distill))
+            return;
+        // 聚合每会话跨桶切片（sessionId 全局唯一）
+        const infos = new Map();
+        for (const mode of PENDING_MODES) {
+            for (const m of this.pending[mode]) {
+                const info = infos.get(m.sessionId) ?? { sessionId: m.sessionId, count: 0, lastMessageAt: 0 };
+                info.count++;
+                info.lastMessageAt = Math.max(info.lastMessageAt, m.timestamp);
+                infos.set(m.sessionId, info);
+            }
+        }
+        if (infos.size === 0)
+            return;
+        const targets = idleSessionsToFlush([...infos.values()], this.lastActivity, now, idleMs, (sid) => this.modes?.get(sid) === 'off');
+        for (const sid of targets) {
+            this.logger.info(`[memory] 闲置兜底：会话 ${sid} 静默达标，未蒸馏切片落袋`);
+            for (const mode of PENDING_MODES) {
+                if (this.pending[mode].some((m) => m.sessionId === sid)) {
+                    this.enqueue(sid, [], mode, { force: true });
+                }
+            }
+        }
+    }
+    /**
+     * 档位切换同步（session-modes 的 set() 回调，ADR-0003）：
+     * 非 off 间切换 → 该会话切片立即按捕获档位蒸馏（新档位从空切片起步）；
+     * 切到 off → 挂起（切片留存，闲置扫描跳过）；从 off 切回 → 挂起片按捕获档位落袋。
+     */
+    onModeChange(sessionId, oldMode, newMode) {
+        const action = modeSwitchAction(oldMode, newMode);
+        if (action === 'none')
+            return;
+        if (action === 'park') {
+            this.logger.info(`[memory] 档位切换 ${oldMode}→off：会话 ${sessionId} 未蒸馏切片挂起`);
+            return;
+        }
+        this.logger.info(`[memory] 档位切换 ${oldMode}→${newMode}（${action}）：会话 ${sessionId} 切片按捕获档位落袋`);
+        for (const mode of PENDING_MODES) {
+            if (this.pending[mode].some((m) => m.sessionId === sessionId)) {
+                this.enqueue(sessionId, [], mode, { force: true });
+            }
+        }
     }
     pushTask(task) {
         if (this.stopped)
@@ -147,7 +223,7 @@ export class MemoryRunner {
                         this.pending[key] = bucket.slice(-PENDING_BUCKET_CAP);
                 }
             }
-            await savePending(this.pendingFile, this.pending);
+            await savePending(this.pendingFile, this.pending, this.warmup);
         }
         catch (err) {
             this.logger.warn(`[memory] 未蒸馏缓冲落盘失败: ${errDetail(err)}`);
@@ -158,38 +234,31 @@ export class MemoryRunner {
         this.logger.info(`[memory] 蒸馏管线开始（session=${sessionId}，mode=${mode}，本轮 ${messages.length} 条消息，待重试 ${this.pendingCount} 条）`);
         // ── L0：原始对话已由 capture 在 turn/end 即时落盘（不排蒸馏队列，防慢 LLM 阻塞/退出丢消息） ──
         const cfg = effectiveCfg(this.cfg, this.live);
-        // ── L1：抽取 + 去重（按档分桶，失败按桶保留待重试） ──
+        // ── L1：抽取 + 去重（按档分桶、桶内按会话切片；失败按切片保留待重试） ──
         let newRecords = [];
         const liveNow = this.live.get();
         const distillOn = liveNow.enabled && liveNow.distill;
         if (cfg.extract.enabled && distillOn) {
             const bucket = this.pending[mode];
-            bucket.push(...messages);
+            // 入桶即携带会话标识（会话切片成员；ADR-0003：切片内永不跨会话混装）
+            bucket.push(...messages.map((m) => ({ ...m, sessionId })));
             if (!opts?.noBufferCap && bucket.length > PENDING_BUCKET_CAP) {
                 bucket.splice(0, bucket.length - PENDING_BUCKET_CAP);
             }
-            try {
-                const t = Date.now();
-                const result = await runExtraction(this.ctx, cfg, this.stores.l1, this.states, bucket, this.background, this.logger, mode);
-                if (!result.skipped)
-                    this.pending[mode] = [];
-                this.background = [...this.background.slice(-cfg.extract.backgroundMessages), ...messages];
-                newRecords = result.newRecords;
-                this.logger.info(`[memory] L1 阶段完成（${Date.now() - t}ms）`);
+            if (messages.length > 0)
+                this.lastActivity.set(sessionId, Date.now());
+            // 按会话切片触发（ADR-0003）：只看本会话切片是否达到生效阈值（渐进爬坡），
+            // 达标只抽取该切片——其余会话的切片继续攒，绝不跨会话混装。
+            // force：重建轮全量蒸馏（历史小会话也必须出记忆，不受阈值约束）。
+            const effective = effectiveExtractThreshold(this.warmup[mode], cfg.extract.minMessages);
+            const sliceLen = bucket.reduce((n, m) => (m.sessionId === sessionId ? n + 1 : n), 0);
+            if (opts?.force || sliceLen >= effective) {
+                newRecords = await this.extractSessionSlice(sessionId, mode, cfg, effective, opts);
             }
-            catch (err) {
-                // 保留 pending 下次重试（runTurn 入口已裁到 ≤200，防无限堆积；重建轮不裁，量被会话规模约束）
-                this.logger.warn(`[memory] L1 抽取失败（mode=${mode}，pending=${this.pending[mode].length}）: ${errDetail(err)}`);
-            }
-            // 缓冲每次尝试后立即落盘：进程中途退出不丢待重试/攒阈值状态
-            await this.persistPending(opts?.noBufferCap);
-            // L1 计数推进后立即落盘：L2/L3 失败或进程中途退出不得回滚阈值进度
-            // （记录已入库但计数丢失会让该族 L2 永远差一截，state 与 DB 脱节）
-            try {
-                await this.stores.state.save();
-            }
-            catch (err) {
-                this.logger.warn(`[memory] 状态保存失败: ${errDetail(err)}`);
+            else {
+                this.logger.debug?.(`[memory] 会话切片攒批中（session=${sessionId}，mode=${mode}，${sliceLen}/${effective}）`);
+                // 攒阈值中途也落盘：进程退出后切片与爬坡状态不丢
+                await this.persistPending(opts?.noBufferCap);
             }
         }
         // ── L2/L3：按记录族各自判定与执行 ──
@@ -238,5 +307,49 @@ export class MemoryRunner {
         this.logger.info(`[memory] 蒸馏管线结束（本轮新增 ${newRecords.length} 条，总耗时 ${Date.now() - turnStart}ms）`);
         this.afterRun?.();
         return newRecords.length;
+    }
+    /**
+     * 抽取并消费一个会话切片：成功才把切片移出桶并推进爬坡阈值；失败保留切片待重试。
+     * 调用方已保证切片达到生效阈值（或 force）。背景参考按会话从 L0 现查并剔除切片
+     * 自身（ADR-0003：会话间互不污染、重启不丢背景）。
+     */
+    async extractSessionSlice(sessionId, mode, cfg, effectiveThreshold, opts) {
+        const bucket = this.pending[mode];
+        const slice = bucket.filter((m) => m.sessionId === sessionId);
+        if (slice.length === 0)
+            return [];
+        const rest = bucket.filter((m) => m.sessionId !== sessionId);
+        try {
+            // 背景参考：该会话最近消息（多取切片条数补偿被剔除者），剔除切片自身
+            const background = this.stores.l0
+                ? pickSessionBackground(await this.stores.l0.recentBySession(sessionId, cfg.extract.backgroundMessages + slice.length), new Set(slice.map((m) => m.id)), cfg.extract.backgroundMessages)
+                : [];
+            const t = Date.now();
+            const result = await runExtraction(this.ctx, cfg, this.stores.l1, this.states, slice, background, this.logger, mode);
+            if (!result.skipped) {
+                this.pending[mode] = rest;
+                // 重建轮（force）不是有机对话，不推进爬坡
+                if (!opts?.force)
+                    this.warmup[mode] = advanceWarmupThreshold(this.warmup[mode], cfg.extract.minMessages);
+            }
+            this.logger.info(`[memory] L1 阶段完成（session=${sessionId}，mode=${mode}，切片 ${slice.length} 条，背景 ${background.length} 条，阈值 ${effectiveThreshold}，${Date.now() - t}ms）`);
+            // 缓冲与爬坡每次尝试后立即落盘：进程中途退出不丢待重试/攒阈值状态
+            await this.persistPending(opts?.noBufferCap);
+            // L1 计数推进后立即落盘：L2/L3 失败或进程中途退出不得回滚阈值进度
+            // （记录已入库但计数丢失会让该族 L2 永远差一截，state 与 DB 脱节）
+            try {
+                await this.stores.state.save();
+            }
+            catch (err) {
+                this.logger.warn(`[memory] 状态保存失败: ${errDetail(err)}`);
+            }
+            return result.newRecords;
+        }
+        catch (err) {
+            // 保留切片下次重试（桶入口已裁到 ≤200，防无限堆积；重建轮不裁，量被会话规模约束）
+            this.logger.warn(`[memory] L1 抽取失败（session=${sessionId}，mode=${mode}，切片 ${slice.length} 条）: ${errDetail(err)}`);
+            await this.persistPending(opts?.noBufferCap).catch(() => { });
+            return [];
+        }
     }
 }

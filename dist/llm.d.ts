@@ -13,6 +13,19 @@ export interface LlmCallOptions {
     /** 诊断日志（缺失时静默，不影响调用） */
     logger?: MemoryLogger;
 }
+/** L1 抽取（大输入块的 JSON 记忆数组输出）。 */
+export declare const LAYER_MAX_TOKENS_EXTRACT = 16000;
+/** L1 去重（合并决策数组，输出比抽取短）。 */
+export declare const LAYER_MAX_TOKENS_DEDUP = 8000;
+/** L2 场景整合（完整场景 Markdown 文件输出，输出最重的层）。 */
+export declare const LAYER_MAX_TOKENS_L2 = 32000;
+/** L3 画像（完整 persona 文档）。 */
+export declare const LAYER_MAX_TOKENS_L3 = 16000;
+/**
+ * 思考档预算放大：reasoning 计入输出预算（v4-flash 事故：high 思考可吃光全部
+ * 预算致正文 0 字符）——effort 为 high/max 时分层预算 ×4。
+ */
+export declare function layerMaxTokens(base: number, reasoningEffort: string): number;
 /** 解析蒸馏用的 provider/model：配置优先，其次当前默认选择。 */
 export declare function resolveModelRoute(ctx: Context, cfg: MemoryConfig): Promise<{
     provider: string;

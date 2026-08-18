@@ -1,13 +1,16 @@
 /**
- * 召回 Hook：
- * 1. agent/pre-step（waterfall）：用进入步骤的用户消息做 L1 BM25 检索，缓存到该 agent 的槽位；
- *    必须调用并返回 next()（只观察，不改写步骤）。
- * 2. agent/created：在 agent 作用域注册动态上下文 provider（L1 召回 + L3 画像 + L2 场景导航 + 工具指南）。
+ * 召回 Hook（消息侧注入版，ADR-0001）：
+ * 1. agent/pre-step（waterfall，prepend 注册）：有新的用户来源消息到达的步骤
+ *    （轮首 claim 或 steering 插话）→ 检索 L1 → 以合成消息形式注入到用户消息之前。
+ *    注入消息携带插件来源（form: 'recall'），对用户可见、随会话历史持久累积——
+ *    这就是"记忆生效"的显式提示（dsh-time-context 同款官方范式）。
+ *    纯工具步透传；召回超时（recall.timeoutMs 总预算）跳过本轮，绝不阻塞对话。
+ * 2. agent/created：在 agent 作用域注册动态上下文 provider（L3 画像 + L2 场景导航 +
+ *    工具指南——系统提示只保留稳定内容；指南三条件门控：工具开启 && 有内容）。
  *
- * 注入内容使用 <relevant-memories> / <user-persona> / <scene-navigation> / <memory-tools-guide>
- * 标签包裹——capture 侧 sanitize 会剥离这些标签，防止反馈循环。
- * auto 档两族合并时在 <user-persona>/<scene-navigation> 内部用 <domain family="..."> 子块
- * 分域（子块只出现在外层标签内部，随外层一起被 sanitize 剥离，无泄漏风险）。
+ * 注入内容使用 <relevant-memories> 标签包裹（模型侧语义边界 + 助手回显剥离锚点），
+ * 召回预算（单条/整轮）超限截断并引导模型用记忆工具查全文。
+ * L0 防污染零成本：capture 侧只收 source.kind === 'user' 的消息，注入消息天然被排除。
  *
  * 注意：PromptContext.text 是**同步**函数，画像/场景导航这类异步文件读取必须走内存缓存，
  * 由定时刷新 + 管线更新后的主动失效来更新。

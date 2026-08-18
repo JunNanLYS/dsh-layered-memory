@@ -1,3 +1,5 @@
+import { createUserMessage } from '@deepseek-ai/dsh-llm';
+import { applyRecallBudget, raceRecallTimeout, RECALL_EMBED_CAP_MS } from '../util/recall-budget.js';
 import { blocksToText } from '../util/text.js';
 const PROFILE_TTL = 60_000;
 /** 召回查询只取会话末尾 N 条消息（长会话每步把全史拼进 FTS MATCH 会让检索成本线性上涨）。 */
@@ -30,7 +32,8 @@ const MEMORY_TOOLS_GUIDE = `<memory-tools-guide>
 - 若 3 次搜索后仍无结果，说明该信息不在记忆中，请直接根据已有信息回复用户。
 </memory-tools-guide>`;
 export function registerRecall(ctx, cfg, stores, logger, live, modes) {
-    const l1Cache = new Map();
+    /** 每 agent 最近一次注入的命中条数（工具指南门控的"本轮召回命中"信号）。 */
+    const recallHits = new Map();
     // 画像/场景导航按族缓存（分族隔离：注入时按会话档位选族）
     const profileCache = {
         chat: { persona: '', nav: '' },
@@ -58,43 +61,69 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
     const invalidateProfile = () => {
         void refreshProfile();
     };
-    // agent 销毁时清掉召回缓存槽
+    // agent 销毁时清掉召回信号槽
     ctx.on('agent/disposed', (payload) => {
-        l1Cache.delete(payload.agent.id);
+        recallHits.delete(payload.agent.id);
     });
-    // ── 1. pre-step：检索并缓存（按会话档位过滤族：纯档只查本族，auto 不过滤，off 跳过） ──
+    // ── 1. pre-step 消息侧注入：记忆先行于每一条新的用户输入（ADR-0001） ──
+    // prepend 注册 + 先 next() 再改写：不劫持其他监听器（dsh-time-context 官方范式）。
     if (cfg.recall.enabled) {
         ctx.on('agent/pre-step', async (payload, next) => {
+            const decision = await next();
+            if (decision.kind === 'reject' || payload.signal.aborted)
+                return decision;
             try {
                 const s = live.get();
                 const mode = modes.get(payload.agent.id);
-                if (!s.enabled || !s.recall || mode === 'off') {
-                    l1Cache.set(payload.agent.id, []);
-                    return next();
-                }
+                if (!s.enabled || !s.recall || mode === 'off')
+                    return decision;
+                // 只在有新的用户来源消息的步骤注入（轮首 claim 或 steering 插话）；纯工具步透传
+                const hasNewUserMessage = decision.messages.some((m) => m.source?.kind === 'user');
+                if (!hasNewUserMessage)
+                    return decision;
                 const query = buildRecallQuery(payload.messages);
-                if (query) {
-                    const hits = await stores.l1.search(query, cfg.recall.maxResults, {
-                        scoreThreshold: cfg.recall.scoreThreshold,
-                        family: mode === 'auto' ? undefined : mode,
-                    });
-                    l1Cache.set(payload.agent.id, hits);
-                    if (hits.length > 0) {
-                        logger.info(`[memory] 召回命中 ${hits.length} 条 L1（mode=${mode}，query="${query.slice(0, 30).replace(/\n/g, ' ')}…"，agent=${payload.agent.id}）`);
-                    }
+                recallHits.set(payload.agent.id, 0);
+                if (!query)
+                    return decision;
+                const hits = await raceRecallTimeout(stores.l1.search(query, cfg.recall.maxResults, {
+                    scoreThreshold: cfg.recall.scoreThreshold,
+                    family: mode === 'auto' ? undefined : mode,
+                    // 远程嵌入 fetch 内层钳制：给 FTS 降级留出总预算内的时间（本地推理不钳）
+                    embeddingTimeoutMs: RECALL_EMBED_CAP_MS,
+                }), cfg.recall.timeoutMs);
+                if (hits === undefined) {
+                    logger.warn('[memory] 召回超时，跳过本轮注入（不阻塞对话）');
+                    return decision;
                 }
-                else {
-                    // 空查询清缓存：不把上一步的命中注入到与本步无关的上下文
-                    l1Cache.set(payload.agent.id, []);
-                }
+                recallHits.set(payload.agent.id, hits.length);
+                if (hits.length === 0)
+                    return decision;
+                const lines = applyRecallBudget(hits.map((h) => `- [${h.scene_name ? `${h.type}|${h.scene_name}` : h.type}] ${h.content}`), { maxCharsPerMemory: cfg.recall.maxCharsPerMemory, maxTotalRecallChars: cfg.recall.maxTotalRecallChars });
+                if (lines.length === 0)
+                    return decision;
+                const text = [
+                    '<relevant-memories>',
+                    '以下是当前对话召回的相关记忆，不代表当前任务进程，仅作为参考：',
+                    '',
+                    ...lines,
+                    '',
+                    '</relevant-memories>',
+                ].join('\n');
+                logger.info(`[memory] 召回注入 ${lines.length} 条 L1（mode=${mode}，query="${query.slice(0, 30).replace(/\n/g, ' ')}…"，agent=${payload.agent.id}，消息侧）`);
+                const injection = createUserMessage({
+                    content: [{ type: 'text', text }],
+                    source: { kind: 'plugin', plugin: 'dsh-memory', form: 'recall' },
+                });
+                // 注入消息排在用户新消息之前（原版 prepend 语义：先线索后问题）
+                return { kind: 'enter', messages: [injection, ...decision.messages] };
             }
             catch (err) {
-                logger.warn(`[memory] 召回检索失败: ${err instanceof Error ? err.message : String(err)}`);
+                logger.warn(`[memory] 召回注入失败（跳过本轮）: ${err instanceof Error ? err.message : String(err)}`);
+                return decision;
             }
-            return next();
-        });
+        }, { prepend: true });
     }
-    // ── 2. agent 作用域上下文 provider ──
+    // ── 2. agent 作用域上下文 provider（系统提示稳定区：画像 + 导航 + 门控指南） ──
     // 插件可能在默认 agent 创建之后才加载（组合顺序由依赖决定），
     // 因此除了监听 agent/created，还要给已存在的 agent 补注册。
     const registered = new WeakSet();
@@ -107,16 +136,6 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
         registered.add(agent);
         try {
             contextDisposers.push(agent.ctx.systemPrompt.context({
-                name: 'memory:recall',
-                order: 500,
-                text: () => {
-                    const s = live.get();
-                    if (!s.enabled || !s.recall)
-                        return '';
-                    const hits = l1Cache.get(agent.id) ?? [];
-                    return formatL1Memories(hits);
-                },
-            }), agent.ctx.systemPrompt.context({
                 name: 'memory:profile',
                 order: 510,
                 text: () => {
@@ -130,9 +149,14 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
                     const body = mode === 'auto'
                         ? formatProfileAuto(profileCache.chat, profileCache.work)
                         : formatProfileSingle(profileCache[mode]);
-                    if (!body)
-                        return MEMORY_TOOLS_GUIDE;
-                    return `${body}\n\n${MEMORY_TOOLS_GUIDE}`;
+                    const hasRecallHit = (recallHits.get(agent.id) ?? 0) > 0;
+                    // 指南三条件门控：工具已注册（cfg.tools）&&（稳定内容 ∥ 本轮召回命中）——
+                    // 空库用户与关闭工具的用户不付这份固定 token（原版 auto-recall 同款语义）
+                    if (!cfg.tools)
+                        return body;
+                    if (!body && !hasRecallHit)
+                        return '';
+                    return body ? `${body}\n\n${MEMORY_TOOLS_GUIDE}` : MEMORY_TOOLS_GUIDE;
                 },
             }));
         }
@@ -159,18 +183,6 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
         }
     });
     return { invalidateProfile };
-}
-function formatL1Memories(items) {
-    if (items.length === 0)
-        return '';
-    const lines = ['<relevant-memories>', ''];
-    for (const item of items) {
-        // [type|scene] 标签 + 内容（官方召回行格式）
-        const tag = item.scene_name ? `${item.type}|${item.scene_name}` : item.type;
-        lines.push(`- [${tag}] ${item.content}`);
-    }
-    lines.push('', '</relevant-memories>');
-    return lines.join('\n');
 }
 /** auto 档 <user-persona> 内的域说明：让模型理解分块结构与两域的独立性。 */
 const DOMAIN_HINT = '以下内容按记忆域分块：chat=用户个人画像（User Narrative Profile），work=团队工作准则（Team Operating Doctrine）。' +

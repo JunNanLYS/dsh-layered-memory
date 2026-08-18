@@ -46,32 +46,55 @@ export declare class MemoryRunner {
     private readonly stores;
     private readonly logger;
     private readonly live;
+    /** 会话档位只读句柄（闲置扫描跳过 off 档会话；挂起语义）。 */
+    private readonly modes?;
     private tasks;
     private draining;
     /** 停止标志（dispose 序置位）：不再取新任务；进行中任务自然收尾，其 DB 写入失败由各层兜底捕获。 */
     private stopped;
     private pending;
+    /** 各档位桶渐进阈值（1 起步翻倍至稳态毕业；ADR-0003，随 pending.json 持久化）。 */
+    private warmup;
+    /** 每会话最后活动时间（闲置兜底判定用）。 */
+    private lastActivity;
     private readonly pendingFile;
-    private background;
     /** 分族 checkpoint（init 后可用；重建收尾也从这里读活引用）。 */
     states: FamilyStates;
     private afterRun;
-    constructor(ctx: Context, cfg: MemoryConfig, stores: MemoryStores, logger: MemoryLogger, live: LiveSettingsHandle);
+    constructor(ctx: Context, cfg: MemoryConfig, stores: MemoryStores, logger: MemoryLogger, live: LiveSettingsHandle, 
+    /** 会话档位只读句柄（闲置扫描跳过 off 档会话；挂起语义）。 */
+    modes?: {
+        get(sessionId: string): string;
+    } | undefined);
     init(): Promise<void>;
-    /** 启动补跑：对每个非空桶入队一次蒸馏尝试（受 live 开关与阈值约束，失败不无限重试）。 */
+    /** 启动补跑：对每个非空桶的每个会话切片入队一次蒸馏尝试（受 live 开关与
+     *  生效阈值约束；不足阈值的消息等用户继续或闲置兜底，失败不无限重试）。 */
     private scheduleStartupRetry;
     /** L1 抽取待重试的消息条数（状态面板用）。 */
     get pendingCount(): number;
     /** 管线跑完一轮后的回调（用于召回缓存失效）。 */
     setAfterRun(fn: () => void): void;
     /** 一轮对话结束后入队（L0 落盘由 capture 在 turn/end 即时完成，不排蒸馏队列）。 */
-    enqueue(sessionId: string, messages: ConversationMessage[], mode: ExtractMode): void;
+    enqueue(sessionId: string, messages: ConversationMessage[], mode: ExtractMode, opts?: {
+        force?: boolean;
+    }): void;
     /** 重建任务入队（低优先级：让位于正常轮次；由 RebuildController 分块驱动）。 */
     enqueueRebuildTask(run: () => Promise<unknown>): void;
-    /** 重建蒸馏轮：统一 auto 档，不受缓冲 200 上限（历史会话全量入桶，由 char 预算分块）。 */
+    /** 重建蒸馏轮：统一 auto 档，全量强制蒸馏（不受阈值约束——历史小会话也必须出记忆）、
+     *  不受缓冲 200 上限（历史会话全量入桶，由 char 预算分块）。 */
     runRebuildTurn(sessionId: string, messages: ConversationMessage[]): Promise<number>;
     /** 停止取新任务（插件 dispose 序调用；进行中任务照常跑完但不 await——LLM 慢调用不拖住宿主卸载）。 */
     stop(): void;
+    /** 启动闲置兜底定时器（index.ts 装配；idleSeconds=0 关闭）。 */
+    startIdleTimer(): void;
+    /** 闲置扫描：静默达标且有切片的会话按捕获档位落袋（off 档会话挂起跳过）。 */
+    private flushIdleSlices;
+    /**
+     * 档位切换同步（session-modes 的 set() 回调，ADR-0003）：
+     * 非 off 间切换 → 该会话切片立即按捕获档位蒸馏（新档位从空切片起步）；
+     * 切到 off → 挂起（切片留存，闲置扫描跳过）；从 off 切回 → 挂起片按捕获档位落袋。
+     */
+    onModeChange(sessionId: string, oldMode: string, newMode: string): void;
     private pushTask;
     private drain;
     /** 缓冲落盘（每次蒸馏尝试后调用；失败只告警不阻断管线）。
@@ -79,4 +102,10 @@ export declare class MemoryRunner {
      *  蒸馏尝试时反复整量序列化落盘（多 MB 级 IO）；重建轮豁免维持。 */
     private persistPending;
     private runTurn;
+    /**
+     * 抽取并消费一个会话切片：成功才把切片移出桶并推进爬坡阈值；失败保留切片待重试。
+     * 调用方已保证切片达到生效阈值（或 force）。背景参考按会话从 L0 现查并剔除切片
+     * 自身（ADR-0003：会话间互不污染、重启不丢背景）。
+     */
+    private extractSessionSlice;
 }

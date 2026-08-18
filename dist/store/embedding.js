@@ -34,15 +34,17 @@ export class RemoteEmbeddingService {
     isReady() {
         return true;
     }
-    async embed(text) {
-        const [vec] = await this.embedBatch([text]);
+    async embed(text, callOpts) {
+        const [vec] = await this.embedBatch([text], callOpts);
         return vec;
     }
-    async embedBatch(texts) {
+    async embedBatch(texts, callOpts) {
         if (texts.length === 0)
             return [];
         const input = texts.map((t) => t.slice(0, this.opts.maxInputChars));
         const base = this.opts.baseUrl.replace(/\/+$/, '');
+        // 内层钳制只缩短不放大：召回路径传短超时，给 FTS 降级留时间
+        const timeoutMs = Math.min(this.opts.timeoutMs, callOpts?.timeoutMs ?? this.opts.timeoutMs);
         const res = await fetch(`${base}/embeddings`, {
             method: 'POST',
             headers: {
@@ -50,7 +52,7 @@ export class RemoteEmbeddingService {
                 authorization: `Bearer ${this.opts.apiKey}`,
             },
             body: JSON.stringify({ model: this.opts.model, input }),
-            signal: AbortSignal.timeout(this.opts.timeoutMs),
+            signal: AbortSignal.timeout(timeoutMs),
         });
         if (!res.ok) {
             const body = await res.text().catch(() => '');
@@ -103,10 +105,11 @@ export class EmbedHelper {
     vectorReady() {
         return this.embed.isReady();
     }
-    /** 查询向量；失败或空向量返回 undefined（调用方降级 FTS）。 */
-    async query(text) {
+    /** 查询向量；失败或空向量返回 undefined（调用方降级 FTS）。
+     *  timeoutMs 为内层钳制（仅缩短服务超时），召回路径使用。 */
+    async query(text, timeoutMs) {
         try {
-            const vec = await this.embed.embed(text);
+            const vec = await this.embed.embed(text, timeoutMs != null ? { timeoutMs } : undefined);
             return vec.length > 0 ? vec : undefined;
         }
         catch (err) {

@@ -19,8 +19,11 @@ export interface MemoryConfig {
     };
     extract: {
         enabled: boolean;
-        /** 至少攒够多少条新消息才跑一次 L1 抽取（省 token）。 */
+        /** 稳态触发阈值：单会话攒够多少条新消息才跑一次 L1 抽取（省 token）。
+         *  起步阶段生效阈值从 1 翻倍爬坡到此值（渐进阈值，ADR-0003）。 */
         minMessages: number;
+        /** 闲置兜底：会话静默多少秒后把未蒸馏切片落袋（接住"没攒够阈值用户就离开"）；0 = 关闭。 */
+        idleSeconds: number;
         /** L1 抽取时的背景消息条数（供上下文推断，不参与提取）。 */
         backgroundMessages: number;
         /** 去重候选池大小（每条新记忆的相似候选数）。 */
@@ -44,6 +47,12 @@ export interface MemoryConfig {
         enabled: boolean;
         /** 每步自动召回注入的 L1 条数。 */
         maxResults: number;
+        /** 单条注入记忆的字符上限（超限截断并提示用工具查全文）；0 = 不限。 */
+        maxCharsPerMemory: number;
+        /** 整轮注入总字符上限（超限按相关性丢尾部）；0 = 不限。 */
+        maxTotalRecallChars: number;
+        /** 召回总预算（ms）：超时跳过本轮注入、不阻塞对话；0 = 不限时。 */
+        timeoutMs: number;
         includePersona: boolean;
         includeSceneNav: boolean;
         /** 检索策略：keyword（FTS5 BM25）| embedding（向量）| hybrid（双路 + RRF 融合）。 */
@@ -102,11 +111,13 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
     extract: Schema<Schemastery.ObjectS<{
         enabled: Schema<boolean, boolean>;
         minMessages: Schema<number, number>;
+        idleSeconds: Schema<number, number>;
         backgroundMessages: Schema<number, number>;
         candidatePool: Schema<number, number>;
     }>, Schemastery.ObjectT<{
         enabled: Schema<boolean, boolean>;
         minMessages: Schema<number, number>;
+        idleSeconds: Schema<number, number>;
         backgroundMessages: Schema<number, number>;
         candidatePool: Schema<number, number>;
     }>>;
@@ -131,6 +142,9 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
     recall: Schema<Schemastery.ObjectS<{
         enabled: Schema<boolean, boolean>;
         maxResults: Schema<number, number>;
+        maxCharsPerMemory: Schema<number, number>;
+        maxTotalRecallChars: Schema<number, number>;
+        timeoutMs: Schema<number, number>;
         includePersona: Schema<boolean, boolean>;
         includeSceneNav: Schema<boolean, boolean>;
         strategy: Schema<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
@@ -138,6 +152,9 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
     }>, Schemastery.ObjectT<{
         enabled: Schema<boolean, boolean>;
         maxResults: Schema<number, number>;
+        maxCharsPerMemory: Schema<number, number>;
+        maxTotalRecallChars: Schema<number, number>;
+        timeoutMs: Schema<number, number>;
         includePersona: Schema<boolean, boolean>;
         includeSceneNav: Schema<boolean, boolean>;
         strategy: Schema<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
@@ -197,11 +214,13 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
     extract: Schema<Schemastery.ObjectS<{
         enabled: Schema<boolean, boolean>;
         minMessages: Schema<number, number>;
+        idleSeconds: Schema<number, number>;
         backgroundMessages: Schema<number, number>;
         candidatePool: Schema<number, number>;
     }>, Schemastery.ObjectT<{
         enabled: Schema<boolean, boolean>;
         minMessages: Schema<number, number>;
+        idleSeconds: Schema<number, number>;
         backgroundMessages: Schema<number, number>;
         candidatePool: Schema<number, number>;
     }>>;
@@ -226,6 +245,9 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
     recall: Schema<Schemastery.ObjectS<{
         enabled: Schema<boolean, boolean>;
         maxResults: Schema<number, number>;
+        maxCharsPerMemory: Schema<number, number>;
+        maxTotalRecallChars: Schema<number, number>;
+        timeoutMs: Schema<number, number>;
         includePersona: Schema<boolean, boolean>;
         includeSceneNav: Schema<boolean, boolean>;
         strategy: Schema<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
@@ -233,6 +255,9 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
     }>, Schemastery.ObjectT<{
         enabled: Schema<boolean, boolean>;
         maxResults: Schema<number, number>;
+        maxCharsPerMemory: Schema<number, number>;
+        maxTotalRecallChars: Schema<number, number>;
+        timeoutMs: Schema<number, number>;
         includePersona: Schema<boolean, boolean>;
         includeSceneNav: Schema<boolean, boolean>;
         strategy: Schema<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;

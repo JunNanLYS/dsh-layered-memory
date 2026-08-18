@@ -23,11 +23,13 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
     extract: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         minMessages: import("@deepseek-ai/schemastery").default<number, number>;
+        idleSeconds: import("@deepseek-ai/schemastery").default<number, number>;
         backgroundMessages: import("@deepseek-ai/schemastery").default<number, number>;
         candidatePool: import("@deepseek-ai/schemastery").default<number, number>;
     }>, Schemastery.ObjectT<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         minMessages: import("@deepseek-ai/schemastery").default<number, number>;
+        idleSeconds: import("@deepseek-ai/schemastery").default<number, number>;
         backgroundMessages: import("@deepseek-ai/schemastery").default<number, number>;
         candidatePool: import("@deepseek-ai/schemastery").default<number, number>;
     }>>;
@@ -52,6 +54,9 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
     recall: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         maxResults: import("@deepseek-ai/schemastery").default<number, number>;
+        maxCharsPerMemory: import("@deepseek-ai/schemastery").default<number, number>;
+        maxTotalRecallChars: import("@deepseek-ai/schemastery").default<number, number>;
+        timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
         includePersona: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         includeSceneNav: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         strategy: import("@deepseek-ai/schemastery").default<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
@@ -59,6 +64,9 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
     }>, Schemastery.ObjectT<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         maxResults: import("@deepseek-ai/schemastery").default<number, number>;
+        maxCharsPerMemory: import("@deepseek-ai/schemastery").default<number, number>;
+        maxTotalRecallChars: import("@deepseek-ai/schemastery").default<number, number>;
+        timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
         includePersona: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         includeSceneNav: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         strategy: import("@deepseek-ai/schemastery").default<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
@@ -118,11 +126,13 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
     extract: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         minMessages: import("@deepseek-ai/schemastery").default<number, number>;
+        idleSeconds: import("@deepseek-ai/schemastery").default<number, number>;
         backgroundMessages: import("@deepseek-ai/schemastery").default<number, number>;
         candidatePool: import("@deepseek-ai/schemastery").default<number, number>;
     }>, Schemastery.ObjectT<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         minMessages: import("@deepseek-ai/schemastery").default<number, number>;
+        idleSeconds: import("@deepseek-ai/schemastery").default<number, number>;
         backgroundMessages: import("@deepseek-ai/schemastery").default<number, number>;
         candidatePool: import("@deepseek-ai/schemastery").default<number, number>;
     }>>;
@@ -147,6 +157,9 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
     recall: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         maxResults: import("@deepseek-ai/schemastery").default<number, number>;
+        maxCharsPerMemory: import("@deepseek-ai/schemastery").default<number, number>;
+        maxTotalRecallChars: import("@deepseek-ai/schemastery").default<number, number>;
+        timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
         includePersona: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         includeSceneNav: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         strategy: import("@deepseek-ai/schemastery").default<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
@@ -154,6 +167,9 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
     }>, Schemastery.ObjectT<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         maxResults: import("@deepseek-ai/schemastery").default<number, number>;
+        maxCharsPerMemory: import("@deepseek-ai/schemastery").default<number, number>;
+        maxTotalRecallChars: import("@deepseek-ai/schemastery").default<number, number>;
+        timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
         includePersona: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         includeSceneNav: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         strategy: import("@deepseek-ai/schemastery").default<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;

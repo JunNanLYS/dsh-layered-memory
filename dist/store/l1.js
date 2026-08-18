@@ -135,7 +135,7 @@ export class L1Store {
             return this.postProcess(applyFtsThreshold(fts, threshold, limit), opts?.type, limit);
         }
         if (strategy === 'embedding') {
-            const vec = await this.helper.query(query);
+            const vec = await this.helper.query(query, opts?.embeddingTimeoutMs);
             if (!vec) {
                 // embedding 调用失败：降级 FTS，不阻断
                 const fts = this.db.searchL1Fts(query, candidateK, opts?.family);
@@ -148,7 +148,7 @@ export class L1Store {
         // → 融合分归一化：rank1 双列表命中 = 1.0，单列表命中 ≤ 0.5，保持 0~1 语义
         const [ftsList, vecRaw] = await Promise.all([
             Promise.resolve(this.db.searchL1Fts(query, candidateK, opts?.family)),
-            this.helper.query(query),
+            this.helper.query(query, opts?.embeddingTimeoutMs),
         ]);
         const vecList = vecRaw ? this.db.searchL1Vector(vecRaw, candidateK, opts?.family) : [];
         const merged = rrfMerge([ftsList, vecList], (h) => h.id);

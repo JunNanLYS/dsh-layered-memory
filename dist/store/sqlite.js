@@ -46,6 +46,8 @@ export class MemoryDb {
     logger;
     stmtUpsertL1;
     stmtGetL1;
+    /** 主表存在性点查（防御性 FTS 删除的前置判断，走主键索引）。 */
+    stmtL1Exists;
     stmtDeleteL1Meta;
     stmtDeleteL1Vec;
     stmtInsertL1Vec;
@@ -56,6 +58,8 @@ export class MemoryDb {
     stmtL1FtsSearchFamily;
     stmtUpsertL0;
     stmtGetL0;
+    /** 主表存在性点查（同 L1：防御性 FTS 删除的前置判断）。 */
+    stmtL0Exists;
     stmtDeleteL0Vec;
     stmtInsertL0Vec;
     stmtSearchL0Vec;
@@ -291,6 +295,7 @@ export class MemoryDb {
              timestamp_start, timestamp_end, created_time, updated_time, metadata_json, family
       FROM l1_records WHERE record_id = ?
     `);
+        this.stmtL1Exists = this.db.prepare('SELECT 1 FROM l1_records WHERE record_id = ?');
         this.stmtDeleteL1Meta = this.db.prepare('DELETE FROM l1_records WHERE record_id = ?');
         this.prepareL1VecStatements();
         // ── L0 schema ──
@@ -318,6 +323,7 @@ export class MemoryDb {
         timestamp=excluded.timestamp
     `);
         this.stmtGetL0 = this.db.prepare('SELECT session_id, role, message_text, recorded_at, timestamp FROM l0_conversations WHERE record_id = ?');
+        this.stmtL0Exists = this.db.prepare('SELECT 1 FROM l0_conversations WHERE record_id = ?');
         this.prepareL0VecStatements();
         // ── FTS5 全文索引（建表失败仅停用 FTS，不降级整个库） ──
         try {
@@ -664,6 +670,11 @@ export class MemoryDb {
     /** 事务内的单条写入体（upsertL1 / upsertL1Batch 共用；调用方负责 BEGIN/COMMIT）。 */
     upsertL1InTx(record, embedding) {
         const ts = timestampsToDb(record.timestamps);
+        // 防御性 FTS 删除的前置点查（主键索引，微秒级）：record_id 在 FTS 表是 UNINDEXED，
+        // 按 id DELETE 是 O(N) 全表扫描——导入/重建/重嵌等"全新增"路径曾为每条记录白付一次
+        // 全扫（批量写整体 O(N²)）。只有主表已有该行（覆盖/合并）才可能有旧 FTS 行需要删。
+        // 同批重复 id 也能正确处理：首条插入后，第二条的点查在同一事务内已见新行。
+        const ftsExisted = this.ftsAvailable ? this.stmtL1Exists.get(record.id) !== undefined : false;
         this.stmtUpsertL1.run(record.id, record.content, record.type, record.priority, record.scene_name, record.sessionId ?? 'default', record.version ?? 0, ts.str, ts.start, ts.end, toIso(record.createdAt), toIso(record.updatedAt), JSON.stringify(record.metadata ?? {}), record.family ?? familyForType(record.type));
         // vec0 不支持 ON CONFLICT → 先删后插；零向量跳过（cosine 未定义）
         if (this.stmtDeleteL1Vec && this.stmtInsertL1Vec) {
@@ -675,7 +686,8 @@ export class MemoryDb {
         // FTS 删除/插入与元数据同事务：失败必须整体回滚——若只吞 FTS 错误照常 COMMIT，
         // 已执行的 DELETE 会让该 id 的索引行被删未补，记录从此全文检索不可见（静默丢数据）。
         if (this.ftsAvailable) {
-            this.stmtL1FtsDelete.run(record.id);
+            if (ftsExisted)
+                this.stmtL1FtsDelete.run(record.id);
             this.stmtL1FtsInsert.run(tokenizeForFts(record.content), record.content, record.id, record.type, record.priority, record.scene_name, record.sessionId ?? 'default', record.version ?? 0, ts.str, ts.start, ts.end, JSON.stringify(record.metadata ?? {}), record.family ?? familyForType(record.type));
         }
     }
@@ -921,6 +933,8 @@ export class MemoryDb {
             this.db.exec('BEGIN');
             for (let i = 0; i < records.length; i++) {
                 const r = records[i];
+                // 同 upsertL1 的点查预判：全新增路径跳过 UNINDEXED 列的 FTS 全扫删除
+                const ftsExisted = this.ftsAvailable ? this.stmtL0Exists.get(r.id) !== undefined : false;
                 this.stmtUpsertL0.run(r.id, r.sessionId, r.role, r.content, r.recordedAt, r.timestamp);
                 if (this.stmtDeleteL0Vec && this.stmtInsertL0Vec) {
                     this.stmtDeleteL0Vec.run(r.id);
@@ -931,7 +945,8 @@ export class MemoryDb {
                 }
                 if (this.ftsAvailable) {
                     // 同 upsertL1：FTS 失败冒泡触发整批回滚，禁止"删了没补"的索引空洞。
-                    this.stmtL0FtsDelete.run(r.id);
+                    if (ftsExisted)
+                        this.stmtL0FtsDelete.run(r.id);
                     this.stmtL0FtsInsert.run(tokenizeForFts(r.content), r.content, r.id, r.sessionId, r.role, r.recordedAt, r.timestamp);
                 }
             }
@@ -972,6 +987,31 @@ export class MemoryDb {
         }
         catch {
             return 0;
+        }
+    }
+    /** 按会话取最近消息（时间升序返回；走 idx_l0_session_id 索引）。
+     *  蒸馏背景参考专用——按会话现查替代全局内存数组（ADR-0003）。 */
+    recentL0BySession(sessionId, limit) {
+        if (this.degraded || limit <= 0)
+            return [];
+        try {
+            const rows = this.db
+                .prepare('SELECT record_id, session_id, role, message_text, recorded_at, timestamp FROM l0_conversations WHERE session_id = ? ORDER BY timestamp DESC, rowid DESC LIMIT ?')
+                .all(sessionId, limit);
+            return rows
+                .map((r) => ({
+                sessionId: r.session_id,
+                recordedAt: r.recorded_at,
+                id: r.record_id,
+                role: r.role,
+                content: r.message_text,
+                timestamp: r.timestamp ?? 0,
+            }))
+                .reverse();
+        }
+        catch (err) {
+            this.logger?.warn(`[memory] L0 按会话取最近消息失败（返回空）: ${err instanceof Error ? err.message : String(err)}`);
+            return [];
         }
     }
     /** L0 全量列举（重建快照用；按时间升序，事务一致性避开 JSONL 追加竞态）。 */

@@ -84,9 +84,14 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 </p>
 
 The plugin attaches to DSH-native event seams (`session/event` for capture,
-`agent/pre-step` for injection), reuses the host's `ctx.llm` for distillation, and stays
-fully transparent to both user and model. It also registers three model-callable memory
-tools: `memory_search` / `conversation_search` / `memory_read_scene`.
+`agent/pre-step` for injection) and reuses the host's `ctx.llm` for distillation. Recall
+is presented as **message-side injection**: relevant memories enter the conversation as a
+plugin-attributed synthetic message placed right before the user's new message, so you can
+see "memory at work" directly in the chat flow. Injected content is bounded by length and
+time budgets — oversized lines are truncated (pointing the model at the memory tools for
+the full text) and a timed-out recall silently skips that turn, never slowing the chat. It
+also registers three model-callable memory tools: `memory_search` /
+`conversation_search` / `memory_read_scene`.
 
 ## Layered Memory (L0–L3)
 
@@ -142,8 +147,9 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `capture.stripCodeBlocks` | `true` | Strip code blocks from assistant messages |
 | `capture.maxMessageChars` | `4000` | Max characters per message |
 | `extract.enabled` | `true` | L1 extraction |
-| `extract.minMessages` | `1` | Run L1 extraction after N new messages accumulate |
-| `extract.backgroundMessages` | `10` | Background messages attached to extraction |
+| `extract.minMessages` | `6` | Steady-state trigger threshold: run L1 extraction once a session accumulates N new messages. The effective threshold ramps up 1→2→4→…→N (first turn yields memories immediately, then batches to save calls) |
+| `extract.idleSeconds` | `300` | Idle flush: distill a session's pending slice after N seconds of silence (catches "user left before reaching the threshold"); `0` disables |
+| `extract.backgroundMessages` | `10` | Background messages attached to extraction (fetched per session from L0 — no cross-session contamination) |
 | `extract.candidatePool` | `5` | Dedup candidate pool size |
 | `l2.enabled` | `true` | L2 scene consolidation |
 | `l2.minNewMemories` | `5` | New-memory threshold since last L2 consolidation |
@@ -152,9 +158,12 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `l3.enabled` | `true` | L3 persona distillation |
 | `l3.interval` | `20` | L3 distillation interval (new-memory count) |
 | `recall.enabled` | `true` | Auto recall |
-| `recall.maxResults` | `5` | L1 records injected per step |
-| `recall.includePersona` | `true` | Inject persona context on recall (`<user-persona>`) |
-| `recall.includeSceneNav` | `true` | Inject scene navigation on recall (`<scene-navigation>`) |
+| `recall.maxResults` | `5` | Max L1 records injected before each new user message |
+| `recall.maxCharsPerMemory` | `500` | Per-memory character cap for injected recall (overlong lines truncated with a hint to use the memory tools for the full text); `0` disables |
+| `recall.maxTotalRecallChars` | `2000` | Total character cap per injected recall batch (lowest-ranked tail dropped first); `0` disables |
+| `recall.timeoutMs` | `5000` | Overall recall budget (ms): a timed-out recall skips that turn without blocking the chat; `0` disables |
+| `recall.includePersona` | `true` | Inject persona context into the system prompt (`<user-persona>`, stable zone) |
+| `recall.includeSceneNav` | `true` | Inject scene navigation into the system prompt (`<scene-navigation>`, stable zone) |
 | `recall.strategy` | `hybrid` | Retrieval strategy: `keyword` / `embedding` / `hybrid` |
 | `recall.scoreThreshold` | `0.3` | Recall score threshold (below is not injected; applies to keyword/embedding only, not pre-fusion hybrid; tool path unfiltered) |
 | `embedding.enabled` | `false` | Vector retrieval switch; off = pure FTS |
@@ -167,7 +176,7 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `embedding.allowLocalModels` | `true` | Allow the local embedding tier (deployment ceiling; when off, no model downloads and no local tier in settings) |
 | `embedding.mirror` | `https://hf-mirror.com` | Download mirror root for local models (can be changed back to `https://huggingface.co`) |
 | `llm.provider/model` | empty | Distillation model override (defaults to current selection) |
-| `llm.maxTokens` | `256000` | Output token cap per distillation call (unified across stages; a reasoning model's reasoning shares this budget — too low gets fully consumed by thinking, leaving 0 chars of text) |
+| `llm.maxTokens` | `65536` | Fallback output cap for non-layered calls. Each distillation stage has its own budget (extraction 16k / dedup 8k / L2 32k / L3 16k; auto ×4 when reasoning effort is high/max, so thinking can't starve the text budget) |
 | `llm.reasoningEffort` | `off` | Distillation reasoning-effort tier (deployment default): `off` / `high` / `max`; empty string = don't send (follow model default). Distillation is structured extraction, so thinking is off by default — a reasoning model (e.g. v4-flash) at its default `high` tier can consume the entire output budget on thinking, leaving 0 chars of text; set to empty string for models that don't recognize the effort parameter. Switchable at runtime in Settings → Memory → Overview ("follow config" falls back to this value) |
 | `llm.temperature` | `0.3` | Distillation temperature |
 | `llm.maxInputChars` | `700000` | Input character budget per distillation call (over-budget L1 inputs are chunked automatically) |
@@ -232,7 +241,7 @@ of the raw model output; all failure warns carry the first stack frame.
 
 - The full pipeline is embedded (no external Gateway); distillation reuses DSH's own LLM;
 - L2/L3 changed from "LLM manipulates file tools" to "LLM outputs operation JSON / full documents, engineering side executes";
-- Recall injection happens at `agent/pre-step` + agent-scoped `systemPrompt.context` (DSH-native events/services);
+- Recall injection happens at `agent/pre-step` (message-side synthetic message, the official pre-step replacement semantics) plus agent-scoped `systemPrompt.context` (persona/navigation stable zone — DSH-native events/services);
 - Storage/retrieval is a single-machine slimmed version of the official sqlite backend (drops multi-tenant isolation columns, TCVDB cloud backend, audit tables; tokenization uses jieba like the official one — @node-rs/jieba prebuilt binaries union CJK character bigrams: word tokens give BM25 exact-word hits while bigrams keep sub-word recall; on load failure it falls back to pure bigrams, and FTS indexes are rebuilt automatically via a tokenizer version stamp).
 
 ## Credits

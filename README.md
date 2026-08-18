@@ -74,7 +74,7 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
        alt="dsh-layered-memory 运行时数据流：左侧 User 与 Assistant 的会话事件流入插件（L0 捕获、L1–L3 蒸馏、检索召回、记忆工具），插件经 agent/pre-step 把相关记忆注入右侧 DSH 核心；蒸馏复用核心的 ctx.llm，数据双写 ~/.dsh/memory/">
 </p>
 
-插件挂在 dsh 原生事件上（`session/event` 捕获、`agent/pre-step` 注入），蒸馏调用复用宿主 `ctx.llm`，全程对用户与模型透明。
+插件挂在 dsh 原生事件上（`session/event` 捕获、`agent/pre-step` 注入），蒸馏调用复用宿主 `ctx.llm`。召回以**消息侧注入**呈现：相关记忆作为一条带插件署名的合成消息排在用户新消息之前，用户在会话流里能直接看到"记忆生效了"；注入内容有长度预算与时间预算，超限截断/超时跳过，绝不拖慢对话。
 
 **记忆工具(3):**
 - memory_search
@@ -166,8 +166,9 @@ ONNX 量化 **CPU 推理**——无需 API Key，数据不出本机）。本地�
 | `capture.stripCodeBlocks` | `true` | 助手消息剥离代码块 |
 | `capture.maxMessageChars` | `4000` | 单条消息最大字符数 |
 | `extract.enabled` | `true` | L1 抽取 |
-| `extract.minMessages` | `1` | 攒够 N 条新消息跑一次 L1 抽取 |
-| `extract.backgroundMessages` | `10` | 抽取时附带的背景消息条数 |
+| `extract.minMessages` | `6` | 稳态触发阈值：单会话攒够 N 条新消息跑一次 L1 抽取。起步阶段生效阈值从 1 翻倍爬坡到此值（首轮即出记忆，随后自动攒批省调用） |
+| `extract.idleSeconds` | `300` | 闲置兜底：会话静默 N 秒后把未蒸馏切片落袋（接住"没攒够阈值用户就离开"）；`0` 关闭 |
+| `extract.backgroundMessages` | `10` | 抽取时附带的背景消息条数（按会话从 L0 现查，会话间互不污染） |
 | `extract.candidatePool` | `5` | 去重候选池大小 |
 | `l2.enabled` | `true` | L2 场景整合 |
 | `l2.minNewMemories` | `5` | 距上次 L2 整合的新记忆阈值 |
@@ -176,9 +177,12 @@ ONNX 量化 **CPU 推理**——无需 API Key，数据不出本机）。本地�
 | `l3.enabled` | `true` | L3 画像蒸馏 |
 | `l3.interval` | `20` | L3 蒸馏间隔（新记忆条数） |
 | `recall.enabled` | `true` | 自动召回 |
-| `recall.maxResults` | `5` | 每步召回注入的 L1 条数 |
-| `recall.includePersona` | `true` | 召回时注入画像上下文（`<user-persona>`） |
-| `recall.includeSceneNav` | `true` | 召回时注入场景导航（`<scene-navigation>`） |
+| `recall.maxResults` | `5` | 每条新用户消息前注入的 L1 条数上限 |
+| `recall.maxCharsPerMemory` | `500` | 单条注入记忆的字符上限（超限截断并提示用记忆工具查全文）；`0` 不限 |
+| `recall.maxTotalRecallChars` | `2000` | 整轮注入总字符上限（超限按相关性丢尾部）；`0` 不限 |
+| `recall.timeoutMs` | `5000` | 召回总预算（ms）：超时跳过本轮注入、不阻塞对话；`0` 不限时 |
+| `recall.includePersona` | `true` | 系统提示注入画像上下文（`<user-persona>`，稳定区） |
+| `recall.includeSceneNav` | `true` | 系统提示注入场景导航（`<scene-navigation>`，稳定区） |
 | `recall.strategy` | `hybrid` | 检索策略：`keyword` / `embedding` / `hybrid` |
 | `recall.scoreThreshold` | `0.3` | 召回分数阈值（低于不注入；仅 keyword/embedding 策略生效，hybrid 融合前不过滤；工具路径不过滤） |
 | `embedding.enabled` | `false` | 向量检索开关；关闭即纯 FTS 运行 |
@@ -191,7 +195,7 @@ ONNX 量化 **CPU 推理**——无需 API Key，数据不出本机）。本地�
 | `embedding.allowLocalModels` | `true` | 允许本地嵌入档（部署上限：关闭后设置页不能下载模型、不能切本地档） |
 | `embedding.mirror` | `https://hf-mirror.com` | 本地模型下载镜像根地址（可改回官方 `https://huggingface.co`） |
 | `llm.provider/model` | 空 | 蒸馏模型覆盖（默认用当前默认选择） |
-| `llm.maxTokens` | `256000` | 单次蒸馏输出 token 上限（全阶段统一；推理模型的 reasoning 与正文共享该预算，过低会被思考吃光导致正文 0 字符） |
+| `llm.maxTokens` | `65536` | 未分层调用的兜底输出总闸。各蒸馏层有独立预算（抽取 16k / 去重 8k / L2 32k / L3 16k；思考档 high/max 时自动 ×4，防 reasoning 吃光预算） |
 | `llm.reasoningEffort` | `off` | 蒸馏思考档位（部署默认）：`off` / `high` / `max`，空串不传（跟随模型默认）。蒸馏是结构化抽取任务，默认关思考——推理模型（如 v4-flash）默认 high 档的思考可把任意输出预算全部吃光导致正文 0 字符；非推理模型不认识 effort 时需设为空串。运行时可在设置页 → 记忆 → 概览临时切换（选"跟随配置"即回退本值） |
 | `llm.temperature` | `0.3` | 蒸馏温度 |
 | `llm.maxInputChars` | `700000` | 单次蒸馏输入字符预算（超限的 L1 输入自动分块抽取） |
@@ -202,7 +206,7 @@ ONNX 量化 **CPU 推理**——无需 API Key，数据不出本机）。本地�
 
 - 内嵌完整管线（不依赖外部 Gateway），蒸馏复用 DSH 自己的 LLM；
 - L2/L3 由"LLM 操作文件工具"改为"LLM 输出操作 JSON / 完整文档，工程侧执行"；
-- 召回注入点在 `agent/pre-step` + agent 作用域 `systemPrompt.context`（DSH 原生事件/服务）；
+- 召回注入点在 `agent/pre-step`（消息侧合成消息，官方 pre-step 替换语义）+ agent 作用域 `systemPrompt.context`（画像/导航稳定区，DSH 原生事件/服务）；
 - 存储/检索即官方 sqlite 后端的单机裁剪版（裁掉多租户隔离列、TCVDB 云后端、审计表；
   分词与官方一致用 jieba——@node-rs/jieba 预编译二进制 + CJK 二元组并集，
   词元供 BM25 精确整词命中、二元组保子词召回；加载失败自动回退纯二元组，

@@ -10,9 +10,14 @@ export interface EmbeddingProviderInfo {
     model: string;
     dimensions: number;
 }
+/** 单次嵌入调用的可选参数：timeoutMs 只允许缩短服务配置的超时（内层钳制），
+ *  永不放大——召回路径用它给 FTS 降级留时间（规格 A 节）。本地实现可忽略。 */
+export interface EmbedCallOptions {
+    timeoutMs?: number;
+}
 export interface EmbeddingService {
-    embed(text: string): Promise<Float32Array>;
-    embedBatch(texts: string[]): Promise<Float32Array[]>;
+    embed(text: string, callOpts?: EmbedCallOptions): Promise<Float32Array>;
+    embedBatch(texts: string[], callOpts?: EmbedCallOptions): Promise<Float32Array[]>;
     getDimensions(): number;
     getProviderInfo(): EmbeddingProviderInfo;
     isReady(): boolean;
@@ -46,8 +51,8 @@ export declare class RemoteEmbeddingService implements EmbeddingService {
     getDimensions(): number;
     getProviderInfo(): EmbeddingProviderInfo;
     isReady(): boolean;
-    embed(text: string): Promise<Float32Array>;
-    embedBatch(texts: string[]): Promise<Float32Array[]>;
+    embed(text: string, callOpts?: EmbedCallOptions): Promise<Float32Array>;
+    embedBatch(texts: string[], callOpts?: EmbedCallOptions): Promise<Float32Array[]>;
 }
 /**
  * 嵌入调用降级助手（L0/L1 Store 共用）：查询向量失败 → undefined（调用方降级 FTS）；
@@ -62,8 +67,9 @@ export declare class EmbedHelper {
     /** 活切换嵌入源（D4/D5）：换掉底层服务并复位一次性告警（新服务重新获得告警机会）。 */
     setService(svc: EmbeddingService): void;
     vectorReady(): boolean;
-    /** 查询向量；失败或空向量返回 undefined（调用方降级 FTS）。 */
-    query(text: string): Promise<Float32Array | undefined>;
+    /** 查询向量；失败或空向量返回 undefined（调用方降级 FTS）。
+     *  timeoutMs 为内层钳制（仅缩短服务超时），召回路径使用。 */
+    query(text: string, timeoutMs?: number): Promise<Float32Array | undefined>;
     /** 批量嵌入；服务未就绪或失败时返回全 undefined（不阻断元数据/FTS 写入）。 */
     batch(texts: string[]): Promise<Array<Float32Array | undefined>>;
     private warn;
