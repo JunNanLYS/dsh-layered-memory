@@ -1,6 +1,7 @@
 node_modules/
 dist-smoke/
 .zcode/
+wayfinder/
 AGENTS.md
 *.tsbuildinfo
 .DS_Store
