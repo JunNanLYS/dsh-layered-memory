@@ -19,6 +19,25 @@ export interface LlmCallOptions {
   logger?: MemoryLogger;
 }
 
+// ── 分层输出预算（规格 C 节）：结构化蒸馏远用不到总闸级预算，逐层设护栏；
+//    模型跑偏时单次损失有界。数值"先试跑"状态，按线上截断率调整。
+/** L1 抽取（大输入块的 JSON 记忆数组输出）。 */
+export const LAYER_MAX_TOKENS_EXTRACT = 16_000;
+/** L1 去重（合并决策数组，输出比抽取短）。 */
+export const LAYER_MAX_TOKENS_DEDUP = 8_000;
+/** L2 场景整合（完整场景 Markdown 文件输出，输出最重的层）。 */
+export const LAYER_MAX_TOKENS_L2 = 32_000;
+/** L3 画像（完整 persona 文档）。 */
+export const LAYER_MAX_TOKENS_L3 = 16_000;
+
+/**
+ * 思考档预算放大：reasoning 计入输出预算（v4-flash 事故：high 思考可吃光全部
+ * 预算致正文 0 字符）——effort 为 high/max 时分层预算 ×4。
+ */
+export function layerMaxTokens(base: number, reasoningEffort: string): number {
+  return reasoningEffort === 'high' || reasoningEffort === 'max' ? base * 4 : base;
+}
+
 /** 解析蒸馏用的 provider/model：配置优先，其次当前默认选择。 */
 export async function resolveModelRoute(
   ctx: Context,

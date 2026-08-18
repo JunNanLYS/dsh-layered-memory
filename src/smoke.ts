@@ -12,6 +12,7 @@ import type { MemoryConfig } from './config.js';
 import { memorySchema } from './config.js';
 import { EmbedHelper, NoopEmbeddingService, type EmbeddingService } from './store/embedding.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_TRUNCATION_SUFFIX, truncateRecallLine } from './util/recall-budget.js';
+import { layerMaxTokens } from './llm.js';
 import { Bm25Index } from './store/bm25.js';
 import { ModelDownloadQueue } from './store/download-queue.js';
 import {
@@ -1458,12 +1459,17 @@ async function main(): Promise<void> {
     assert(!tryValidate({ embedding: { dimensions: -8 } }), '负 dimensions 被拒');
     assert(tryValidate({ embedding: { dimensions: 0 } }), 'dimensions=0（纯 FTS）合法');
     // 召回预算/超时默认值（ADR-0001）
-    const defCfg = (memorySchema as unknown as { '~standard': { validate: (i: unknown) => { value?: { recall?: { maxCharsPerMemory?: number; maxTotalRecallChars?: number; timeoutMs?: number } } } } })['~standard'].validate({});
+    const defCfg = (memorySchema as unknown as { '~standard': { validate: (i: unknown) => { value?: { recall?: { maxCharsPerMemory?: number; maxTotalRecallChars?: number; timeoutMs?: number }; llm?: { maxTokens?: number } } } } })['~standard'].validate({});
     const defRecall = defCfg?.value?.recall;
     assert(
       defRecall?.maxCharsPerMemory === 500 && defRecall?.maxTotalRecallChars === 2000 && defRecall?.timeoutMs === 5000,
       '召回预算/超时默认值（500/2000/5000）',
     );
+    // 分层输出预算（规格 C 节）
+    assert(layerMaxTokens(16_000, 'high') === 64_000 && layerMaxTokens(8_000, 'max') === 32_000, '思考档 high/max 分层预算 ×4');
+    assert(layerMaxTokens(16_000, 'off') === 16_000 && layerMaxTokens(16_000, '') === 16_000, 'off/空串不放大');
+    const defLlm = defCfg?.value?.llm;
+    assert(defLlm?.maxTokens === 65_536, 'llm.maxTokens 兜底总闸默认 65536');
   }
 
   // 19b. pending 持久化前按桶截断（非重建轮）/ 重建轮豁免 —— 挂在 §14 的 runner2 之后

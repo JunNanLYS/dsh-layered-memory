@@ -4,7 +4,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { MemoryConfig } from '../config.js';
-import { callLLM } from '../llm.js';
+import { callLLM, layerMaxTokens, LAYER_MAX_TOKENS_L3 } from '../llm.js';
 import { buildPersonaPrompt } from '../prompts/persona.js';
 import type { PersonaStore } from '../store/persona.js';
 import type { SceneStore } from '../store/scenes.js';
@@ -73,7 +73,12 @@ export async function runPersona(
     triggerInfo: reason,
   });
 
-  const raw = await callLLM(ctx, cfg, { system: systemPrompt, user: userPrompt, logger });
+  const raw = await callLLM(ctx, cfg, {
+    system: systemPrompt,
+    user: userPrompt,
+    maxTokens: layerMaxTokens(LAYER_MAX_TOKENS_L3, cfg.llm.reasoningEffort),
+    logger,
+  });
   const body = unwrapFence(raw);
   if (!body) {
     logger.error(`[memory] L3 输出为空，原始输出前 400 字符: ${raw.slice(0, 400)}`);

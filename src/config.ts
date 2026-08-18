@@ -147,8 +147,9 @@ export const memorySchema = Schema.object({
   llm: Schema.object({
     provider: Schema.string().default(''),
     model: Schema.string().default(''),
-    // 推理模型（如 v4-flash）的 reasoning 计入输出预算：预算不足会被思考吃光导致正文 0 字符
-    maxTokens: Schema.number().min(1024).max(1_000_000).default(256_000),
+    // 推理模型（如 v4-flash）的 reasoning 计入输出预算：预算不足会被思考吃光导致正文 0 字符。
+    // 0.8.0 起各蒸馏层显式传分层预算（见 llm.ts LAYER_MAX_TOKENS_*），本值为未分层调用的兜底总闸
+    maxTokens: Schema.number().min(1024).max(1_000_000).default(65_536),
     // 蒸馏是结构化抽取任务，默认关思考（off）：v4-flash 默认 high 档的思考可把任意 maxTokens
     // 预算全部吃光导致正文 0 字符；非推理模型不认识 effort 时会报 UNSUPPORTED_REASONING_EFFORT，设空串跳过
     reasoningEffort: Schema.union(['', 'off', 'high', 'max']).default('off'),
