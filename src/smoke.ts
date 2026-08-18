@@ -1350,7 +1350,7 @@ async function main(): Promise<void> {
       assert(d1.kind === 'enter' && d1.messages.length === 2, `注入消息插入（${d1.kind === 'enter' ? d1.messages.length : 'reject'}）`);
       const inj = d1.kind === 'enter' ? (d1.messages[0] as { source?: Record<string, string>; content?: Array<{ text?: string }> }) : undefined;
       assert(
-        inj?.source?.kind === 'plugin' && inj?.source?.plugin === 'dsh-memory' && inj?.source?.form === 'recall',
+        inj?.source?.kind === 'plugin' && inj?.source?.plugin === 'memory' && inj?.source?.form === 'recall',
         `注入消息带插件来源与 recall 形态（${JSON.stringify(inj?.source)}）`,
       );
       const injText = inj?.content?.[0]?.text ?? '';

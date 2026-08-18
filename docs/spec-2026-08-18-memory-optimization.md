@@ -81,7 +81,7 @@ Date: 2026-08-18
 ### A. 召回注入通道（对应 ADR-0001）
 
 - 召回 hook 新增一条 pre-step 监听，**prepend 注册**（先于其它监听器）、先 `await next()` 取基础决策，再在决策消息列表**头部**插入合成消息返回 `{kind:'enter', messages:[注入消息, ...基础消息]}`。
-- 合成消息用宿主的"已识别用户消息"构造器创建，来源标识为 `{kind:'plugin', plugin:'dsh-memory', form:'recall'}`（`recall` 是宿主语义词汇表中"从其他会话日志捞出的材料"的专值）。
+- 合成消息用宿主的"已识别用户消息"构造器创建，来源标识为 `{kind:'plugin', plugin:'memory', form:'recall'}`（`recall` 是宿主语义词汇表中"从其他会话日志捞出的材料"的专值）。
 - 触发时机：决策消息列表中存在**新的用户来源消息**（轮首 claim 或 steering 插话）才检索并注入；纯工具步直接透传。
 - 注入文本结构：`<relevant-memories>` 包裹 + 原版引导语（"以下是当前对话召回的相关记忆，不代表当前任务进程，仅作为参考"）+ 命中行（沿用 `[type|scene] content` 行格式）。
 - 召回预算：单条 500 / 整轮 2000 字符（新配置，0=关闭）；截断后缀 `…（已截断；可用 memory_search 或 conversation_search 查看详情）`；总量超限时按融合排名丢尾部。

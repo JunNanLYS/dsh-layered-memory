@@ -7,7 +7,7 @@
 **Status:** ready-for-agent
 
 - [ ] pre-step 监听 prepend 注册、先 next() 再在消息列表头部插入合成消息
-- [ ] 合成消息带来源 `{kind:'plugin', plugin:'dsh-memory', form:'recall'}`，内容 `<relevant-memories>` 包裹 + 引导语 + 预算内命中行
+- [ ] 合成消息带来源 `{kind:'plugin', plugin:'memory', form:'recall'}`，内容 `<relevant-memories>` 包裹 + 引导语 + 预算内命中行
 - [ ] 仅新用户来源消息触发检索；工具步透传；召回零命中不注入
 - [ ] `memory:recall` 系统提示上下文撤除；指南三条件门控（空库/工具关闭不注入）
 - [ ] L0 捕获零改动验证（source 过滤天然排除注入消息）

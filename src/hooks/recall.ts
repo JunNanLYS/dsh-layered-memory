@@ -172,7 +172,10 @@ export function registerRecall(
           );
           const injection = createUserMessage({
             content: [{ type: 'text', text }],
-            source: { kind: 'plugin', plugin: 'dsh-memory', form: 'recall' },
+            // plugin 字段是宿主 UI 的署名后缀（"上下文注入 · memory"）——用展示友好的
+            // 子系统名，不用 cordis id（dsh-memory）；kind:'plugin' 的标题恒为通用
+            // "上下文注入"（专用"跨会话召回"标题仅留给 session-reference 来源）
+            source: { kind: 'plugin', plugin: 'memory', form: 'recall' },
           });
           // 注入消息排在用户新消息之前（原版 prepend 语义：先线索后问题）
           return { kind: 'enter', messages: [injection, ...decision.messages] };
