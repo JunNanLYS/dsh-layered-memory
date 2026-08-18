@@ -6,6 +6,7 @@
  */
 import * as path from 'node:path';
 import type { MemoryLogger, MemoryMode } from '../types.js';
+import { errDetail } from '../util/filelog.js';
 import { atomicWriteJson, ensureDir, readJsonIfExists } from './io.js';
 
 const MODES: readonly MemoryMode[] = ['auto', 'chat', 'work', 'off'];
@@ -83,9 +84,7 @@ export class SessionModeStore {
       try {
         this.onModeChange(sessionId, old, mode);
       } catch (err) {
-        this.logger?.warn(
-          `[memory] 档位切换回调失败: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        this.logger?.warn(`[memory] 档位切换回调失败: ${errDetail(err)}`);
       }
     }
   }

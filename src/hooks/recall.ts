@@ -26,6 +26,7 @@ import type { SceneStore } from '../store/scenes.js';
 import type { SessionModeStore } from '../store/session-modes.js';
 import type { L1Hit, MemoryLogger } from '../types.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_EMBED_CAP_MS } from '../util/recall-budget.js';
+import { errDetail } from '../util/filelog.js';
 import { blocksToText } from '../util/text.js';
 
 const PROFILE_TTL = 60_000;
@@ -95,7 +96,7 @@ export function registerRecall(
       profileCache.chat = chat;
       profileCache.work = work;
     } catch (err) {
-      logger.warn(`[memory] 画像/场景缓存刷新失败: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`[memory] 画像/场景缓存刷新失败: ${errDetail(err)}`);
     }
   };
 
@@ -173,7 +174,7 @@ export function registerRecall(
           // 注入消息排在用户新消息之前（原版 prepend 语义：先线索后问题）
           return { kind: 'enter', messages: [injection, ...decision.messages] };
         } catch (err) {
-          logger.warn(`[memory] 召回注入失败（跳过本轮）: ${err instanceof Error ? err.message : String(err)}`);
+          logger.warn(`[memory] 召回注入失败（跳过本轮）: ${errDetail(err)}`);
           return decision;
         }
       },

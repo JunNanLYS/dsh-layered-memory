@@ -5,6 +5,7 @@
  * 存储失败只降级为内存态（warn 不崩），与插件的存储降级不变量一致。
  */
 import * as path from 'node:path';
+import { errDetail } from '../util/filelog.js';
 import { atomicWriteJson, ensureDir, readJsonIfExists } from './io.js';
 const MODES = ['auto', 'chat', 'work', 'off'];
 const PRUNE_MS = 90 * 24 * 3600_000;
@@ -68,7 +69,7 @@ export class SessionModeStore {
                 this.onModeChange(sessionId, old, mode);
             }
             catch (err) {
-                this.logger?.warn(`[memory] 档位切换回调失败: ${err instanceof Error ? err.message : String(err)}`);
+                this.logger?.warn(`[memory] 档位切换回调失败: ${errDetail(err)}`);
             }
         }
     }

@@ -1400,6 +1400,17 @@ async function main(): Promise<void> {
 
       // ⑥ 指南三条件门控：有本轮召回命中（① 设置）→ 即便画像/导航全空也注入指南
       assert((contextText['memory:profile']() ?? '').includes('记忆工具调用指南'), '本轮有召回命中 → 指南注入（画像/导航为空）');
+      // ⑧ 召回超时（fake pre-step 缝）：慢检索在总预算内未返回 → 跳过本轮注入（决策原样返回）
+      const origSearch = (storesT5 as { l1: { search: () => Promise<unknown> } }).l1.search;
+      (storesT5 as { l1: { search: () => Promise<unknown> } }).l1.search = () =>
+        new Promise(() => {}) as never; // 永不 resolve
+      const d8 = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
+        () => Promise.resolve(enter([userMsg])),
+      );
+      assert(d8.kind === 'enter' && d8.messages.length === 1, '召回超时：决策原样透传（不注入不阻塞）');
+      (storesT5 as { l1: { search: () => Promise<unknown> } }).l1.search = origSearch;
+
       // ⑦ 工具关闭 → 指南消失（画像照常）
       const contextText2: Record<string, () => string> = {};
       const fakeAgent2 = {
@@ -1702,7 +1713,7 @@ async function main(): Promise<void> {
     assert(!tryValidate({ embedding: { dimensions: -8 } }), '负 dimensions 被拒');
     assert(tryValidate({ embedding: { dimensions: 0 } }), 'dimensions=0（纯 FTS）合法');
     // 召回预算/超时默认值（ADR-0001）
-    const defCfg = (memorySchema as unknown as { '~standard': { validate: (i: unknown) => { value?: { recall?: { maxCharsPerMemory?: number; maxTotalRecallChars?: number; timeoutMs?: number }; llm?: { maxTokens?: number } } } } })['~standard'].validate({});
+    const defCfg = (memorySchema as unknown as { '~standard': { validate: (i: unknown) => { value?: { recall?: { maxCharsPerMemory?: number; maxTotalRecallChars?: number; timeoutMs?: number }; llm?: { maxTokens?: number }; extract?: { minMessages?: number; idleSeconds?: number } } } } })['~standard'].validate({});
     const defRecall = defCfg?.value?.recall;
     assert(
       defRecall?.maxCharsPerMemory === 500 && defRecall?.maxTotalRecallChars === 2000 && defRecall?.timeoutMs === 5000,
@@ -1713,6 +1724,8 @@ async function main(): Promise<void> {
     assert(layerMaxTokens(16_000, 'off') === 16_000 && layerMaxTokens(16_000, '') === 16_000, 'off/空串不放大');
     const defLlm = defCfg?.value?.llm;
     assert(defLlm?.maxTokens === 65_536, 'llm.maxTokens 兜底总闸默认 65536');
+    const defExtract = defCfg?.value?.extract;
+    assert(defExtract?.minMessages === 6 && defExtract?.idleSeconds === 300, '稳态阈值默认 6 / 闲置兜底默认 300s');
   }
 
   // 19b. pending 持久化前按桶截断（非重建轮）/ 重建轮豁免 —— 挂在 §14 的 runner2 之后

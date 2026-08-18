@@ -1,5 +1,6 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { applyRecallBudget, raceRecallTimeout, RECALL_EMBED_CAP_MS } from '../util/recall-budget.js';
+import { errDetail } from '../util/filelog.js';
 import { blocksToText } from '../util/text.js';
 const PROFILE_TTL = 60_000;
 /** 召回查询只取会话末尾 N 条消息（长会话每步把全史拼进 FTS MATCH 会让检索成本线性上涨）。 */
@@ -49,7 +50,7 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
             profileCache.work = work;
         }
         catch (err) {
-            logger.warn(`[memory] 画像/场景缓存刷新失败: ${err instanceof Error ? err.message : String(err)}`);
+            logger.warn(`[memory] 画像/场景缓存刷新失败: ${errDetail(err)}`);
         }
     };
     // 初始刷新 + 定时刷新（TTL）
@@ -118,7 +119,7 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
                 return { kind: 'enter', messages: [injection, ...decision.messages] };
             }
             catch (err) {
-                logger.warn(`[memory] 召回注入失败（跳过本轮）: ${err instanceof Error ? err.message : String(err)}`);
+                logger.warn(`[memory] 召回注入失败（跳过本轮）: ${errDetail(err)}`);
                 return decision;
             }
         }, { prepend: true });

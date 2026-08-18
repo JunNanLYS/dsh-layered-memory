@@ -159,10 +159,14 @@ export class MemoryRunner {
         const targets = idleSessionsToFlush([...infos.values()], this.lastActivity, now, idleMs, (sid) => this.modes?.get(sid) === 'off');
         for (const sid of targets) {
             this.logger.info(`[memory] 闲置兜底：会话 ${sid} 静默达标，未蒸馏切片落袋`);
-            for (const mode of PENDING_MODES) {
-                if (this.pending[mode].some((m) => m.sessionId === sid)) {
-                    this.enqueue(sid, [], mode, { force: true });
-                }
+            this.enqueueSessionSlices(sid);
+        }
+    }
+    /** 把某会话在各桶中的切片按捕获档位逐个入队强制蒸馏（闲置兜底 / 档位切换共用）。 */
+    enqueueSessionSlices(sessionId) {
+        for (const mode of PENDING_MODES) {
+            if (this.pending[mode].some((m) => m.sessionId === sessionId)) {
+                this.enqueue(sessionId, [], mode, { force: true });
             }
         }
     }
@@ -180,11 +184,7 @@ export class MemoryRunner {
             return;
         }
         this.logger.info(`[memory] 档位切换 ${oldMode}→${newMode}（${action}）：会话 ${sessionId} 切片按捕获档位落袋`);
-        for (const mode of PENDING_MODES) {
-            if (this.pending[mode].some((m) => m.sessionId === sessionId)) {
-                this.enqueue(sessionId, [], mode, { force: true });
-            }
-        }
+        this.enqueueSessionSlices(sessionId);
     }
     pushTask(task) {
         if (this.stopped)

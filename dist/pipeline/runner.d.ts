@@ -89,6 +89,8 @@ export declare class MemoryRunner {
     startIdleTimer(): void;
     /** 闲置扫描：静默达标且有切片的会话按捕获档位落袋（off 档会话挂起跳过）。 */
     private flushIdleSlices;
+    /** 把某会话在各桶中的切片按捕获档位逐个入队强制蒸馏（闲置兜底 / 档位切换共用）。 */
+    private enqueueSessionSlices;
     /**
      * 档位切换同步（session-modes 的 set() 回调，ADR-0003）：
      * 非 off 间切换 → 该会话切片立即按捕获档位蒸馏（新档位从空切片起步）；
