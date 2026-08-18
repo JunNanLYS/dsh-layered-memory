@@ -99,7 +99,7 @@ the model then calls `memory_read_scene` directly to read scene blocks before an
 from memory:
 
 <p align="center">
-  <img src="./assets/img/MemoryTools.png" width="100%"
+  <img src="./assets/img/MemoryTools.png" width="60%"
        alt="Real conversation UI (light theme): a "Context injection · memory" row sits above the user's message asking about recent plans; the assistant lists 4 memory_read_scene tool calls (with scene-block .md filenames as arguments) before answering from memory">
 </p>
 
@@ -108,7 +108,7 @@ reaches the memory tools indirectly through `run_code` (nested as SUBTOOL calls 
 trajectory view):
 
 <p align="center">
-  <img src="./assets/img/ToolTrajectory.png" width="100%"
+  <img src="./assets/img/ToolTrajectory.png" width="80%"
        alt="Tool-call trajectory view: a colored timeline on top and a step list on the left (SYSTEM/CONTEXT/USER/ASSISTANT/TOOL/SUBTOOL tags); a run_code tool step nests 5 memory_read_scene sub-tool calls (SUBTOOL tags), with a detail panel for the selected step on the right">
 </p>
 
