@@ -219,7 +219,7 @@ Pick the embedding source in Settings → Memory → Overview → Semantic Retri
 it takes effect immediately, no config edit or restart:
 
 <p align="center">
-  <img src="./assets/img/EmbeddingSource.png" width="100%"
+  <img src="./assets/img/EmbeddingSource.png" width="70%"
        alt="Semantic retrieval (embedding source) panel in the settings page (light theme): a three-state selector (Off/Local/Remote, Local selected) showing the current source and the first-run runtime install hint; below it the local model catalog lists BGE small Chinese (in use/ready), EmbeddingGemma 300M (download 316MB) and BGE-M3 (download 560MB) with dims/context/size/notes and download buttons">
 </p>
 
