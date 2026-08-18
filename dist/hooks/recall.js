@@ -31,6 +31,9 @@ const MEMORY_TOOLS_GUIDE = `<memory-tools-guide>
 每轮对话中，memory_search 和 conversation_search **合计最多调用 3 次**。
 - 首次搜索无结果时，可换关键词或换工具重试，但总调用次数不要超过 3 次。
 - 若 3 次搜索后仍无结果，说明该信息不在记忆中，请直接根据已有信息回复用户。
+
+注：若当前环境限制直接调用工具（如仅允许代码执行入口），请经由该环境的工具调用机制
+（如 run_code 程序内）使用以上记忆工具。
 </memory-tools-guide>`;
 export function registerRecall(ctx, cfg, stores, logger, live, modes) {
     /** 每 agent 最近一次注入的命中条数（工具指南门控的"本轮召回命中"信号）。 */
