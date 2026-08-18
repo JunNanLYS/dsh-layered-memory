@@ -61,6 +61,14 @@ disabled 统一 `opacity 0.45 + not-allowed`。
 off = `--dsh-mem-track`；旋钮 `left .15s` inline 过渡（reduced-motion 压不住，
 已知限制见 global-spec）。写入走 `dsh-memory/settings-set` RPC，不另开写路径。
 
+### 蒸馏思考选择器（Segmented，跟随记忆模式开关面板）
+
+选项 `跟随配置 / off / high / max`，值取 `settings-get` 返回的 `effort.current`
+（空串 = 回退部署配置 `llm.reasoningEffort`），描述行展示 `effort.effective`。
+写入同样走 `settings-set`（`reasoningEffort` 键）。乐观更新必须**同时**写
+`settings.reasoningEffort` 与视图字段 `effort.current/effective`——选择器只读后者，
+漏掉会在下一个 5s 轮询前弹回旧值（已修过的不同步点）。
+
 ## 重建面板（RebuildPanel）
 
 - `.dsh-mem-rb-card` 卡片 + 运行态进度条（`.dsh-mem-rb-bar` 8px 底 / `.dsh-mem-rb-fill`

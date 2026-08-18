@@ -1500,11 +1500,20 @@ window.__ModuleLoader__.load({
         if (!settingsData) return;
         // 乐观更新：立即翻 UI，失败回滚
         var prev = settingsData;
+        var patch = (function () { var o = {}; o[key] = value; return o; })();
         var next = Object.assign({}, prev, {
-          settings: Object.assign({}, prev.settings, (function () { var o = {}; o[key] = value; return o; })()),
+          settings: Object.assign({}, prev.settings, patch),
         });
+        // 蒸馏思考选择器读 effort.current（非 settings 键）：乐观更新须同步该视图字段，
+        // 否则点击后选择器在下一个 5s 轮询前"弹回"旧值，看起来没生效
+        if (key === "reasoningEffort" && next.effort) {
+          next.effort = Object.assign({}, prev.effort, {
+            current: value,
+            effective: value || prev.effort.fallback,
+          });
+        }
         setSettingsData(next);
-        rpc("dsh-memory/settings-set", (function () { var o = {}; o[key] = value; return o; })())
+        rpc("dsh-memory/settings-set", patch)
           .then(function (r) {
             if (!r || !r.ok) {
               setSettingsData(prev);
