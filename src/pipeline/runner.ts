@@ -16,7 +16,7 @@ import { resolveDataDir, type MemoryConfig } from '../config.js';
 import type { LiveSettingsHandle } from '../settings.js';
 import type { L0Store } from '../store/l0.js';
 import type { L1Store } from '../store/l1.js';
-import { emptyPending, loadPending, PENDING_MODES, pendingPathFor, savePending, type PendingBuckets } from '../store/pending.js';
+import { emptyPending, loadPending, PENDING_MODES, pendingPathFor, savePending, type PendingBuckets, type PendingMessage } from '../store/pending.js';
 import type { PersonaStore } from '../store/persona.js';
 import type { SceneStore } from '../store/scenes.js';
 import type { StateStore } from '../store/state.js';
@@ -216,7 +216,8 @@ export class MemoryRunner {
     const distillOn = liveNow.enabled && liveNow.distill;
     if (cfg.extract.enabled && distillOn) {
       const bucket = this.pending[mode];
-      bucket.push(...messages);
+      // 入桶即携带会话标识（会话切片成员；ADR-0003：切片内永不跨会话混装）
+      bucket.push(...messages.map((m): PendingMessage => ({ ...m, sessionId })));
       if (!opts?.noBufferCap && bucket.length > PENDING_BUCKET_CAP) {
         bucket.splice(0, bucket.length - PENDING_BUCKET_CAP);
       }

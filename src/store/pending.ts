@@ -9,12 +9,21 @@ import * as path from 'node:path';
 import type { ConversationMessage, ExtractMode, MemoryLogger } from '../types.js';
 import { atomicWriteJson, readJsonIfExists } from './io.js';
 
+/** 带会话标识的未蒸馏消息（会话切片的成员；CONTEXT.md「会话切片」「捕获档位」）。 */
+export interface PendingMessage extends ConversationMessage {
+  /** 捕获该消息的会话；旧格式数据无此字段，加载时归 legacy 组一次性蒸馏。 */
+  sessionId: string;
+}
+
 /** 三档蒸馏缓冲桶（off 在捕获侧已被拦截，永远不到这里）。 */
 export interface PendingBuckets {
-  auto: ConversationMessage[];
-  chat: ConversationMessage[];
-  work: ConversationMessage[];
+  auto: PendingMessage[];
+  chat: PendingMessage[];
+  work: PendingMessage[];
 }
+
+/** 旧格式（无 sessionId 字段）条目加载时归属的会话组。 */
+export const LEGACY_SESSION = 'legacy';
 
 interface PendingFile {
   version: 1;
@@ -31,7 +40,8 @@ function isMessage(m: unknown): m is ConversationMessage {
   return typeof r.id === 'string' && typeof r.content === 'string' && (r.role === 'user' || r.role === 'assistant');
 }
 
-/** 读取缓冲文件：文件缺失/损坏 → 空桶（不抛出——丢了缓冲 L0 事实源仍在）。 */
+/** 读取缓冲文件：文件缺失/损坏 → 空桶（不抛出——丢了缓冲 L0 事实源仍在）。
+ *  旧格式条目（无 sessionId）归 legacy 组，向前兼容。 */
 export async function loadPending(file: string, logger?: MemoryLogger): Promise<PendingBuckets> {
   const out = emptyPending();
   let raw: (PendingFile & { buckets?: Record<string, unknown> }) | undefined;
@@ -42,16 +52,43 @@ export async function loadPending(file: string, logger?: MemoryLogger): Promise<
   }
   if (!raw || typeof raw !== 'object' || !raw.buckets || typeof raw.buckets !== 'object') return out;
   let dropped = 0;
+  let legacy = 0;
   for (const key of ['auto', 'chat', 'work'] as const) {
     const arr = raw.buckets[key];
     if (!Array.isArray(arr)) continue;
     for (const m of arr) {
-      if (isMessage(m)) out[key].push(m);
-      else dropped++;
+      if (!isMessage(m)) {
+        dropped++;
+        continue;
+      }
+      const sid = (m as Partial<PendingMessage>).sessionId;
+      if (typeof sid === 'string' && sid) {
+        out[key].push({ ...m, sessionId: sid });
+      } else {
+        legacy++;
+        out[key].push({ ...m, sessionId: LEGACY_SESSION });
+      }
     }
   }
   if (dropped > 0) logger?.warn(`[memory] 未蒸馏缓冲文件含 ${dropped} 条坏记录，已丢弃`);
+  if (legacy > 0) logger?.info(`[memory] 未蒸馏缓冲含 ${legacy} 条旧格式条目，归入 legacy 会话组`);
   return out;
+}
+
+/** 按会话分组（会话切片）：组按首条时间排序、组内按时间稳定排序——
+ *  蒸馏的一切触发都以切片为单位，切片内永不跨会话混装（ADR-0003）。 */
+export function groupPendingBySession(
+  messages: PendingMessage[],
+): Array<{ sessionId: string; messages: PendingMessage[] }> {
+  const groups = new Map<string, PendingMessage[]>();
+  for (const m of messages) {
+    const g = groups.get(m.sessionId);
+    if (g) g.push(m);
+    else groups.set(m.sessionId, [m]);
+  }
+  return [...groups.entries()]
+    .map(([sessionId, msgs]) => ({ sessionId, messages: [...msgs].sort((a, b) => a.timestamp - b.timestamp) }))
+    .sort((a, b) => a.messages[0].timestamp - b.messages[0].timestamp);
 }
 
 /** 全量原子落盘（每次蒸馏尝试后调用；桶有上限，量级为百条级）。 */

@@ -45,7 +45,7 @@ import { parseJson } from './llm.js';
 import { chunkByCharBudget } from './pipeline/l1.js';
 import { MemoryRunner, pickNextTaskIndex } from './pipeline/runner.js';
 import { estimateCalls, groupL0Sessions, RebuildController } from './pipeline/rebuild.js';
-import { loadPending, pendingPathFor, savePending } from './store/pending.js';
+import { groupPendingBySession, loadPending, pendingPathFor, savePending } from './store/pending.js';
 import { formatExtractionPrompt, getExtractMemoriesSystemPrompt } from './prompts/l1-extraction.js';
 import { formatBatchConflictPrompt, getConflictDetectionSystemPrompt } from './prompts/l1-dedup.js';
 import { buildScenePrompt, formatSceneSummaries } from './prompts/scene.js';
@@ -827,9 +827,9 @@ async function main(): Promise<void> {
     try {
       const pFile = pendingPathFor(tmpP);
       await savePending(pFile, {
-        auto: [{ id: 'm1', role: 'user', content: '待重试', timestamp: 1 }],
+        auto: [{ id: 'm1', role: 'user', content: '待重试', timestamp: 1, sessionId: 's-a' }],
         chat: [],
-        work: [{ id: 'm2', role: 'assistant', content: '攒阈值', timestamp: 2 }],
+        work: [{ id: 'm2', role: 'assistant', content: '攒阈值', timestamp: 2, sessionId: 's-a' }],
       });
       const loaded = await loadPending(pFile);
       assert(loaded.auto.length === 1 && loaded.auto[0].id === 'm1' && loaded.work.length === 1 && loaded.work[0].content === '攒阈值', 'pending 往返保真');
@@ -848,6 +848,35 @@ async function main(): Promise<void> {
       );
       const mixed = await loadPending(pFile, silentLogger);
       assert(mixed.auto.length === 1 && mixed.auto[0].id === 'ok', '非法记录（role/类型）被丢弃');
+
+      // 13a-2. 会话标识往返 + 旧格式迁移（无 sessionId → legacy 组）+ 按会话分组切片
+      await savePending(pFile, {
+        auto: [
+          { id: 's1a', role: 'user', content: '会话1甲', timestamp: 3, sessionId: 'sess-1' },
+          { id: 's2a', role: 'user', content: '会话2甲', timestamp: 1, sessionId: 'sess-2' },
+          { id: 's1b', role: 'assistant', content: '会话1乙', timestamp: 5, sessionId: 'sess-1' },
+        ],
+        chat: [{ id: 'old', role: 'user', content: '旧格式', timestamp: 9, sessionId: 'sess-x' }],
+        work: [],
+      });
+      const withSid = await loadPending(pFile, silentLogger);
+      assert(withSid.auto.length === 3 && withSid.auto[0].sessionId === 'sess-1', '会话标识往返保真');
+      await fs.writeFile(
+        pFile,
+        JSON.stringify({ version: 1, buckets: { auto: [{ id: 'legacy-1', role: 'user', content: '旧数据', timestamp: 4 }], chat: [], work: [] } }),
+        'utf-8',
+      );
+      const legacy = await loadPending(pFile, silentLogger);
+      assert(legacy.auto.length === 1 && legacy.auto[0].sessionId === 'legacy', '旧格式条目归 legacy 会话组');
+      const grouped = groupPendingBySession(withSid.auto);
+      assert(
+        grouped.length === 2 && grouped[0].sessionId === 'sess-2' && grouped[1].sessionId === 'sess-1',
+        '切片按首条时间排序（sess-2 先于 sess-1）',
+      );
+      assert(
+        grouped[1].messages.length === 2 && grouped[1].messages[0].id === 's1a' && grouped[1].messages[1].id === 's1b',
+        '切片组内按时间排序',
+      );
     } finally {
       await fs.rm(tmpP, { recursive: true, force: true }).catch(() => {});
     }
