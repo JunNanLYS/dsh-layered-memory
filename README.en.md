@@ -86,8 +86,9 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 The plugin attaches to DSH-native event seams (`session/event` for capture,
 `agent/pre-step` for injection) and reuses the host's `ctx.llm` for distillation. Recall
 is presented as **message-side injection**: relevant memories enter the conversation as a
-plugin-attributed synthetic message placed right before the user's new message, so you can
-see "memory at work" directly in the chat flow. Injected content is bounded by length and
+synthetic message placed right before the user's new message, rendered as a
+**"Context injection · memory"** row in the chat flow (expand to see the hits) — so you
+can see "memory at work" directly. Injected content is bounded by length and
 time budgets — oversized lines are truncated (pointing the model at the memory tools for
 the full text) and a timed-out recall silently skips that turn, never slowing the chat. It
 also registers three model-callable memory tools: `memory_search` /
