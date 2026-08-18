@@ -19,6 +19,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { familyForType } from '../types.js';
 import { bm25RankToScore, buildFtsQuery, tokenizeForFts } from './search-utils.js';
+import { describeTokenizer, ensureTokenizer, tokenizerStamp } from '../util/tokenizer.js';
 const require = createRequire(import.meta.url);
 const TAG = '[memory][sqlite]';
 /** vec0 KNN 对遗留零向量的补偿缓冲（官方同款）。 */
@@ -107,6 +108,9 @@ export class MemoryDb {
         // dimensions=0 是合法的"纯 FTS 模式"，不能因 sqlite-vec 缺失而降级（官方语义）；
         // 后续活切换本地嵌入（维度 > 0）时由 swapProvider 补加载
         this.ensureVecLoaded();
+        // 分词器在首次 FTS 写入（迁移回灌）前定死模式：jieba 就绪 info / 回退 warn 一次
+        ensureTokenizer();
+        this.logger?.info(`${TAG} 分词器：${describeTokenizer()}`);
         try {
             return this.initSchema(providerInfo);
         }
@@ -317,12 +321,24 @@ export class MemoryDb {
         this.prepareL0VecStatements();
         // ── FTS5 全文索引（建表失败仅停用 FTS，不降级整个库） ──
         try {
-            // 旧 l1_fts 无 family 列（FTS5 无法 ALTER）→ drop 后从 l1_records 全量重建
+            // 索引重建判据（FTS5 无法 ALTER，只能 drop 后从源表全量回灌）：
+            // a) 旧 l1_fts 无 family 列；b) FTS 分词器版本戳 ≠ 当前生效分词器
+            //    （无戳 = jieba 引入前的二元组索引；jieba 升级/降级切换后旧 token
+            //    形态不再匹配，须按新分词器重建）。
+            const wantStamp = tokenizerStamp();
+            const savedStamp = this.readMetaString('fts_tokenizer') ?? 'bigram-v1';
+            const tokenizerChanged = savedStamp !== wantStamp;
             let ftsRebuilt = false;
-            if (this.tableExists('l1_fts') && !this.hasColumn('l1_fts', 'family')) {
+            if (this.tableExists('l1_fts') && (!this.hasColumn('l1_fts', 'family') || tokenizerChanged)) {
                 this.db.exec('DROP TABLE l1_fts');
                 ftsRebuilt = true;
-                this.logger?.info(`${TAG} l1_fts 缺 family 列，重建全文索引`);
+                this.logger?.info(`${TAG} l1_fts 缺 family 列或分词器已变更（${savedStamp} → ${wantStamp}），重建全文索引`);
+            }
+            let l0FtsRebuilt = false;
+            if (this.tableExists('l0_fts') && tokenizerChanged) {
+                this.db.exec('DROP TABLE l0_fts');
+                l0FtsRebuilt = true;
+                this.logger?.info(`${TAG} l0_fts 分词器已变更（${savedStamp} → ${wantStamp}），重建全文索引`);
             }
             this.db.exec(`
         CREATE VIRTUAL TABLE IF NOT EXISTS l1_fts USING fts5(
@@ -392,6 +408,15 @@ export class MemoryDb {
         ORDER BY rank ASC
         LIMIT ?
       `);
+            if (l0FtsRebuilt)
+                this.backfillL0Fts();
+            // 戳如实记录"构建当前 FTS 内容的分词器"（含全新空表：后续写入即该分词器）
+            try {
+                this.writeMetaString('fts_tokenizer', wantStamp);
+            }
+            catch {
+                /* 戳写失败只影响下次启动多一次重建，不阻断 */
+            }
             this.ftsAvailable = true;
         }
         catch (err) {
@@ -492,6 +517,22 @@ export class MemoryDb {
         if (rows.length > 0)
             this.logger?.info(`${TAG} l1_fts 回灌 ${rows.length} 行`);
     }
+    /** 重建后的 l0_fts 从 l0_conversations 全量回灌（仅 drop 重建时调用；iterate 流式防大库内存峰值）。 */
+    backfillL0Fts() {
+        let count = 0;
+        const stmt = this.db.prepare('SELECT record_id, session_id, role, message_text, recorded_at, timestamp FROM l0_conversations');
+        for (const r of stmt.iterate()) {
+            try {
+                this.stmtL0FtsInsert.run(tokenizeForFts(String(r.message_text ?? '')), String(r.message_text ?? ''), String(r.record_id ?? ''), String(r.session_id ?? 'default'), String(r.role ?? ''), String(r.recorded_at ?? ''), Number(r.timestamp ?? 0));
+                count++;
+            }
+            catch {
+                /* 单行失败跳过 */
+            }
+        }
+        if (count > 0)
+            this.logger?.info(`${TAG} l0_fts 回灌 ${count} 行`);
+    }
     readEmbeddingMeta() {
         try {
             const row = this.db
@@ -516,6 +557,23 @@ export class MemoryDb {
         this.db
             .prepare('INSERT INTO embedding_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
             .run('embedding_provider_info', JSON.stringify(info));
+    }
+    /** 通用字符串 kv（embedding_meta 表兼作元数据 kv 存储，如 FTS 分词器版本戳）。 */
+    readMetaString(key) {
+        try {
+            const row = this.db
+                .prepare('SELECT value FROM embedding_meta WHERE key = ?')
+                .get(key);
+            return row?.value ?? null;
+        }
+        catch {
+            return null;
+        }
+    }
+    writeMetaString(key, value) {
+        this.db
+            .prepare('INSERT INTO embedding_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+            .run(key, value);
     }
     /**
      * 持久化 embedding meta（语义：物理向量表当前对应的 provider/维度）。

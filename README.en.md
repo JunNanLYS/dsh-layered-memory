@@ -1,23 +1,80 @@
-[简体中文](README.md) | **English**
+<div align="center">
 
-<p align="center">
-  <img src="./assets/img/Hero.png" width="100%"
-       alt="DeepSeek Harness hero banner: conversations distilled into layered memories and recalled before every model step — chat bubbles dissolve into three progressively brighter light layers flowing into a frosted-glass capsule with a glowing orb and gradient track (tick labels: 日常·工作·智能·关闭), with light threads looping back to suggest recall">
-</p>
+<img src="./assets/img/Hero.png" width="100%"
+     alt="DeepSeek Harness hero banner: conversations distilled into layered memories and recalled before every model step — chat bubbles dissolve into three progressively brighter light layers flowing into a frosted-glass capsule with a glowing orb and gradient track (tick labels: 日常·工作·智能·关闭), with light threads looping back to suggest recall">
 
 # dsh-layered-memory
 
-A **layered distillation memory plugin** for DeepSeek Harness (persistent composition
-plugin): conversations are processed in the background through L0 capture → L1 atomic
-memories → L2 scene consolidation → L3 persona distillation, and relevant memories are
-automatically injected into context before every model step — neither the user nor the
-model needs to do anything.
+**A layered distillation memory plugin for DeepSeek Harness: conversations are processed in the background through L0 capture → L1 atomic memories → L2 scene consolidation → L3 persona distillation, and relevant memories are automatically injected into context before every model step — neither the user nor the model needs to do anything.**
 
-> The core memory capabilities of this plugin (the L0–L3 layered distillation pipeline,
-> prompts, and dual-write storage design) are modeled after **MemoryCore** from
-> [TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory):
-> prompts are kept as-is; only the L2/L3 "LLM manipulates files" flow is adapted to
-> "LLM outputs, engineering side executes".
+[简体中文](README.md) · [Latest release](https://github.com/JunNanLYS/dsh-layered-memory/releases/latest) · [Report issues](https://github.com/JunNanLYS/dsh-layered-memory/issues)
+
+[![main 0.7.1](https://img.shields.io/badge/main-0.7.1-6f83ff?style=flat-square)](https://github.com/JunNanLYS/dsh-layered-memory/tree/main)
+[![DSH 0.1.0-rc.6](https://img.shields.io/badge/DSH-0.1.0--rc.6-8b5cf6?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
+[![MIT License](https://img.shields.io/badge/license-MIT-536990?style=flat-square)](LICENSE)
+
+</div>
+
+## Getting Started
+
+Requires Node ≥ 22.16. Two invocation styles — the `npx` prefix can replace `dsh` in
+any command below:
+
+```bash
+# Option 1: run the official CLI directly via npx (no pre-installed dsh; version can be pinned, e.g. dsh-layered-memory@0.7.1)
+npx -y @deepseek-ai/dsh plugin --profile web add dsh-layered-memory
+
+# Option 2: with the dsh CLI installed (dsh is a pnpm forwarder; npm i -g pnpm first if missing)
+dsh plugin --profile web add dsh-layered-memory
+
+# Alternative sources: GitHub repo / local path (dev & debugging, link: points at the repo; npm run build + restart dsh to apply)
+dsh plugin --profile web add https://github.com/JunNanLYS/dsh-layered-memory
+dsh plugin --profile web add /path/to/dsh-layered-memory
+```
+
+### Install via an AI Agent (Recommended)
+
+If your current agent can run terminal commands, send it this message as-is:
+
+```text
+Please install the dsh-layered-memory plugin for the web profile of DeepSeek Harness.
+
+Run only the two commands below and do not modify any other profile:
+dsh plugin --profile web add dsh-layered-memory
+dsh --profile web --dump-config
+
+Confirm that dsh-layered-memory appears in the output, then report the result to me.
+Do not close or restart my running DSH yourself; after installation, remind me to manually restart the DSH Web Host.
+```
+
+The agent should report the installation result and explicitly tell you whether
+`dsh-layered-memory` has appeared in the configuration.
+
+This package declares a `dsh.bundle` composition layer (`cordis.patch.yml`); after
+installation the **plugin entry is mounted automatically** — no need to hand-edit
+`$DSH_HOME/profiles/web/cordis.patch.yml`. Then restart DeepSeek Harness and verify:
+the appearance of `conversations/ records/ scenes/` and `memory.db` under
+`~/.dsh/memory/` means the plugin applied successfully; the "Memory" page in settings
+and the mode pill in the input bar mean the client half is ready.
+
+> ⚠️ **Security note**: installing a plugin = running third-party code with your
+> privileges. This plugin reads session content, writes files in its data directory,
+> and calls the LLM/embedding services you configured; if that concerns you, review
+> the source first (`src/`).
+
+**Uninstall**: `dsh plugin --profile web remove dsh-layered-memory` + restart. Data
+stays in `~/.dsh/memory/`; delete the whole directory manually if you don't need it.
+
+### Development from Source
+
+```bash
+git clone https://github.com/JunNanLYS/dsh-layered-memory
+cd dsh-layered-memory
+npm install && npm run build
+dsh plugin --profile web add .        # link: install; after code changes, npm run build + restart dsh
+npm run smoke                         # smoke test (rebuild first: see command below)
+npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution nodenext --target es2022 --strict --skipLibCheck --esModuleInterop
+```
 
 ## Runtime Data Flow
 
@@ -51,49 +108,6 @@ tools: `memory_search` / `conversation_search` / `memory_read_scene`.
 - Each session's choice is persisted by sessionId to `session-modes.json`, surviving
   restarts/session restore; stacks with the global switches (global is the master gate);
   L2/L3 are fully family-isolated — content never leaks across families.
-
-## Getting Started
-
-Requires Node ≥ 22.16. Two invocation styles — the `npx` prefix can replace `dsh` in
-any command below:
-
-```bash
-# Option 1: run the official CLI directly via npx (no pre-installed dsh; version can be pinned, e.g. dsh-layered-memory@0.6.1)
-npx -y @deepseek-ai/dsh plugin --profile web add dsh-layered-memory
-
-# Option 2: with the dsh CLI installed (dsh is a pnpm forwarder; npm i -g pnpm first if missing)
-dsh plugin --profile web add dsh-layered-memory
-
-# Alternative sources: GitHub repo / local path (dev & debugging, link: points at the repo; npm run build + restart dsh to apply)
-dsh plugin --profile web add https://github.com/JunNanLYS/dsh-layered-memory
-dsh plugin --profile web add /path/to/dsh-layered-memory
-```
-
-This package declares a `dsh.bundle` composition layer (`cordis.patch.yml`); after
-installation the **plugin entry is mounted automatically** — no need to hand-edit
-`$DSH_HOME/profiles/web/cordis.patch.yml`. Then restart DeepSeek Harness and verify:
-the appearance of `conversations/ records/ scenes/` and `memory.db` under
-`~/.dsh/memory/` means the plugin applied successfully; the "Memory" page in settings
-and the mode pill in the input bar mean the client half is ready.
-
-> ⚠️ **Security note**: installing a plugin = running third-party code with your
-> privileges. This plugin reads session content, writes files in its data directory,
-> and calls the LLM/embedding services you configured; if that concerns you, review
-> the source first (`src/`).
-
-**Uninstall**: `dsh plugin --profile web remove dsh-layered-memory` + restart. Data
-stays in `~/.dsh/memory/`; delete the whole directory manually if you don't need it.
-
-### Development from Source
-
-```bash
-git clone https://github.com/JunNanLYS/dsh-layered-memory
-cd dsh-layered-memory
-npm install && npm run build
-dsh plugin --profile web add .        # link: install; after code changes, npm run build + restart dsh
-npm run smoke                         # smoke test (rebuild first: see command below)
-npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution nodenext --target es2022 --strict --skipLibCheck --esModuleInterop
-```
 
 ## UI Preview
 
@@ -176,20 +190,17 @@ local), switchable at runtime in the settings page — see the next section.
 Pick the embedding source in Settings → Memory → Overview → Semantic Retrieval;
 it takes effect immediately, no config edit or restart:
 
-| Source | Description |
-| --- | --- |
-| **Off** (default) | No vector embedding at all; pure BM25 keyword retrieval |
-| **Remote** | Bring any OpenAI-compatible `/embeddings` service (selectable only when the `embedding.*` quartet is configured) |
-| **Local** | Pick from a built-in model catalog, ONNX-quantized **CPU inference** — no API key, data never leaves the machine |
+<p align="center">
+  <img src="./assets/img/EmbeddingSource.png" width="100%"
+       alt="Semantic retrieval (embedding source) panel in the settings page (light theme): a three-state selector (Off/Local/Remote, Local selected) showing the current source and the first-run runtime install hint; below it the local model catalog lists BGE small Chinese (in use/ready), EmbeddingGemma 300M (download 316MB) and BGE-M3 (download 560MB) with dims/context/size/notes and download buttons">
+</p>
 
-The local catalog is a built-in allowlist (each model pinned to a revision with
-per-file sha256; arbitrary repos cannot be downloaded):
-
-| Model | Dims | Context | Size | Notes |
-| --- | --- | --- | --- | --- |
-| BGE small Chinese | 512 | 512 | ~25MB | Fastest on CPU; good first taste of semantic retrieval |
-| EmbeddingGemma 300M | 768 | 2048 | ~330MB | 100+ languages incl. Chinese; balanced quality/cost (same as upstream MemoryCore) |
-| BGE-M3 | 1024 | 8192 | ~590MB | Best Chinese quality; a single embedding can take seconds |
+Three sources: **Off** (default; no vector embedding at all, pure BM25 keyword
+retrieval), **Remote** (bring any OpenAI-compatible `/embeddings` service, selectable
+only when the `embedding.*` quartet is configured), **Local** (pick from a built-in
+model catalog, ONNX-quantized **CPU inference** — no API key, data never leaves the
+machine). The local catalog is a built-in allowlist (each model pinned to a revision
+with per-file sha256; arbitrary repos cannot be downloaded).
 
 - **Download**: one click on the model card (default mirror `hf-mirror.com`, resumable
   downloads + sha256 integrity checks); stored under `models/<id>/` in the data
@@ -222,7 +233,7 @@ of the raw model output; all failure warns carry the first stack frame.
 - The full pipeline is embedded (no external Gateway); distillation reuses DSH's own LLM;
 - L2/L3 changed from "LLM manipulates file tools" to "LLM outputs operation JSON / full documents, engineering side executes";
 - Recall injection happens at `agent/pre-step` + agent-scoped `systemPrompt.context` (DSH-native events/services);
-- Storage/retrieval is a single-machine slimmed version of the official sqlite backend (drops multi-tenant isolation columns, TCVDB cloud backend, audit tables; tokenization uses a bundled CJK bigram instead of jieba, keeping zero native dependencies — sqlite-vec is the only native extension, auto-degrading on load failure).
+- Storage/retrieval is a single-machine slimmed version of the official sqlite backend (drops multi-tenant isolation columns, TCVDB cloud backend, audit tables; tokenization uses jieba like the official one — @node-rs/jieba prebuilt binaries union CJK character bigrams: word tokens give BM25 exact-word hits while bigrams keep sub-word recall; on load failure it falls back to pure bigrams, and FTS indexes are rebuilt automatically via a tokenizer version stamp).
 
 ## Credits
 
