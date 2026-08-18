@@ -1265,7 +1265,7 @@ async function main(): Promise<void> {
     assert(buildRecallQuery([]) === '', '空输入返回空查询');
     assert(buildRecallQuery([{ content: [] }, { content: [{ type: 'text', text: '  ' }] }]) === '', '无有效文本返回空查询');
 
-    // 15b. pre-step：空查询清空该 agent 的召回缓存（不沿用上一步命中）
+    // 15b. pre-step 消息侧注入（ADR-0001）：合成消息排在用户消息之前、带插件来源与 recall 形态
     const tmpT5 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-recall-'));
     try {
       const contextText: Record<string, () => string> = {};
@@ -1273,9 +1273,15 @@ async function main(): Promise<void> {
         id: 'agent-t5',
         ctx: { systemPrompt: { context: (def: { name: string; text: () => string }) => { contextText[def.name] = def.text; return () => {}; } } },
       };
-      let preStep: ((payload: { agent: { id: string }; messages: Array<{ content: unknown }> }, next: () => void) => Promise<void>) | undefined;
+      type Decision = { kind: 'enter'; messages: Array<Record<string, unknown>> } | { kind: 'reject' };
+      let preStep:
+        | ((
+            payload: { agent: { id: string }; messages: Array<{ content: unknown }>; signal: { aborted: boolean } },
+            next: () => Promise<Decision>,
+          ) => Promise<Decision>)
+        | undefined;
       const ctxT5 = {
-        on: (ev: string, h: typeof preStep) => {
+        on: (ev: string, h: typeof preStep, _opts?: unknown) => {
           if (ev === 'agent/pre-step') preStep = h;
           return () => {};
         },
@@ -1283,11 +1289,13 @@ async function main(): Promise<void> {
         get: (name: string) => (name === 'agents' ? { list: () => [fakeAgent] } : undefined),
       } as never;
       let searchCalls = 0;
+      let hitContent = '命中记忆内容';
+      let personaText = '';
       const storesT5 = {
         l1: {
           search: async () => {
             searchCalls++;
-            return [{ id: 'h1', content: '命中记忆内容', type: 'persona', priority: 70, scene_name: '', score: 0.9, family: 'chat' }];
+            return [{ id: 'h1', content: hitContent, type: 'persona', priority: 70, scene_name: '闲聊', score: 0.9, family: 'chat' }];
           },
         },
         scenes: {
@@ -1295,7 +1303,7 @@ async function main(): Promise<void> {
           work: { navigation: async () => '' },
         },
         persona: {
-          chat: { read: async () => '' },
+          chat: { read: async () => personaText },
           work: { read: async () => '' },
         },
       } as never;
@@ -1304,24 +1312,134 @@ async function main(): Promise<void> {
       const liveT5 = { supported: true, get: () => ({ enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' }) };
       registerRecall(
         ctxT5,
-        { recall: { enabled: true, maxResults: 5, includePersona: true, includeSceneNav: true, strategy: 'keyword', scoreThreshold: 0.3 } } as never,
+        {
+          tools: true,
+          recall: {
+            enabled: true,
+            maxResults: 5,
+            maxCharsPerMemory: 500,
+            maxTotalRecallChars: 2000,
+            timeoutMs: 5000,
+            includePersona: true,
+            includeSceneNav: true,
+            strategy: 'keyword',
+            scoreThreshold: 0.3,
+          },
+        } as never,
         storesT5,
         silentLogger,
         liveT5 as never,
         modesT5,
       );
-      assert(typeof contextText['memory:recall'] === 'function', 'agent 作用域召回上下文已注册');
+      assert(contextText['memory:recall'] === undefined, '动态召回槽（memory:recall）已从系统提示撤除');
+      assert(typeof contextText['memory:profile'] === 'function', '系统提示稳定区上下文已注册');
       let nexted = 0;
-      await preStep!({ agent: { id: 'agent-t5' }, messages: [msg('咖啡 手冲 偏好')] }, () => {
-        nexted++;
-      });
-      assert(nexted === 1 && searchCalls === 1, '有查询时执行检索且必调 next()');
-      assert(contextText['memory:recall']().includes('命中记忆内容'), '命中注入 <relevant-memories>');
-      await preStep!({ agent: { id: 'agent-t5' }, messages: [] }, () => {
-        nexted++;
-      });
-      assert(nexted === 2 && searchCalls === 1, '空查询不发起检索');
-      assert(contextText['memory:recall']() === '', '空查询清空缓存（上一步命中不再注入）');
+      const enter = (msgs: Array<Record<string, unknown>>): Decision => ({ kind: 'enter', messages: msgs });
+      const userMsg = { id: 'u1', role: 'user', content: [{ type: 'text', text: '咖啡 手冲 偏好' }], source: { kind: 'user' }, timestamp: 1 };
+      const toolMsg = { id: 'c1', role: 'user', content: [{ type: 'text', text: '工具上下文' }], source: { kind: 'tool' }, timestamp: 2 };
+
+      // ① 有新用户消息 → 注入合成消息排在用户消息之前，带插件来源与 recall 形态
+      const d1 = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
+        () => {
+          nexted++;
+          return Promise.resolve(enter([userMsg]));
+        },
+      );
+      assert(nexted === 1 && searchCalls === 1, '先 next() 再改写，有查询时执行检索');
+      assert(d1.kind === 'enter' && d1.messages.length === 2, `注入消息插入（${d1.kind === 'enter' ? d1.messages.length : 'reject'}）`);
+      const inj = d1.kind === 'enter' ? (d1.messages[0] as { source?: Record<string, string>; content?: Array<{ text?: string }> }) : undefined;
+      assert(
+        inj?.source?.kind === 'plugin' && inj?.source?.plugin === 'dsh-memory' && inj?.source?.form === 'recall',
+        `注入消息带插件来源与 recall 形态（${JSON.stringify(inj?.source)}）`,
+      );
+      const injText = inj?.content?.[0]?.text ?? '';
+      assert(
+        injText.includes('<relevant-memories>') && injText.includes('不代表当前任务进程，仅作为参考') && injText.includes('[persona|闲聊] 命中记忆内容'),
+        '注入文本：<relevant-memories> 包裹 + 引导语 + 命中行',
+      );
+      assert(d1.kind === 'enter' && d1.messages[1] === userMsg, '注入消息排在用户消息之前，原消息保持引用不变');
+
+      // ② 纯工具步（无用户来源消息）→ 透传，不检索
+      const d2 = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [toolMsg] as never, signal: { aborted: false } },
+        () => Promise.resolve(enter([toolMsg])),
+      );
+      assert(d2.kind === 'enter' && d2.messages.length === 1 && d2.messages[0] === toolMsg, '纯工具步透传（不注入）');
+      assert(searchCalls === 1, '工具步不发起检索');
+
+      // ③ reject 决策透传
+      const d3 = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
+        () => Promise.resolve({ kind: 'reject' }),
+      );
+      assert(d3.kind === 'reject' && searchCalls === 1, 'reject 决策原样透传（不检索）');
+
+      // ④ 预算截断：单条 600 字符命中被截到 500 并带工具引导后缀
+      hitContent = '长'.repeat(600);
+      const d4 = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
+        () => Promise.resolve(enter([userMsg])),
+      );
+      const inj4 = d4.kind === 'enter' ? (d4.messages[0] as { content?: Array<{ text?: string }> }) : undefined;
+      assert(
+        (inj4?.content?.[0]?.text ?? '').includes('…（已截断；可用 memory_search 或 conversation_search 查看详情）'),
+        '超预算命中截断并引导用工具查全文',
+      );
+      hitContent = '命中记忆内容';
+
+      // ⑤ off 档 → 不注入不检索
+      modesT5.set('agent-t5', 'off');
+      const d5 = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
+        () => Promise.resolve(enter([userMsg])),
+      );
+      assert(d5.kind === 'enter' && d5.messages.length === 1, 'off 档不注入');
+      assert(searchCalls === 2, `off 档不发起检索（${searchCalls}）`);
+      modesT5.set('agent-t5', 'auto');
+
+      // ⑥ 指南三条件门控：有本轮召回命中（① 设置）→ 即便画像/导航全空也注入指南
+      assert((contextText['memory:profile']() ?? '').includes('记忆工具调用指南'), '本轮有召回命中 → 指南注入（画像/导航为空）');
+      // ⑦ 工具关闭 → 指南消失（画像照常）
+      const contextText2: Record<string, () => string> = {};
+      const fakeAgent2 = {
+        id: 'agent-t5b',
+        ctx: { systemPrompt: { context: (def: { name: string; text: () => string }) => { contextText2[def.name] = def.text; return () => {}; } } },
+      };
+      const ctxT5b = {
+        on: (ev: string, h: typeof preStep, _opts?: unknown) => {
+          if (ev === 'agent/pre-step') preStep = h;
+          return () => {};
+        },
+        effect: (f: () => (() => void)) => f(),
+        get: (name: string) => (name === 'agents' ? { list: () => [fakeAgent2] } : undefined),
+      } as never;
+      personaText = '用户画像内容';
+      registerRecall(
+        ctxT5b,
+        {
+          tools: false,
+          recall: {
+            enabled: true,
+            maxResults: 5,
+            maxCharsPerMemory: 500,
+            maxTotalRecallChars: 2000,
+            timeoutMs: 5000,
+            includePersona: true,
+            includeSceneNav: true,
+            strategy: 'keyword',
+            scoreThreshold: 0.3,
+          },
+        } as never,
+        storesT5,
+        silentLogger,
+        liveT5 as never,
+        modesT5,
+      );
+      await new Promise((r) => setTimeout(r, 30)); // 等 profileCache 首刷
+      const profileNoTools = contextText2['memory:profile']() ?? '';
+      assert(profileNoTools.includes('用户画像内容') && !profileNoTools.includes('记忆工具调用指南'), '工具关闭 → 画像照常、指南不注入');
+      personaText = '';
     } finally {
       await fs.rm(tmpT5, { recursive: true, force: true }).catch(() => {});
     }
