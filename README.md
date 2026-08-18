@@ -211,6 +211,13 @@ LLM 空输出带完整诊断（finish 原因 / token 计数 / reasoning 摘录�
 [TencentCloud/TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory)
 项目中的 **MemoryCore**，感谢原项目开放的设计与实现。
 
+## 路线图
+
+以下为规划中的功能，欢迎在 [Issues](https://github.com/JunNanLYS/dsh-layered-memory/issues) 反馈需求与优先级：
+
+- [ ] **Git 分支感知**：记忆与当前 git 分支关联，召回可按分支过滤/加权（与现有记忆档位正交）
+- [ ] **Claude Code / Codex 记忆导入**：一键迁移既有记忆资产（`CLAUDE.md`、Claude Code 记忆文件、Codex `AGENTS.md` 等），导入后进入分层蒸馏管线
+
 ## License
 
 [MIT](LICENSE)

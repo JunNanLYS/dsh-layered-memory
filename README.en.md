@@ -231,6 +231,14 @@ dual-write storage architecture) are modeled after **MemoryCore** from
 [TencentCloud/TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory).
 Thanks to the original project for open-sourcing its design and implementation.
 
+## Roadmap
+
+Features under planning — feedback and priorities welcome in the
+[issue tracker](https://github.com/JunNanLYS/dsh-layered-memory/issues):
+
+- [ ] **Git branch awareness**: associate memories with the current git branch; recall can filter/boost by branch (orthogonal to the existing memory modes)
+- [ ] **Claude Code / Codex memory import**: one-click migration of existing memory assets (`CLAUDE.md`, Claude Code memory files, Codex `AGENTS.md`, etc.), fed into the layered distillation pipeline
+
 ## License
 
 [MIT](LICENSE)
