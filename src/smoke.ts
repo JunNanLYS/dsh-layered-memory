@@ -223,6 +223,16 @@ async function main(): Promise<void> {
     const after = await l1.search('分层 架构', 5);
     assert(after.length >= 1 && after.every((h) => h.id !== 'r1'), '被替换记录不再出现');
 
+    // FTS 点查预判的行为不变性：同 id 覆盖 upsert → 旧内容不可搜、新内容可搜且无重复索引行
+    // （防御性 FTS 删除仅在主表已有该行时执行；漏删会出现旧行残留，多删/重复会出现同 id 双行）
+    await l1.appendNew([
+      { id: 'r2', content: '用户改喝拿铁咖啡', type: 'persona', priority: 70, scene_name: '闲聊', timestamps: [now], createdAt: now, updatedAt: now, version: 1, source_message_ids: [], metadata: {} },
+    ]);
+    const dupOld = await l1.search('手冲', 5);
+    assert(dupOld.length === 0, '覆盖 upsert 后旧 FTS 内容不可搜（防御删除在覆盖路径仍执行）');
+    const dupNew = await l1.search('拿铁', 5);
+    assert(dupNew.length === 1 && dupNew[0].id === 'r2', '覆盖 upsert 后新内容可搜且无重复索引行');
+
     console.log('== 4. L2 场景块 ==');
     const scenes = new SceneStore(tmp, 'chat');
     await scenes.init();
