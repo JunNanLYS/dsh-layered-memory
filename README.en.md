@@ -9,7 +9,7 @@
 
 [简体中文](README.md) · [Latest release](https://github.com/JunNanLYS/dsh-layered-memory/releases/latest) · [Report issues](https://github.com/JunNanLYS/dsh-layered-memory/issues)
 
-[![main 0.7.1](https://img.shields.io/badge/main-0.7.1-6f83ff?style=flat-square)](https://github.com/JunNanLYS/dsh-layered-memory/tree/main)
+[![main 0.8.0](https://img.shields.io/badge/main-0.8.0-6f83ff?style=flat-square)](https://github.com/JunNanLYS/dsh-layered-memory/tree/main)
 [![DSH 0.1.0-rc.6](https://img.shields.io/badge/DSH-0.1.0--rc.6-8b5cf6?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
 [![MIT License](https://img.shields.io/badge/license-MIT-536990?style=flat-square)](LICENSE)
 
@@ -21,7 +21,7 @@ Requires Node ≥ 22.16. Two invocation styles — the `npx` prefix can replace 
 any command below:
 
 ```bash
-# Option 1: run the official CLI directly via npx (no pre-installed dsh; version can be pinned, e.g. dsh-layered-memory@0.7.1)
+# Option 1: run the official CLI directly via npx (no pre-installed dsh; version can be pinned, e.g. dsh-layered-memory@0.8.0)
 npx -y @deepseek-ai/dsh plugin --profile web add dsh-layered-memory
 
 # Option 2: with the dsh CLI installed (dsh is a pnpm forwarder; npm i -g pnpm first if missing)

@@ -9,7 +9,7 @@
 
 [English](README.en.md) · [最新发行版](https://github.com/JunNanLYS/dsh-layered-memory/releases/latest) · [反馈问题](https://github.com/JunNanLYS/dsh-layered-memory/issues)
 
-[![main 0.7.1](https://img.shields.io/badge/main-0.7.1-6f83ff?style=flat-square)](https://github.com/JunNanLYS/dsh-layered-memory/tree/main)
+[![main 0.8.0](https://img.shields.io/badge/main-0.8.0-6f83ff?style=flat-square)](https://github.com/JunNanLYS/dsh-layered-memory/tree/main)
 [![DSH 0.1.0-rc.6](https://img.shields.io/badge/DSH-0.1.0--rc.6-8b5cf6?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
 [![MIT License](https://img.shields.io/badge/license-MIT-536990?style=flat-square)](LICENSE)
 
@@ -20,7 +20,7 @@
 需要 Node ≥ 22.16。两种调用方式任选（`npx` 前缀可替换下面任何 `dsh` 命令）：
 
 ```bash
-# 方式一：npx 直接跑官方 CLI（无需预装 dsh；可 pin 版本，如 dsh-layered-memory@0.7.1）
+# 方式一：npx 直接跑官方 CLI（无需预装 dsh；可 pin 版本，如 dsh-layered-memory@0.8.0）
 npx -y @deepseek-ai/dsh plugin --profile web add dsh-layered-memory
 
 # 方式二：已装 dsh CLI（dsh 是 pnpm 转发器，未装 pnpm 时先 npm i -g pnpm）
