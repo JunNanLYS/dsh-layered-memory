@@ -3,6 +3,10 @@ dist-smoke/
 .zcode/
 wayfinder/
 AGENTS.md
+.scratch/
+docs/dsh-dev-experience.md
+docs/review-report-*.md
+docs/spec-*.md
 *.tsbuildinfo
 .DS_Store
 Thumbs.db
