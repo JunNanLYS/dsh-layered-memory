@@ -142,6 +142,23 @@ trajectory view):
        alt="The same settings memory browser overview in light theme: identical layout and information on light card backgrounds with the same accent family, theme switch without reload">
 </p>
 
+## Measured Comparison (Learning-Curve Benchmark)
+
+Screenshots show what the plugin looks like — this section answers "**what does enabling it actually buy you?**" The repo ships a reproducible real-machine benchmark ([`bench/`](./bench/)): the same workflow is executed twice, each time in a **fresh session**, comparing memory-on vs memory-off on the second run. The value of memory is not in the first run — with or without it, the agent has to trial-and-error. It shows in the second run: with memory on, the agent recalls the previous context, stops asking for login credentials, skips the dead ends it already hit, and takes the proven path directly; with memory off, every run starts from zero.
+
+Each test set follows a fixed matrix of 4 executions (order A1→A2→B1→B2, fresh session each time):
+
+| Run | Memory | What it measures |
+|---|---|---|
+| A1 / B1 | on / off | First-run baseline; the two should be roughly equal (fairness self-check) |
+| **A2 vs B2** | on vs off | **The core comparison**: second run, where memory pays off |
+
+Three test sets, each targeting a different kind of memory — **credentials & procedure** (log in to Bilibili → trending list → download the top video), **user preferences** ("tidy my downloads folder the usual way", including naming-format details), and **proven paths** (pip installs via mirror — does the first command of the second run carry `-i` on its own?). Six metrics: input/output tokens, step count, wall-clock time, times the agent asks the user back, failed tool attempts, and task completion — hand-recorded in [`bench/results.md`](./bench/results.md).
+
+> **First batch of measured data is being recorded; results will be published here** (with the execution environment declared).
+
+Methodology notes and limitations (declared alongside the published numbers): single operator, single machine, one execution per cell, results vary with model and network (non-deterministic); the fixed run order makes the practice effect bias memory gains **conservatively**; the playbook author is also the plugin author, so task selection naturally favors memory-advantage scenarios — you are welcome to reproduce it yourself with [bench/playbook.md](./bench/playbook.md).
+
 ## Configuration
 
 Override configs go into the profile's own `cordis.patch.yml` as a **top-level bare
