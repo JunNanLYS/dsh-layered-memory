@@ -44,9 +44,13 @@ const outRoot = path.resolve(String(arg('out', path.join(repoRoot, 'bench', 'res
 const repeats = Math.max(1, Number(arg('repeats', 1)) || 1);
 const distillTimeout = String(arg('distill-timeout', 120000));
 
-const dshBin = process.env.DSH_BIN || 'C:/Users/18906/.dsh/profiles/node_modules/@deepseek-ai/dsh/lib/bin.js';
-if (!fs.existsSync(dshBin)) {
-  console.error(`找不到 dsh CLI：${dshBin}（可用环境变量 DSH_BIN 覆盖）`);
+const dshBin = [
+  process.env.DSH_BIN,
+  path.join(os.homedir(), '.npm-global/node_modules/@deepseek-ai/dsh/lib/bin.js'), // rc.8 起全局安装
+  path.join(os.homedir(), '.dsh/profiles/node_modules/@deepseek-ai/dsh/lib/bin.js'), // 旧布局/heal junction 兜底
+].filter(Boolean).find((p) => fs.existsSync(p));
+if (!dshBin) {
+  console.error('找不到 dsh CLI（依次找 DSH_BIN → npm 全局前缀 → ~/.dsh/profiles；可用环境变量 DSH_BIN 覆盖）');
   process.exit(2);
 }
 const patchFile = path.join(here, `${track === 'workflow' ? 'patch-wf-' : 'patch-'}arm-${arm === 'A' ? 'on' : 'off'}.yml`);

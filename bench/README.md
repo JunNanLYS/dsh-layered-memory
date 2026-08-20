@@ -24,9 +24,10 @@ bench/
 # 1. 构建（bench profile 以 link: 指向本仓库，改代码后 build + 重跑即生效）
 npm run build
 
-# 2. 初始化 bench profile 并安装两个本地包（dsh CLI 路径按需用 DSH_BIN 覆盖）
-node <dsh>/lib/bin.js plugin --profile bench add D:\Project\dsh-memory
-node <dsh>/lib/bin.js plugin --profile bench add D:\Project\dsh-memory\bench\harness\dsh-bench-runner
+# 2. 初始化 bench profile 并安装两个本地包（dsh rc.8 起全局安装、直接 `dsh`；
+#    老布局可用 DSH_BIN 覆盖入口路径）
+dsh plugin --profile bench add D:\Project\dsh-memory
+dsh plugin --profile bench add D:\Project\dsh-memory\bench\harness\dsh-bench-runner
 
 # 3. 场景库校验（可挂 CI）
 node bench/harness/validate-scenarios.mjs bench/scenarios

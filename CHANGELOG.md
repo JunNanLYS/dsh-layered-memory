@@ -3,6 +3,15 @@
 本文件记录 dsh-layered-memory（0.5.0 前名为 dsh-memory-plugin）的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]（Unreleased）
+
+- **宿主依赖钉死升级 0.1.0-rc.6 → 0.1.0-rc.8**：rc.8 实测**零 API 漂移**（类型编译/冒烟/
+  真机启动全过）。注意 peer 要求随之变为 dsh ≥ 0.1.0-rc.8；rc.8 起 dsh 本体改为
+  **全局安装**布局（`profiles/node_modules` 由 heal 机制维护为符号链接农场），
+  旧"实体树"装法会启动失败（详见 `docs/dsh-dev-experience.md` 第 11 节）。
+- bench `run.mjs`：dsh CLI 入口改为解析链（`DSH_BIN` → npm 全局前缀 → 旧布局兜底），
+  去除硬编码个人路径，其它机器可直接运行。
+
 ## [0.8.1] — 2026-08-20
 
 蒸馏模型运行时切换 + 模型下载抗污染重试 + DSH-MemBench v3 自动化基准。
