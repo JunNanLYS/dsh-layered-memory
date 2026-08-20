@@ -1,7 +1,15 @@
 import Schema from '@deepseek-ai/schemastery';
 import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 const NS = settingsNamespace('dsh-memory');
-const ALWAYS_ON = { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' };
+const ALWAYS_ON = {
+    enabled: true,
+    capture: true,
+    distill: true,
+    recall: true,
+    reasoningEffort: '',
+    distillProvider: '',
+    distillModel: '',
+};
 /**
  * 进程内 scope 复用（fiber 重启重挂）。
  * dsh-settings 的 register 把注册挂在其**服务自身 ctx** 的 effect 上
@@ -26,6 +34,8 @@ export function liveSettingsSchema() {
         distill: Schema.boolean().default(true),
         recall: Schema.boolean().default(true),
         reasoningEffort: Schema.union(['', 'off', 'high', 'max']).default(''),
+        distillProvider: Schema.string().default(''),
+        distillModel: Schema.string().default(''),
     });
 }
 export function registerLiveSettings(ctx, logger) {
@@ -43,7 +53,10 @@ export function registerLiveSettings(ctx, logger) {
             const prev = current;
             current = resolveSettings(next);
             logger.info(`[memory] 记忆模式开关更新：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}` +
-                `，蒸馏思考=${current.reasoningEffort || '跟随配置'}（此前 总=${prev.enabled}）`);
+                `，蒸馏思考=${current.reasoningEffort || '跟随配置'}（此前 总=${prev.enabled}）` +
+                (current.distillProvider && current.distillModel
+                    ? `，蒸馏模型=${current.distillProvider}/${current.distillModel}`
+                    : ''));
         });
         return {
             supported: true,
@@ -135,5 +148,7 @@ function resolveSettings(value) {
         reasoningEffort: typeof v.reasoningEffort === 'string' && efforts.includes(v.reasoningEffort)
             ? v.reasoningEffort
             : '',
+        distillProvider: typeof v.distillProvider === 'string' ? v.distillProvider : '',
+        distillModel: typeof v.distillModel === 'string' ? v.distillModel : '',
     };
 }

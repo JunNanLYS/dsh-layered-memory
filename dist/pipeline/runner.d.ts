@@ -36,10 +36,15 @@ export interface PipelineTask {
 /** 选取下一个要执行的任务下标：最早的 live 优先，否则队首（rebuild 分块让位）。 */
 export declare function pickNextTaskIndex(tasks: PipelineTask[]): number;
 /**
- * 运行时调参视图：UI 选择器可临时覆盖蒸馏思考档位（空串回退静态 config 默认）。
- * 浅拷贝只覆盖 llm 一层，其余键与原 cfg 共享只读引用；pipeline 全链继续收 cfg，无需感知。
+ * 运行时调参视图：UI 选择器可临时覆盖蒸馏思考档位与蒸馏模型路由
+ * （空串回退静态 config / 默认选择）。浅拷贝只覆盖 llm 一层，其余键与原 cfg
+ * 共享只读引用；pipeline 全链继续收 cfg，无需感知。
+ *
+ * 蒸馏模型覆盖优先级：部署静态 pin（cfg.llm.provider+model 双字段齐）不可被
+ * 运行时覆盖（部署可强制蒸馏走内网路由，防用户选择把对话外送）；未 pin 时
+ * 运行时选择（distillProvider+distillModel 成对）生效；再退 agentDefaultModel。
  */
-export declare function effectiveCfg(cfg: MemoryConfig, live: LiveSettingsHandle): MemoryConfig;
+export declare function effectiveCfg(cfg: MemoryConfig, live?: LiveSettingsHandle): MemoryConfig;
 export declare class MemoryRunner {
     private readonly ctx;
     private readonly cfg;

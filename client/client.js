@@ -1463,6 +1463,183 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // ── 蒸馏模型选择器（供应商/模型两级下拉）──
+    // 数据源：dsh-memory/llm-providers（供应商目录 + 当前覆盖 + 实际生效路由）与
+    // dsh-memory/llm-models（所选供应商的模型列表）。写入走 settings-set 的
+    // distillProvider/distillModel 两键（成对提交）。部署静态 pin（pinned）时禁用。
+    function LlmModelRow(props) {
+      var rpc = props.rpc;
+      var disabled = !!props.disabled;
+
+      // 注意：全部 hook 必须在任何提前返回之前声明（Rules of Hooks）——
+      // info 未加载的首渲染会 return null，晚于它的 useState 会让 hook 数随渲染漂移而崩溃
+      var infoState = react.useState(null);
+      var setInfo = infoState[1];
+      var modelsState = react.useState(null);
+      var setModels = modelsState[1];
+      var draftState = react.useState("");
+      var setDraft = draftState[1];
+      var manualState = react.useState("");
+      var manualModel = manualState[0];
+      var setManualModel = manualState[1];
+
+      react.useEffect(function () {
+        var load = function () {
+          rpc("dsh-memory/llm-providers", {})
+            .then(function (r) { if (r && r.ok) setInfo(r.value); })
+            .catch(function () {});
+        };
+        load();
+        var timer = setInterval(load, 5000);
+        return function () { clearInterval(timer); };
+      }, [rpc]);
+
+      var info = infoState[0];
+      // 草稿供应商（已选待挑模型）优先于已存选择
+      var draft = draftState[0];
+      var curProvider = draft || (info && info.current ? info.current.provider : "");
+      var curModel = info && info.current ? info.current.model : "";
+
+      react.useEffect(function () {
+        if (!curProvider) { setModels(null); return undefined; }
+        var alive = true;
+        setModels(null);
+        rpc("dsh-memory/llm-models", { provider: curProvider })
+          .then(function (r) { if (alive && r && r.ok) setModels(r.value.models || []); })
+          .catch(function () { if (alive) setModels([]); });
+        return function () { alive = false; };
+      }, [rpc, curProvider]);
+
+      var writeLlm = function (patch) {
+        if (!info) return;
+        // 乐观更新：立即写视图字段，失败回滚
+        var prev = info;
+        setInfo(Object.assign({}, prev, {
+          current: Object.assign({}, prev.current, patch),
+        }));
+        setDraft("");
+        rpc("dsh-memory/settings-set", patch)
+          .then(function (r) {
+            if (!r || !r.ok) {
+              setInfo(prev);
+              setDraft(draft);
+            }
+          })
+          .catch(function () {
+            setInfo(prev);
+            setDraft(draft);
+          });
+      };
+
+      if (!info) return null;
+      if (info.pinned) {
+        // 部署静态 pin：显示固定路由，选择器不出场
+        return react.createElement(
+          "div", { style: S.switchRow },
+          react.createElement("div", null,
+            react.createElement("div", { style: S.switchLabel }, "蒸馏模型"),
+            react.createElement(
+              "div", { style: S.switchDesc },
+              "已由部署配置固定：" + info.effective.provider + " / " + info.effective.model,
+            )),
+        );
+      }
+
+      var providers = info.providers || [];
+      var models = modelsState[0];
+      var providerKnown = curProvider === "" || providers.some(function (p) { return p.id === curProvider; });
+      var modelKnown = models && models.some(function (m) { return m.id === curModel; });
+      // 供应商列表为空数组 = 适配器不提供模型目录：降级为手动输入模型 id
+      var manualInput = models !== null && models.length === 0;
+
+      var defaultLabel = info.default
+        ? "跟随默认（" + info.default.provider + " / " + info.default.model + "）"
+        : "跟随默认";
+
+      var providerOptions = [{ id: "", label: defaultLabel }].concat(
+        providers.map(function (p) { return { id: p.id, label: p.name + "（" + p.id + "）" }; }),
+      );
+      if (curProvider && !providerKnown) {
+        providerOptions.push({ id: curProvider, label: curProvider + "（已不在列表）" });
+      }
+
+      var modelOptions = [{ id: "", label: "跟随默认" }].concat(
+        (models || []).map(function (m) { return { id: m.id, label: m.name !== m.id ? m.name + "（" + m.id + "）" : m.id }; }),
+      );
+      if (curModel && !modelKnown) {
+        modelOptions.push({ id: curModel, label: curModel + "（已不在列表）" });
+      }
+
+      return react.createElement(
+        "div", { style: Object.assign({}, S.switchRow, { flexWrap: "wrap" }) },
+        react.createElement(
+          "select",
+          {
+            className: "dsh-mem-select",
+            style: { flexShrink: 0, maxWidth: 220 },
+            value: curProvider,
+            disabled: disabled,
+            onChange: function (e) {
+              var v = e.target.value;
+              if (v === "") {
+                writeLlm({ distillProvider: "", distillModel: "" });
+              } else {
+                setDraft(v);
+              }
+            },
+          },
+          providerOptions.map(function (o) {
+            return react.createElement("option", { key: o.id, value: o.id }, o.label);
+          }),
+        ),
+        !curProvider
+          ? null
+          : manualInput
+            ? react.createElement(NInput, {
+                style: { flex: 1, minWidth: 160 },
+                placeholder: "模型 id（该供应商未提供列表，手动输入后回车）…",
+                value: manualModel,
+                onChange: function (e) { setManualModel(e.target.value); },
+                onKeyDown: function (e) {
+                  if (e.key === "Enter" && manualModel.trim()) {
+                    writeLlm({ distillProvider: curProvider, distillModel: manualModel.trim() });
+                    setManualModel("");
+                  }
+                },
+              })
+            : react.createElement(
+                "select",
+                {
+                  className: "dsh-mem-select",
+                  style: { flex: 1, minWidth: 160 },
+                  value: curModel,
+                  disabled: disabled || models === null,
+                  onChange: function (e) {
+                    writeLlm({ distillProvider: curProvider, distillModel: e.target.value });
+                  },
+                },
+                modelOptions.map(function (o) {
+                  return react.createElement("option", { key: o.id, value: o.id }, o.label);
+                }),
+              ),
+        react.createElement("div", null,
+          react.createElement("div", { style: S.switchLabel }, "蒸馏模型"),
+          react.createElement(
+            "div", { style: S.switchDesc },
+            info.effective
+              ? "当前生效 " + info.effective.provider + " / " + info.effective.model +
+                  (curProvider ? "" : "（跟随默认选择）")
+              : "暂无可用路由（未选择且无默认）",
+          ),
+          !providerKnown || (curModel && models !== null && !modelKnown)
+            ? react.createElement(
+                "div", { style: { fontSize: 12, color: "var(--dsh-mem-danger)" } },
+                "所选供应商或模型已不在已配置列表中，蒸馏调用可能失败，建议重新选择。",
+              )
+            : null),
+      );
+    }
+
     // ── Tab：概览（开关面板 + 计数） ──
     function OverviewTab(props) {
       var rpc = props.rpc;
@@ -1619,6 +1796,7 @@ window.__ModuleLoader__.load({
                         )),
                     )
                   : null,
+                react.createElement(LlmModelRow, { rpc: rpc, disabled: !master }),
                 ceilingNote
                   ? react.createElement("p", { style: S.hint }, ceilingNote)
                   : null,

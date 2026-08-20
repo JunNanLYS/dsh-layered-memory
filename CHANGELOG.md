@@ -3,6 +3,39 @@
 本文件记录 dsh-layered-memory（0.5.0 前名为 dsh-memory-plugin）的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]（Unreleased）— 2026-08-20
+
+蒸馏模型运行时切换 + 模型下载抗污染重试。
+
+### 新增
+
+- **蒸馏模型运行时切换**（设置页 → 记忆 → 概览 →"蒸馏模型"选择器）：从宿主
+  **已配置的供应商路由**（含 dsh 设置 → 模型里添加的自定义 OpenAI 兼容供应商）
+  中选择蒸馏用的 provider/model，即时生效、无需重启、重启后保持。优先级：
+  部署静态 pin（`llm.provider`+`llm.model` 双字段齐，防用户选择把对话外送）
+  > 运行时选择 > 默认模型。新增 RPC 端点 `dsh-memory/llm-providers`
+  （供应商目录 + 默认选择 + 当前覆盖 + 实际生效路由 + 所选供应商是否仍注册）
+  与 `dsh-memory/llm-models`（按供应商列模型；适配器不提供目录时 UI 降级手输）；
+  供应商/模型被删后 UI 明示"已不在列表"并提示重选。
+
+### 修复
+
+- **EmbeddingGemma 无法安装**（真实根因）：目录里 `generation_config.json` 的
+  sha256 抄写错了一个字符（`a736d1b3` 误作 `a736b1b3`）——镜像从未返回过错误
+  字节，是完整性契约本身错了，下载必败且报"sha256 校验失败"无从下手。已按
+  实测修正，并对全目录 19 个文件做了权威核验（LFS 文件对照 HF tree API 的
+  oid，小文件实测哈希）——其余全部吻合。新增 `npm run verify-catalog`
+  （`scripts/verify-catalog.mjs`）在升级目录时一键复验，杜绝同类抄写事故。
+- **模型下载连不上/慢**（伴随问题，同一场景实测）：镜像直连在国内网络间歇
+  不可达（TCP 连接超时与可达窗口交替），而 Node fetch 不读代理环境变量——
+  下载器现在支持代理（新增 `embedding.proxy` 三态配置：默认自动探测
+  `HTTPS_PROXY`/`ALL_PROXY` 等环境变量并尊重 `NO_PROXY`，`none` 强制直连，
+  或显式指定代理 URL；走 undici `ProxyAgent`，与 curl/npm 同语义）。
+- **下载器韧性**：单文件失败自动重试（默认 2 次，间隔 1s/3s）且每次重试追加
+  `?dshmem-retry=N` 换缓存键——镜像 CDN 层的坏缓存对象窗口内同一 URL 会
+  确定性拿到坏响应，换键另取对象才能自愈。校验失配从零重下（污染断点已删）、
+  数量不吻合/网络错误保留断点续传；取消不受影响；跨进程断点续传语义不变。
+
 ## [0.8.0] — 2026-08-18
 
 记忆优化包（决策记录 ADR-0001/0002/0003）：

@@ -32,7 +32,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-client.mjs",
-    "smoke": "node dist-smoke/smoke.js"
+    "smoke": "node dist-smoke/smoke.js",
+    "verify-catalog": "npm run build && node scripts/verify-catalog.mjs"
   },
   "engines": {
     "node": ">=22.16.0"
@@ -52,7 +53,8 @@
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.1",
     "@node-rs/jieba": "^2.0.2",
-    "sqlite-vec": "^0.1.7-alpha.2"
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "undici": "^7.29.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

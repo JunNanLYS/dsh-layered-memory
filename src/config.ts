@@ -79,6 +79,9 @@ export interface MemoryConfig {
     allowLocalModels: boolean;
     /** 模型下载镜像根地址（默认国内可达的 hf-mirror.com，可改回官方）。 */
     mirror: string;
+    /** 模型下载代理三态：''（默认）= 探测代理环境变量（HTTPS_PROXY/ALL_PROXY 等）；
+     *  'none' = 禁用强制直连；其他值 = 代理 URL（如 http://127.0.0.1:7890）。 */
+    proxy: string;
   };
   llm: {
     /** 蒸馏用的 provider 路由；留空用当前默认选择。 */
@@ -147,6 +150,7 @@ export const memorySchema = Schema.object({
     timeoutMs: Schema.number().min(1000).max(300_000).default(10_000),
     allowLocalModels: Schema.boolean().default(true),
     mirror: Schema.string().default('https://hf-mirror.com'),
+    proxy: Schema.string().default(''),
   }),
   llm: Schema.object({
     provider: Schema.string().default(''),

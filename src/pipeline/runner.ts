@@ -69,12 +69,31 @@ export function pickNextTaskIndex(tasks: PipelineTask[]): number {
 }
 
 /**
- * 运行时调参视图：UI 选择器可临时覆盖蒸馏思考档位（空串回退静态 config 默认）。
- * 浅拷贝只覆盖 llm 一层，其余键与原 cfg 共享只读引用；pipeline 全链继续收 cfg，无需感知。
+ * 运行时调参视图：UI 选择器可临时覆盖蒸馏思考档位与蒸馏模型路由
+ * （空串回退静态 config / 默认选择）。浅拷贝只覆盖 llm 一层，其余键与原 cfg
+ * 共享只读引用；pipeline 全链继续收 cfg，无需感知。
+ *
+ * 蒸馏模型覆盖优先级：部署静态 pin（cfg.llm.provider+model 双字段齐）不可被
+ * 运行时覆盖（部署可强制蒸馏走内网路由，防用户选择把对话外送）；未 pin 时
+ * 运行时选择（distillProvider+distillModel 成对）生效；再退 agentDefaultModel。
  */
-export function effectiveCfg(cfg: MemoryConfig, live: LiveSettingsHandle): MemoryConfig {
-  const eff = live.get().reasoningEffort;
-  return eff ? { ...cfg, llm: { ...cfg.llm, reasoningEffort: eff } } : cfg;
+export function effectiveCfg(cfg: MemoryConfig, live?: LiveSettingsHandle): MemoryConfig {
+  const s = live?.get();
+  const eff = s?.reasoningEffort ?? '';
+  // 可选链防御：smoke/测试缝构造的最小 cfg 可能没有 llm 字段
+  const pinned = Boolean(cfg.llm?.provider && cfg.llm?.model);
+  const override = s && !pinned && s.distillProvider && s.distillModel
+    ? { provider: s.distillProvider, model: s.distillModel }
+    : null;
+  if (!eff && !override) return cfg;
+  return {
+    ...cfg,
+    llm: {
+      ...cfg.llm,
+      ...(eff ? { reasoningEffort: eff } : {}),
+      ...(override ?? {}),
+    },
+  };
 }
 
 /** 单桶堆积上限（防无限堆积；重建分块不受限——历史会话需全量入桶蒸馏）。 */

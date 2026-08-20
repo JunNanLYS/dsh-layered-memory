@@ -24,6 +24,11 @@ export interface MemoryLiveSettings {
   recall: boolean;
   /** 蒸馏思考档位运行时覆盖：'' = 跟随静态 config（llm.reasoningEffort） */
   reasoningEffort: EffortChoice;
+  /** 蒸馏模型运行时覆盖（供应商 id，用户已配置的路由）：'' = 跟随静态 config/默认选择。
+   *  与 distillModel 成对生效（单字段不算）；部署静态 pin（provider+model 双字段）优先。 */
+  distillProvider: string;
+  /** 蒸馏模型运行时覆盖（模型 id）：'' = 跟随静态 config/默认选择。 */
+  distillModel: string;
 }
 
 export interface LiveSettingsHandle {
@@ -36,7 +41,15 @@ export interface LiveSettingsHandle {
 
 const NS = settingsNamespace('dsh-memory');
 
-const ALWAYS_ON: MemoryLiveSettings = { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' };
+const ALWAYS_ON: MemoryLiveSettings = {
+  enabled: true,
+  capture: true,
+  distill: true,
+  recall: true,
+  reasoningEffort: '',
+  distillProvider: '',
+  distillModel: '',
+};
 
 /**
  * 进程内 scope 复用（fiber 重启重挂）。
@@ -63,6 +76,8 @@ export function liveSettingsSchema(): Schema<MemoryLiveSettings> {
     distill: Schema.boolean().default(true),
     recall: Schema.boolean().default(true),
     reasoningEffort: Schema.union(['', 'off', 'high', 'max']).default(''),
+    distillProvider: Schema.string().default(''),
+    distillModel: Schema.string().default(''),
   });
 }
 
@@ -83,7 +98,10 @@ export function registerLiveSettings(ctx: Context, logger: MemoryLogger): LiveSe
       current = resolveSettings(next);
       logger.info(
         `[memory] 记忆模式开关更新：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}` +
-          `，蒸馏思考=${current.reasoningEffort || '跟随配置'}（此前 总=${prev.enabled}）`,
+          `，蒸馏思考=${current.reasoningEffort || '跟随配置'}（此前 总=${prev.enabled}）` +
+          (current.distillProvider && current.distillModel
+            ? `，蒸馏模型=${current.distillProvider}/${current.distillModel}`
+            : ''),
       );
     });
     return {
@@ -180,5 +198,7 @@ function resolveSettings(value: unknown): MemoryLiveSettings {
       typeof v.reasoningEffort === 'string' && efforts.includes(v.reasoningEffort as EffortChoice)
         ? (v.reasoningEffort as EffortChoice)
         : '',
+    distillProvider: typeof v.distillProvider === 'string' ? v.distillProvider : '',
+    distillModel: typeof v.distillModel === 'string' ? v.distillModel : '',
   };
 }

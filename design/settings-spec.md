@@ -69,6 +69,24 @@ off = `--dsh-mem-track`；旋钮 `left .15s` inline 过渡（reduced-motion 压�
 `settings.reasoningEffort` 与视图字段 `effort.current/effective`——选择器只读后者，
 漏掉会在下一个 5s 轮询前弹回旧值（已修过的不同步点）。
 
+### 蒸馏模型选择器（LlmModelRow，供应商/模型两级下拉）
+
+位于思考选择器之后，同属开关面板（记忆模式关闭时随面板禁用）。数据源
+`dsh-memory/llm-providers`（5s 轮询：`providers` 供应商目录 / `default` 默认选择 /
+`current` 运行时覆盖 / `effective` 实际生效路由 / `pinned` 部署 pin 位）与
+`dsh-memory/llm-models`（选供应商后按需拉取）。要点：
+
+- 两级 `.dsh-mem-select`：供应商下拉（首项"跟随默认（当前默认路由）"）→ 模型
+  下拉（首项"跟随默认"）；选供应商先入**本地草稿**（不打设置），选定模型时
+  `distillProvider`/`distillModel` 成对提交（单字段不算覆盖，effectiveCfg 语义）；
+- 供应商"跟随默认"一次提交双空串清掉覆盖；乐观更新写 `info.current`，失败回滚
+  （草稿一并恢复）；
+- **部署 pin**（`pinned=true`，cordis.patch.yml 的 `llm.provider`+`llm.model` 双字段
+  齐）：选择器不出场，改为静态文本"已由部署配置固定：provider / model"；
+- **降级手输**：适配器 `listModels` 返回空列表时模型下拉换成 `NInput`（回车提交）；
+- **失效提示**：已存覆盖的供应商/模型不在列表（用户在宿主侧删掉）时注入
+  "（已不在列表）"选项并红字提示蒸馏调用可能失败（danger 色，12px）。
+
 ## 重建面板（RebuildPanel）
 
 - `.dsh-mem-rb-card` 卡片 + 运行态进度条（`.dsh-mem-rb-bar` 8px 底 / `.dsh-mem-rb-fill`

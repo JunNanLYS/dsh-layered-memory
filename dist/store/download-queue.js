@@ -6,13 +6,15 @@
  * - 断点续传：写 .part 旁车文件，重试从断点 Range 续传；服务器不支持 Range（回 200）
  *   则从头重写；取消保留断点；
  * - 完整性：每文件下满后流式哈希整文件比对目录 sha256（续传无法增量哈希，落盘后
- *   单遍校验最简单且正确）；失配删文件整体重下；
+ *   单遍校验最简单且正确）；失配删文件整体重下；单文件失败自动重试（默认 2 次，
+ *   吸收镜像瞬态污染——sha 失配从零重下、网络类错误保留断点续传）；
  * - 磁盘门禁：下载前检查数据目录所在卷剩余空间 ≥ 模型体积 × 1.2（statfs 不可用时跳过）；
  * - 同一时刻只跑一个下载任务（串行队列），后续请求直接拒绝并说明。
  */
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
+import { fetch as undiciFetch, ProxyAgent } from 'undici';
 import { catalogById, catalogTotalBytes, MODEL_CATALOG } from './model-catalog.js';
 const DISK_HEADROOM = 1.2;
 export class ModelDownloadQueue {
@@ -21,9 +23,40 @@ export class ModelDownloadQueue {
     progress = null;
     busy = false;
     abort = null;
+    /** 代理 dispatcher（按需创建；dispose 关闭连接池）。 */
+    agent;
+    /** 默认 fetch：undici（可挂代理 dispatcher）；测试注入优先。 */
+    defaultFetch;
     constructor(dataDir, opts) {
         this.dataDir = dataDir;
         this.opts = opts;
+        // 畸形 mirror（无 scheme 等）只跳过代理解析，不炸构造器（下载本身还会报清晰的 URL 错）
+        let host = '';
+        try {
+            host = new URL(this.mirrorUrl()).host;
+        }
+        catch {
+            /* ignore */
+        }
+        const proxy = resolveProxyUrl(opts.proxy, host);
+        if (proxy) {
+            this.agent = new ProxyAgent(proxy);
+            opts.logger?.info(`[memory] 模型下载走代理 ${proxy}（镜像直连在国内网络间歇不可达）`);
+        }
+        this.defaultFetch = ((u, init) => {
+            const dispatch = this.agent;
+            // undici fetch 的 init 接受 dispatcher；RequestInit 类型无此字段，断言透传
+            return undiciFetch(u, { ...init, ...(dispatch ? { dispatcher: dispatch } : {}) });
+        });
+    }
+    /** 镜像根（无尾斜杠）。 */
+    mirrorUrl() {
+        return this.opts.mirror.replace(/\/+$/, '');
+    }
+    /** 释放代理连接池（插件 dispose 链调用；无代理时幂等无操作）。 */
+    dispose() {
+        void this.agent?.close().catch(() => { });
+        this.agent = undefined;
     }
     /** 当前进度快照（无任务时 null）。 */
     getProgress() {
@@ -187,13 +220,46 @@ export class ModelDownloadQueue {
             prog.overallReceived = overall;
         }
     }
-    /** 下载单文件到最终路径（含续传与校验），返回该文件贡献的字节数。 */
+    /** 下载单文件到最终路径（含续传与校验），返回该文件贡献的字节数。
+     *  单文件失败自动重试（默认 2 次）+ **重试换缓存键**：镜像链路
+     *  （Caddy×3 → CloudFront → Cloudflare）存在缓存对象污染窗口——同一时间窗内
+     *  同一 URL 确定性拿到错误字节（2026-08-19 embeddinggemma generation_config.json
+     *  连续错哈希的真实事故），普通重试会全打同一污染缓存；每次重试追加
+     *  `?dshmem-retry=N` 参数绕开缓存键另取对象，窗口期也能自愈。
+     *  - sha256 失配：downloadFileOnce 已删除断点 → 从零重下；
+     *  - 数量不吻合/网络错误：断点保留 → Range 续传重试；
+     *  - 取消：立即上抛不重试。 */
     async downloadFile(entry, f, dir, onBytes) {
+        const delays = this.opts.retryDelaysMs ?? [1000, 3000];
+        let lastErr;
+        for (let attempt = 0;; attempt++) {
+            if (this.progress?.phase === 'cancelled')
+                throw new Error('已取消');
+            try {
+                return await this.downloadFileOnce(entry, f, dir, attempt, onBytes);
+            }
+            catch (err) {
+                lastErr = err;
+                // as 断言绕开 CFA 窄化——await 期间 cancel() 可能已改写 phase（同 downloadFileOnce 末段）
+                if (this.progress?.phase === 'cancelled')
+                    throw err;
+                if (attempt >= delays.length)
+                    throw err;
+                const msg = err instanceof Error ? err.message : String(err);
+                this.opts.logger?.warn(`[memory] 文件 ${f.path} 第 ${attempt + 1} 次尝试失败（${msg}），${delays[attempt]}ms 后自动重试（换缓存键）`);
+                await new Promise((r) => setTimeout(r, delays[attempt]));
+            }
+        }
+    }
+    /** 单次尝试：续传探测 → fetch（attempt>0 追加缓存键参数）→ 落盘 → 尺寸与 sha256 校验 → rename。 */
+    async downloadFileOnce(entry, f, dir, attempt, onBytes) {
         const finalPath = path.join(dir, f.path);
         const partPath = finalPath + '.part';
-        const base = this.opts.mirror.replace(/\/+$/, '');
-        const url = `${base}/${entry.repo}/resolve/${entry.revision}/${f.path}`;
-        const fetchImpl = this.opts.fetchImpl ?? ((u, init) => fetch(u, init));
+        const base = this.mirrorUrl();
+        // 重试追加缓存键参数：绕开镜像 CDN 的污染缓存对象（同窗口普通重试全打同一对象）
+        const cacheBust = attempt > 0 ? `?dshmem-retry=${attempt}` : '';
+        const url = `${base}/${entry.repo}/resolve/${entry.revision}/${f.path}${cacheBust}`;
+        const fetchImpl = this.opts.fetchImpl ?? this.defaultFetch;
         const prog = this.progress;
         let resumeFrom = 0;
         const partSize = await fileSize(partPath);
@@ -302,6 +368,37 @@ async function fileSize(p) {
     catch {
         return null;
     }
+}
+/**
+ * 解析下载代理（三态）：`''`（默认）= 探测代理环境变量（HTTPS_PROXY > ALL_PROXY >
+ * HTTP_PROXY，大小写双形态，尊重 NO_PROXY）；`'none'` = 禁用代理强制直连；
+ * 其他值 = 显式代理 URL。与 curl/npm 同语义——用户配置了代理 env 的机器上
+ * 镜像直连往往间歇不可达（真实事故：直连超时与污染字节交替出现）。
+ */
+export function resolveProxyUrl(setting, host) {
+    const value = (setting ?? '').trim();
+    if (value.toLowerCase() === 'none')
+        return '';
+    if (value)
+        return value;
+    const noProxy = process.env.NO_PROXY ?? process.env.no_proxy ?? '';
+    if (noProxy) {
+        for (const raw of noProxy.split(',')) {
+            const entry = raw.trim().replace(/^\./, '').toLowerCase();
+            if (entry && (host.toLowerCase() === entry || host.toLowerCase().endsWith(`.${entry}`)))
+                return '';
+        }
+    }
+    const candidates = [
+        process.env.HTTPS_PROXY, process.env.https_proxy,
+        process.env.ALL_PROXY, process.env.all_proxy,
+        process.env.HTTP_PROXY, process.env.http_proxy,
+    ];
+    for (const c of candidates) {
+        if (c && c.trim())
+            return c.trim();
+    }
+    return '';
 }
 async function sha256File(p) {
     const { createReadStream } = await import('node:fs');

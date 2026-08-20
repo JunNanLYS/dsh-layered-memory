@@ -19,6 +19,11 @@ export interface MemoryLiveSettings {
     recall: boolean;
     /** 蒸馏思考档位运行时覆盖：'' = 跟随静态 config（llm.reasoningEffort） */
     reasoningEffort: EffortChoice;
+    /** 蒸馏模型运行时覆盖（供应商 id，用户已配置的路由）：'' = 跟随静态 config/默认选择。
+     *  与 distillModel 成对生效（单字段不算）；部署静态 pin（provider+model 双字段）优先。 */
+    distillProvider: string;
+    /** 蒸馏模型运行时覆盖（模型 id）：'' = 跟随静态 config/默认选择。 */
+    distillModel: string;
 }
 export interface LiveSettingsHandle {
     /** settings 服务是否可用（不可用时 UI 侧隐藏开关面板） */
