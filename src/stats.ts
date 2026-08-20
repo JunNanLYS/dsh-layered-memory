@@ -13,7 +13,12 @@ import type { Context } from '@deepseek-ai/cordis';
 // 纯类型导入：把 dsh-client-connection 的 Context.connection 声明合并拉进编译，
 // 使 ctx.get('connection') 拿到 HostConnectionHandle 类型（编译后无运行时依赖）。
 import type {} from '@deepseek-ai/dsh-client-connection';
+// 同款：llm 服务（ctx.llm）与默认模型选择（ctx.get('agentDefaultModel')）的声明合并
+import type {} from '@deepseek-ai/dsh-llm';
+import type {} from '@deepseek-ai/dsh-agent-default-model';
 import { resolveDataDir, type MemoryConfig } from './config.js';
+import { effectiveCfg } from './pipeline/runner.js';
+import { LAYER_DEFAULT_BUDGETS, resolveModelRoute } from './llm.js';
 import type { RebuildController } from './pipeline/rebuild.js';
 import type { LiveSettingsHandle } from './settings.js';
 import type { L0Store } from './store/l0.js';
@@ -24,6 +29,7 @@ import type { SessionModeStore } from './store/session-modes.js';
 import type { EmbeddingManager } from './store/embedding-source.js';
 import type { StateStore } from './store/state.js';
 import type { MemoryFamily, MemoryLogger, MemoryMode } from './types.js';
+import { errDetail } from './util/filelog.js';
 
 const require = createRequire(import.meta.url);
 export const PLUGIN_VERSION = (require('../package.json') as { version: string }).version;
@@ -101,6 +107,7 @@ export function registerMemoryRpc(
       async (endpoint, payload) => {
         try {
           const value = await handleEndpoint(endpoint, payload, {
+            ctx,
             cfg,
             stores,
             status,
@@ -212,6 +219,7 @@ async function buildStats(
 // ============================================================
 
 interface EndpointDeps {
+  ctx: Context;
   cfg: MemoryConfig;
   stores: {
     l0: L0Store;
@@ -257,9 +265,14 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
 
     case 'dsh-memory/settings-get': {
       const s = live?.get();
+      const budgets = s?.distillBudgets ?? { extract: 0, dedup: 0, l2: 0, l3: 0 };
       return {
         supported: live?.supported ?? false,
-        settings: s ?? { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' },
+        settings: s ?? {
+          enabled: true, capture: true, distill: true, recall: true,
+          reasoningEffort: '', distillProvider: '', distillModel: '',
+          distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, distillMaxInputChars: 0,
+        },
         // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
         ceilings: { capture: cfg.capture.enabled, distill: cfg.extract.enabled, recall: cfg.recall.enabled },
         // 蒸馏思考档位：current 是运行时覆盖（'' = 跟随配置），effective 是实际生效值
@@ -268,13 +281,30 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
           effective: s?.reasoningEffort || cfg.llm.reasoningEffort,
           fallback: cfg.llm.reasoningEffort,
         },
+        // 分层输出预算：current 是运行时覆盖（0 = 跟随默认），defaults 是内置默认（UI 占位/提示用）
+        budgets: {
+          current: budgets,
+          defaults: { ...LAYER_DEFAULT_BUDGETS },
+          effective: {
+            extract: budgets.extract > 0 ? budgets.extract : LAYER_DEFAULT_BUDGETS.extract,
+            dedup: budgets.dedup > 0 ? budgets.dedup : LAYER_DEFAULT_BUDGETS.dedup,
+            l2: budgets.l2 > 0 ? budgets.l2 : LAYER_DEFAULT_BUDGETS.l2,
+            l3: budgets.l3 > 0 ? budgets.l3 : LAYER_DEFAULT_BUDGETS.l3,
+          },
+        },
+        // 输入预算（字符）：current 是运行时覆盖（0 = 跟随配置），fallback 是静态配置值
+        inputBudget: {
+          current: s?.distillMaxInputChars ?? 0,
+          fallback: cfg.llm.maxInputChars,
+          effective: s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : cfg.llm.maxInputChars,
+        },
       };
     }
 
     case 'dsh-memory/settings-set': {
       if (!live) throw new Error('开关通道未初始化');
       const patch = (payload ?? {}) as Record<string, unknown>;
-      const clean: Record<string, boolean | string> = {};
+      const clean: Record<string, boolean | string | number | { extract: number; dedup: number; l2: number; l3: number }> = {};
       for (const key of ['enabled', 'capture', 'distill', 'recall'] as const) {
         if (typeof patch[key] === 'boolean') clean[key] = patch[key] as boolean;
       }
@@ -284,6 +314,36 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
           throw new Error(`非法思考档位: ${v}（允许 ''/off/high/max）`);
         }
         clean.reasoningEffort = v;
+      }
+      // 蒸馏模型运行时覆盖：供应商/模型 id 原样接受（不在此校验存在性——
+      // 供应商可被用户随后删除，解析侧按存在性回退并提示）
+      for (const key of ['distillProvider', 'distillModel'] as const) {
+        if (patch[key] !== undefined) {
+          const v = String(patch[key]);
+          if (v.length > 200) throw new Error(`${key} 过长（≤200 字符）`);
+          clean[key] = v;
+        }
+      }
+      // 分层输出预算：四键一起校验，非负整数 ≤ 100 万；0 = 跟随内置默认
+      if (patch.distillBudgets !== undefined) {
+        const raw = (patch.distillBudgets ?? {}) as Record<string, unknown>;
+        const budgets: Record<string, number> = {};
+        for (const key of ['extract', 'dedup', 'l2', 'l3'] as const) {
+          const n = Number(raw[key] ?? 0);
+          if (!Number.isInteger(n) || n < 0 || n > 1_000_000) {
+            throw new Error(`distillBudgets.${key} 须为 0~1000000 的整数（0 = 跟随默认）`);
+          }
+          budgets[key] = n;
+        }
+        clean.distillBudgets = budgets as { extract: number; dedup: number; l2: number; l3: number };
+      }
+      // 输入预算（字符）：0 = 跟随静态配置；正值须落在静态 schema 同款范围（1000~100 万）
+      if (patch.distillMaxInputChars !== undefined) {
+        const n = Number(patch.distillMaxInputChars);
+        if (!Number.isInteger(n) || n < 0 || n > 1_000_000 || (n > 0 && n < 1000)) {
+          throw new Error('distillMaxInputChars 须为 0 或 1000~1000000 的整数（0 = 跟随配置）');
+        }
+        clean.distillMaxInputChars = n;
       }
       if (Object.keys(clean).length === 0) throw new Error('开关更新载荷为空');
       await live.update(clean);
@@ -366,6 +426,58 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
     case 'dsh-memory/rebuild-cancel': {
       if (!rebuild) throw new Error('重建控制器未初始化');
       return rebuild.requestCancel();
+    }
+
+    // ── 蒸馏模型选择器（用户已配置的供应商路由） ──
+    case 'dsh-memory/llm-providers': {
+      // 供应商目录（已注册适配器的活动路由）+ 默认选择 + 当前覆盖与实际生效路由
+      let providers: Array<{ id: string; name: string }> = [];
+      try {
+        providers = deps.ctx.llm.listProviders();
+      } catch (err) {
+        deps.logger.warn(`[memory] 供应商列表读取失败: ${errDetail(err)}`);
+      }
+      let def: { provider: string; model: string } | null = null;
+      try {
+        const sel = deps.ctx.get('agentDefaultModel')?.currentSelection?.();
+        if (sel?.provider && sel?.model) def = { provider: sel.provider, model: sel.model };
+      } catch {
+        /* 可选服务缺失 = 无默认选择 */
+      }
+      const s = live?.get();
+      const current = { provider: s?.distillProvider ?? '', model: s?.distillModel ?? '' };
+      let effective: { provider: string; model: string } | null = null;
+      try {
+        effective = await resolveModelRoute(deps.ctx, effectiveCfg(cfg, live));
+      } catch {
+        effective = null; // 无法解析（无默认选择且未覆盖）时 UI 显示占位
+      }
+      return {
+        supported: true,
+        providers,
+        default: def,
+        // 部署静态 pin（provider+model 双字段）优先于运行时选择，UI 据此禁用选择器
+        pinned: Boolean(cfg.llm.provider && cfg.llm.model),
+        current,
+        // 所选供应商是否仍在已注册路由中（用户删掉供应商后提示回退）
+        currentRegistered: current.provider === '' || providers.some((p) => p.id === current.provider),
+        effective,
+      };
+    }
+
+    case 'dsh-memory/llm-models': {
+      const p = (payload ?? {}) as { provider?: string };
+      if (typeof p.provider !== 'string' || !p.provider) throw new Error('provider 缺失');
+      // 两个内置适配器（deepseek/pi-ai）的 listModels 都读本地快照不触网；
+      // 仍加超时兜底，防第三方适配器实现为远端查询拖死 RPC 轮询
+      const models = await Promise.race([
+        deps.ctx.llm.listModels(p.provider),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('模型列表查询超时')), 8000)),
+      ]);
+      return {
+        provider: p.provider,
+        models: models.map((m) => ({ id: m.id, name: m.name, description: m.description ?? null })),
+      };
     }
 
     // ── 嵌入源（远程/本地/关闭 三态）与模型管理 ──

@@ -14,12 +14,45 @@ export function pickNextTaskIndex(tasks) {
     return 0;
 }
 /**
- * 运行时调参视图：UI 选择器可临时覆盖蒸馏思考档位（空串回退静态 config 默认）。
- * 浅拷贝只覆盖 llm 一层，其余键与原 cfg 共享只读引用；pipeline 全链继续收 cfg，无需感知。
+ * 运行时调参视图：UI 选择器可临时覆盖蒸馏思考档位、蒸馏模型路由与分层输出预算
+ * （空串/0 回退静态 config / 内置默认）。浅拷贝只覆盖 llm 一层，其余键与原 cfg
+ * 共享只读引用；pipeline 全链继续收 cfg，无需感知。
+ *
+ * 蒸馏模型覆盖优先级：部署静态 pin（cfg.llm.provider+model 双字段齐）不可被
+ * 运行时覆盖（部署可强制蒸馏走内网路由，防用户选择把对话外送）；未 pin 时
+ * 运行时选择（distillProvider+distillModel 成对）生效；再退 agentDefaultModel。
+ * 输出预算无部署上限语义：非零运行时值直接注入 cfg.llm.budgets（0/缺省不注入）。
  */
 export function effectiveCfg(cfg, live) {
-    const eff = live.get().reasoningEffort;
-    return eff ? { ...cfg, llm: { ...cfg.llm, reasoningEffort: eff } } : cfg;
+    const s = live?.get();
+    const eff = s?.reasoningEffort ?? '';
+    // 可选链防御：smoke/测试缝构造的最小 cfg 可能没有 llm 字段
+    const pinned = Boolean(cfg.llm?.provider && cfg.llm?.model);
+    const override = s && !pinned && s.distillProvider && s.distillModel
+        ? { provider: s.distillProvider, model: s.distillModel }
+        : null;
+    const b = s?.distillBudgets;
+    const budgets = b && (b.extract > 0 || b.dedup > 0 || b.l2 > 0 || b.l3 > 0)
+        ? {
+            ...(b.extract > 0 ? { extract: b.extract } : {}),
+            ...(b.dedup > 0 ? { dedup: b.dedup } : {}),
+            ...(b.l2 > 0 ? { l2: b.l2 } : {}),
+            ...(b.l3 > 0 ? { l3: b.l3 } : {}),
+        }
+        : null;
+    const maxInput = s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : null;
+    if (!eff && !override && !budgets && !maxInput)
+        return cfg;
+    return {
+        ...cfg,
+        llm: {
+            ...cfg.llm,
+            ...(eff ? { reasoningEffort: eff } : {}),
+            ...(override ?? {}),
+            ...(budgets ? { budgets } : {}),
+            ...(maxInput ? { maxInputChars: maxInput } : {}),
+        },
+    };
 }
 /** 单桶堆积上限（防无限堆积；重建分块不受限——历史会话需全量入桶蒸馏）。 */
 const PENDING_BUCKET_CAP = 200;

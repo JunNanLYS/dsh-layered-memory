@@ -12,9 +12,8 @@ import type { MemoryConfig } from './config.js';
 import { memorySchema } from './config.js';
 import { EmbedHelper, NoopEmbeddingService, type EmbeddingService } from './store/embedding.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_TRUNCATION_SUFFIX, truncateRecallLine } from './util/recall-budget.js';
-import { layerMaxTokens } from './llm.js';
 import { Bm25Index } from './store/bm25.js';
-import { ModelDownloadQueue } from './store/download-queue.js';
+import { ModelDownloadQueue, resolveProxyUrl } from './store/download-queue.js';
 import {
   EmbeddingManager,
   EmbeddingSourceStore,
@@ -32,7 +31,9 @@ import { SceneStore, sanitizeFilename } from './store/scenes.js';
 import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
 import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts } from './store/search-utils.js';
-import { liveSettingsSchema, registerLiveSettings } from './settings.js';
+import { liveSettingsSchema, registerLiveSettings, type LiveSettingsHandle, type MemoryLiveSettings } from './settings.js';
+import { layerMaxTokens, resolveLayerTokens } from './llm.js';
+import { effectiveCfg } from './pipeline/runner.js';
 import { registerMemoryRpc } from './stats.js';
 import { registerMemoryTools } from './tools/index.js';
 import { StateStore } from './store/state.js';
@@ -502,7 +503,11 @@ async function main(): Promise<void> {
       await personaS.chat.write('# Team Operating Doctrine\n\n- Nann 喜欢简洁回复\n');
 
       // fake live 开关句柄
-      let liveVal = { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' };
+      let liveVal = {
+        enabled: true, capture: true, distill: true, recall: true,
+        reasoningEffort: '', distillProvider: '', distillModel: '',
+        distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
+      };
       const live = {
         supported: true,
         get: () => liveVal,
@@ -511,10 +516,23 @@ async function main(): Promise<void> {
         },
       };
 
-      // fake connection：捕获 rpc.handle 注册的 handler
+      // fake connection：捕获 rpc.handle 注册的 handler；
+      // llm/agentDefaultModel 提供 listProviders/listModels/currentSelection 假实现（模型选择器端点用）
       let handler: ((endpoint: string, payload?: unknown) => Promise<unknown>) | undefined;
       const fakeCtx = {
-        get: (name: string) => (name === 'connection' ? { rpc: { handle: (ch: string, h: typeof handler) => { handler = h; return async () => {}; } } } : undefined),
+        llm: {
+          listProviders: () => [{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'custom-oai', name: '自定义 OpenAI' }],
+          listModels: async (provider: string) =>
+            provider === 'custom-oai'
+              ? [{ provider, id: 'custom-model', name: 'Custom Model' }]
+              : [{ provider, id: 'deepseek-v4-flash', name: 'v4 flash' }],
+        },
+        get: (name: string) =>
+          name === 'connection'
+            ? { rpc: { handle: (ch: string, h: typeof handler) => { handler = h; return async () => {}; } } }
+            : name === 'agentDefaultModel'
+              ? { currentSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-v4-flash' }) }
+              : undefined,
         on: () => () => {},
         effect: (f: () => (() => void)) => f(),
       } as never;
@@ -573,6 +591,65 @@ async function main(): Promise<void> {
       let badEffort = false;
       try { await call('dsh-memory/settings-set', { reasoningEffort: 'banana' }); } catch { badEffort = true; }
       assert(badEffort, 'settings-set 拒绝非法思考档位');
+
+      // 蒸馏模型选择器端点：供应商目录 + 默认选择 + 覆盖写透
+      const lp0 = await call('dsh-memory/llm-providers') as never as {
+        providers: Array<{ id: string }>; default: { provider: string; model: string } | null;
+        pinned: boolean; current: { provider: string; model: string }; currentRegistered: boolean;
+        effective: { provider: string; model: string } | null;
+      };
+      assert(lp0.providers.length === 2 && lp0.providers[0].id === 'deepseek-official', 'llm-providers 列出已注册供应商路由');
+      assert(lp0.default?.provider === 'deepseek-official' && lp0.effective?.model === 'deepseek-v4-flash', 'llm-providers 默认选择与实际生效路由');
+      assert(lp0.pinned === false && lp0.current.provider === '' && lp0.currentRegistered === true, 'llm-providers 初始无覆盖');
+      const lm = await call('dsh-memory/llm-models', { provider: 'custom-oai' }) as never as { models: Array<{ id: string }> };
+      assert(lm.models.length === 1 && lm.models[0].id === 'custom-model', 'llm-models 按供应商列模型');
+      let badModels = false;
+      try { await call('dsh-memory/llm-models', {}); } catch { badModels = true; }
+      assert(badModels, 'llm-models 缺 provider 报错');
+      const slm = await call('dsh-memory/settings-set', { distillProvider: 'custom-oai', distillModel: 'custom-model' }) as never as { settings: { distillProvider: string; distillModel: string } };
+      assert(slm.settings.distillProvider === 'custom-oai' && liveVal.distillProvider === 'custom-oai', 'settings-set 写入蒸馏模型覆盖');
+      const lp1 = await call('dsh-memory/llm-providers') as never as { current: { provider: string; model: string }; effective: { provider: string; model: string } | null };
+      assert(lp1.current.provider === 'custom-oai' && lp1.effective?.provider === 'custom-oai' && lp1.effective?.model === 'custom-model', 'llm-providers 覆盖后实际路由切换');
+      await call('dsh-memory/settings-set', { distillProvider: '', distillModel: '' });
+      let badLen = false;
+      try { await call('dsh-memory/settings-set', { distillModel: 'x'.repeat(201) }); } catch { badLen = true; }
+      assert(badLen, 'settings-set 拒绝超长模型 id');
+
+      // 分层输出预算：settings-get 返回 current/defaults/effective；set 校验并写透
+      const bg0 = await call('dsh-memory/settings-get') as never as { budgets: { current: Record<string, number>; defaults: Record<string, number>; effective: Record<string, number> } };
+      assert(
+        bg0.budgets.current.extract === 0 && bg0.budgets.defaults.extract === 16000 && bg0.budgets.effective.l2 === 32000,
+        'settings-get 预算：初始无覆盖（0），defaults/effective 为内置默认',
+      );
+      const bs = await call('dsh-memory/settings-set', { distillBudgets: { extract: 8000, dedup: 0, l2: 64000, l3: 4000 } }) as never as { settings: { distillBudgets: Record<string, number> } };
+      assert(bs.settings.distillBudgets.extract === 8000, 'settings-set 写入分层预算');
+      const bg1 = await call('dsh-memory/settings-get') as never as { budgets: { current: Record<string, number>; effective: Record<string, number> } };
+      assert(
+        bg1.budgets.current.extract === 8000 && bg1.budgets.effective.extract === 8000 && bg1.budgets.effective.dedup === 8000,
+        'settings-get 预算覆盖后：覆盖层用覆盖值，零值层回退默认',
+      );
+      let badBudget = false;
+      try { await call('dsh-memory/settings-set', { distillBudgets: { extract: -1, dedup: 0, l2: 0, l3: 0 } }); } catch { badBudget = true; }
+      assert(badBudget, 'settings-set 拒绝负预算');
+      let badBudget2 = false;
+      try { await call('dsh-memory/settings-set', { distillBudgets: { extract: 1.5, dedup: 0, l2: 0, l3: 0 } }); } catch { badBudget2 = true; }
+      assert(badBudget2, 'settings-set 拒绝非整数预算');
+      await call('dsh-memory/settings-set', { distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 } });
+
+      // 输入预算：settings-get 返回 inputBudget；set 校验（0 或 1000~100 万）并写透
+      const ib0 = await call('dsh-memory/settings-get') as never as { inputBudget: { current: number; fallback: number; effective: number } };
+      assert(ib0.inputBudget.current === 0 && ib0.inputBudget.effective === ib0.inputBudget.fallback, 'settings-get 输入预算：初始无覆盖，effective=fallback');
+      const is = await call('dsh-memory/settings-set', { distillMaxInputChars: 300000 }) as never as { settings: { distillMaxInputChars: number } };
+      assert(is.settings.distillMaxInputChars === 300000, 'settings-set 写入输入预算');
+      const ib1 = await call('dsh-memory/settings-get') as never as { inputBudget: { current: number; effective: number } };
+      assert(ib1.inputBudget.current === 300000 && ib1.inputBudget.effective === 300000, 'settings-get 输入预算覆盖后生效');
+      let badIn1 = false;
+      try { await call('dsh-memory/settings-set', { distillMaxInputChars: 500 }); } catch { badIn1 = true; }
+      assert(badIn1, 'settings-set 拒绝低于 1000 的正输入预算（与静态 schema 同款下限）');
+      let badIn2 = false;
+      try { await call('dsh-memory/settings-set', { distillMaxInputChars: -1 }); } catch { badIn2 = true; }
+      assert(badIn2, 'settings-set 拒绝负输入预算');
+      await call('dsh-memory/settings-set', { distillMaxInputChars: 0 });
 
       const lr = await call('dsh-memory/list-records', { limit: 10, offset: 0 }) as never as { items: Array<{ id: string; content: string; type: string }>; total: number; hasMore: boolean; scenes: string[] };
       assert(lr.total === 1 && lr.items[0].id === 'rpc-r1' && lr.items[0].type === 'instruction', 'list-records 默认浏览');
@@ -1595,6 +1672,66 @@ async function main(): Promise<void> {
     assert(h3.supported === false && h3.get().enabled === true, '服务缺失保持全开（既有行为不变）');
   }
 
+  console.log('== 16f. 蒸馏模型运行时覆盖（effectiveCfg 优先级） ==');
+  {
+    const mkLive = (over: Partial<MemoryLiveSettings>): LiveSettingsHandle => ({
+      supported: true,
+      // Partial spread 会让必需字段类型变 optional，显式断言收窄（运行时字段齐全）
+      get: () => ({
+        enabled: true, capture: true, distill: true, recall: true,
+        reasoningEffort: '', distillProvider: '', distillModel: '',
+        distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, ...over,
+      } as MemoryLiveSettings),
+      update: async () => {},
+    });
+    const mkCfg = (provider: string, model: string) =>
+      ({ family: 'auto', llm: { provider, model, reasoningEffort: 'off' } }) as never as Parameters<typeof effectiveCfg>[0];
+
+    // a. 运行时成对覆盖 → 路由替换
+    const a = effectiveCfg(mkCfg('', ''), mkLive({ distillProvider: 'p1', distillModel: 'm1' }));
+    assert(a.llm.provider === 'p1' && a.llm.model === 'm1', '运行时成对覆盖生效');
+
+    // b. 部署静态 pin（双字段）→ 运行时不可覆盖
+    const b = effectiveCfg(mkCfg('pin-p', 'pin-m'), mkLive({ distillProvider: 'p1', distillModel: 'm1' }));
+    assert(b.llm.provider === 'pin-p' && b.llm.model === 'pin-m', '部署静态 pin 优先于运行时选择');
+
+    // c. 单字段覆盖不成对 → 忽略（原 cfg 引用原样返回）
+    const cfgC = mkCfg('', '');
+    const c1 = effectiveCfg(cfgC, mkLive({ distillProvider: 'p1' }));
+    const c2 = effectiveCfg(cfgC, mkLive({ distillModel: 'm1' }));
+    assert(c1 === cfgC && c2 === cfgC, '单字段覆盖不成对不生效');
+
+    // d. 无覆盖 → 原引用返回；live 缺席同样安全
+    assert(effectiveCfg(cfgC, mkLive({})) === cfgC, '无覆盖返回原引用');
+    assert(effectiveCfg(cfgC, undefined) === cfgC, 'live 缺席返回原引用');
+
+    // e. 思考档位与模型覆盖同轮生效（浅拷贝互不冲掉）
+    const e = effectiveCfg(mkCfg('', ''), mkLive({ reasoningEffort: 'high', distillProvider: 'p1', distillModel: 'm1' }));
+    assert(e.llm.reasoningEffort === 'high' && e.llm.provider === 'p1' && e.llm.model === 'm1', '思考档位与模型覆盖同轮生效');
+    assert(e.family === 'auto', '浅拷贝保留 llm 外的 cfg 键');
+
+    // f. 分层输出预算覆盖：非零注入 cfg.llm.budgets，零/缺省不注入
+    const f1 = effectiveCfg(cfgC, mkLive({ distillBudgets: { extract: 8000, dedup: 0, l2: 64000, l3: 0 } }));
+    assert(f1.llm.budgets?.extract === 8000 && f1.llm.budgets?.l2 === 64000, '非零预算注入 budgets');
+    assert(!('dedup' in (f1.llm.budgets ?? {})) && !('l3' in (f1.llm.budgets ?? {})), '零值预算键不注入（跟随内置默认）');
+    const f2 = effectiveCfg(cfgC, mkLive({ distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 } }));
+    assert(f2 === cfgC, '全零预算返回原引用');
+    // g. resolveLayerTokens：覆盖优先 → 内置默认 → 思考档 ×4 在生效值之上
+    assert(resolveLayerTokens({ llm: { reasoningEffort: 'off' } }, 'extract') === 16_000, '无覆盖用内置默认（抽取 16k）');
+    assert(resolveLayerTokens({ llm: { reasoningEffort: 'off', budgets: { extract: 8000 } } }, 'extract') === 8000, '运行时覆盖优先');
+    assert(resolveLayerTokens({ llm: { reasoningEffort: 'off', budgets: { extract: 0 } } }, 'extract') === 16_000, '覆盖为 0 回退内置默认');
+    assert(resolveLayerTokens({ llm: { reasoningEffort: 'high', budgets: { l2: 64000 } } }, 'l2') === 256_000, '思考档 high 对覆盖值照常 ×4');
+    assert(resolveLayerTokens({ llm: { reasoningEffort: '' } }, 'dedup') === 8_000 && resolveLayerTokens({ llm: { reasoningEffort: '' } }, 'l3') === 16_000, '其余层默认（去重 8k / L3 16k）');
+
+    // h. 输入预算覆盖：>0 注入 cfg.llm.maxInputChars（L1 分块/callLLM 截断/rebuild 估算全链消费）
+    const h1 = effectiveCfg(mkCfg('', ''), mkLive({ distillMaxInputChars: 300_000 }));
+    assert(h1.llm.maxInputChars === 300_000, '输入预算覆盖注入 maxInputChars');
+    const h2 = effectiveCfg(cfgC, mkLive({ distillMaxInputChars: 0 }));
+    assert(h2 === cfgC, '输入预算 0 返回原引用（跟随静态配置）');
+    const h3 = effectiveCfg(mkCfg('', ''), mkLive({ distillMaxInputChars: 300_000, distillBudgets: { extract: 8000, dedup: 0, l2: 0, l3: 0 } }));
+    assert(h3.llm.maxInputChars === 300_000 && h3.llm.budgets?.extract === 8000, '输入与输出预算覆盖同轮生效');
+  }
+
   console.log('== 17. connection 波动后 RPC 重挂（M11） ==');
   {
     const tmpT9 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-conn-'));
@@ -1957,11 +2094,13 @@ async function main(): Promise<void> {
           { path: 'onnx/model.onnx', size: bodyB.length, sha256: sha(bodyB) },
         ],
       });
-      /** 假 fetch：按 URL 后缀路由，支持 Range 续传语义（206/200 + content-length）。 */
+      /** 假 fetch：按 URL 路径（剥 query，重试带 ?dshmem-retry=N 缓存键）后缀路由，
+       *  支持 Range 续传语义（206/200 + content-length）。 */
       const serve = (routes: Array<[string, string]>, opts?: { truncateAt?: Map<string, number>; failOn?: string }): typeof fetch =>
         (async (url: string, init?: RequestInit) => {
+          const pathOnly = url.split('?')[0];
           for (const [suffix, content] of routes) {
-            if (!url.endsWith(suffix)) continue;
+            if (!pathOnly.endsWith(suffix)) continue;
             if (opts?.failOn === suffix) throw new Error(`模拟网络故障: ${suffix}`);
             const truncated = opts?.truncateAt?.get(suffix);
             const payload = truncated !== undefined ? content.slice(0, truncated) : content;
@@ -2002,6 +2141,7 @@ async function main(): Promise<void> {
       }
 
       // b. 断点续传：第二文件中途数量不吻合 → .part 保留 → 重跑从 Range 续传
+      //    （自动重试注入 1ms 间隔；fake 服务恒截断 → 3 次尝试后仍失败保留断点）
       {
         const dirB = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-resume-'));
         const entry = mkEntry();
@@ -2015,6 +2155,7 @@ async function main(): Promise<void> {
             { truncateAt: new Map([['/onnx/model.onnx', 6]]) },
           ),
           freeBytes: async () => 1e9,
+          retryDelaysMs: [1, 1],
         });
         const r1 = await q1.startEntry(entry);
         assert(r1.phase === 'error' && /数量不吻合/.test(r1.error ?? ''), `中断下载报错保留断点（${r1.error}）`);
@@ -2035,7 +2176,7 @@ async function main(): Promise<void> {
         assert(b2 === bodyB, '续传拼接内容完整（校验通过）');
       }
 
-      // c. sha256 失配 → 删除断点报错
+      // c. sha256 失配（持续污染）：自动重试耗尽后删除断点报错
       {
         const dirC = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-badsha-'));
         const q = new ModelDownloadQueue(dirC, {
@@ -2045,6 +2186,7 @@ async function main(): Promise<void> {
             ['/onnx/model.onnx', 'X'.repeat(bodyB.length)],
           ]),
           freeBytes: async () => 1e9,
+          retryDelaysMs: [1, 1],
         });
         const r = await q.startEntry(mkEntry());
         assert(r.phase === 'error' && /sha256 校验失败/.test(r.error ?? ''), `哈希失配拦截（${r.error}）`);
@@ -2054,6 +2196,64 @@ async function main(): Promise<void> {
           () => { partExists = false; },
         );
         assert(!partExists, '失配断点已删除');
+      }
+
+      // c2. sha256 瞬态污染自愈：首次返回错内容、重试返回正确内容 → 整体 done；
+      //     且重试请求必须换缓存键（?dshmem-retry=N）——镜像 CDN 存在污染缓存对象
+      //     窗口（2026-08-19 embeddinggemma 真实事故：同窗口同 URL 确定性错字节，
+      //      普通重试全打同一污染对象），换键才能绕开。
+      {
+        const dirC2 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-transsha-'));
+        let poisoned = true;
+        const seenUrls: string[] = [];
+        const q = new ModelDownloadQueue(dirC2, {
+          mirror: 'https://fake.example',
+          // fetch 包装：首次污染，之后恢复（模拟镜像瞬态窗口过去）；记录 URL 供断言
+          fetchImpl: (async (url: string, init?: RequestInit) => {
+            seenUrls.push(url);
+            if (url.endsWith('/config.json')) return new Response(bodyA, { headers: { 'content-length': String(bodyA.length) } });
+            if (url.includes('/onnx/model.onnx')) {
+              const payload = poisoned ? 'X'.repeat(bodyB.length) : bodyB;
+              poisoned = false;
+              return new Response(payload, { status: 200, headers: { 'content-length': String(payload.length) } });
+            }
+            throw new Error('no route ' + url);
+          }) as typeof fetch,
+          freeBytes: async () => 1e9,
+          retryDelaysMs: [1, 1],
+        });
+        const r = await q.startEntry(mkEntry());
+        assert(r.phase === 'done', `瞬态污染自愈（${r.phase}${r.error ? ': ' + r.error : ''}）`);
+        const b2 = await fs.readFile(path.join(dirC2, 'models', 'test-model', 'onnx', 'model.onnx'), 'utf8');
+        assert(b2 === bodyB, '自愈后内容完整');
+        const modelUrls = seenUrls.filter((u) => u.includes('/onnx/model.onnx'));
+        assert(
+          modelUrls.length === 2 && !modelUrls[0].includes('?dshmem-retry=') && modelUrls[1].includes('?dshmem-retry=1'),
+          `重试换缓存键（${modelUrls.join(' → ')}）`,
+        );
+      }
+
+      // c3. 网络瞬断自愈：首次 fetch 抛错、重试成功（断点语义不破坏——无落盘则从零）
+      {
+        const dirC3 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-neterr-'));
+        let failedOnce = false;
+        const q = new ModelDownloadQueue(dirC3, {
+          mirror: 'https://fake.example',
+          fetchImpl: (async (url: string, init?: RequestInit) => {
+            const pathOnly = url.split('?')[0];
+            if (pathOnly.endsWith('/onnx/model.onnx') && !failedOnce) {
+              failedOnce = true;
+              throw new Error('模拟网络瞬断');
+            }
+            if (pathOnly.endsWith('/config.json')) return new Response(bodyA, { headers: { 'content-length': String(bodyA.length) } });
+            if (pathOnly.endsWith('/onnx/model.onnx')) return new Response(bodyB, { status: 200, headers: { 'content-length': String(bodyB.length) } });
+            throw new Error('no route ' + url);
+          }) as typeof fetch,
+          freeBytes: async () => 1e9,
+          retryDelaysMs: [1, 1],
+        });
+        const r = await q.startEntry(mkEntry());
+        assert(r.phase === 'done', `网络瞬断自愈（${r.phase}${r.error ? ': ' + r.error : ''}）`);
       }
 
       // d. 磁盘门禁
@@ -2130,6 +2330,33 @@ async function main(): Promise<void> {
         assert(r.phase === 'done', `满断点直接收编（${r.phase}${r.error ? ': ' + r.error : ''}）`);
         const fb = await fs.readFile(path.join(dirG, 'models', 'test-model', 'onnx', 'model.onnx'), 'utf8');
         assert(fb === bodyB, '满断点 rename 落位');
+      }
+
+      // i. 下载代理解析三态：''（默认）env 探测 / 'none' 禁用 / 显式 URL；尊重 NO_PROXY
+      {
+        const host = 'hf-mirror.com';
+        const saved = { HTTPS_PROXY: process.env.HTTPS_PROXY, ALL_PROXY: process.env.ALL_PROXY, NO_PROXY: process.env.NO_PROXY };
+        try {
+          process.env.HTTPS_PROXY = '';
+          process.env.ALL_PROXY = '';
+          process.env.NO_PROXY = '';
+          assert(resolveProxyUrl('none', host) === '', "'none' 显式禁用代理");
+          assert(resolveProxyUrl('http://127.0.0.1:7890', host) === 'http://127.0.0.1:7890', '显式代理 URL 透传');
+          assert(resolveProxyUrl('', host) === '', '无 env 时不启用代理');
+          process.env.ALL_PROXY = 'http://127.0.0.1:7890';
+          assert(resolveProxyUrl('', host) === 'http://127.0.0.1:7890', '默认态探测 ALL_PROXY');
+          assert(resolveProxyUrl('none', host) === '', "'none' 压过 env");
+          process.env.NO_PROXY = 'localhost,hf-mirror.com';
+          assert(resolveProxyUrl('', host) === '', 'NO_PROXY 命中目标域不用代理');
+          assert(resolveProxyUrl('', 'huggingface.co') === 'http://127.0.0.1:7890', 'NO_PROXY 未命中仍走代理');
+          process.env.NO_PROXY = '.hf-mirror.com';
+          assert(resolveProxyUrl('', host) === '', 'NO_PROXY 点前缀通配命中');
+        } finally {
+          for (const [k, v] of Object.entries(saved)) {
+            if (v === undefined) delete (process.env as never as Record<string, string>)[k];
+            else (process.env as never as Record<string, string>)[k] = v;
+          }
+        }
       }
 
       // h. 服务器对满/异常 Range 回 416：删断点一次性从零重下

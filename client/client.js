@@ -1463,6 +1463,363 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // ── 蒸馏模型选择器（供应商/模型两级下拉）──
+    // 数据源：dsh-memory/llm-providers（供应商目录 + 当前覆盖 + 实际生效路由）与
+    // dsh-memory/llm-models（所选供应商的模型列表）。写入走 settings-set 的
+    // distillProvider/distillModel 两键（成对提交）。部署静态 pin（pinned）时禁用。
+    function LlmModelRow(props) {
+      var rpc = props.rpc;
+      var disabled = !!props.disabled;
+
+      // 注意：全部 hook 必须在任何提前返回之前声明（Rules of Hooks）——
+      // info 未加载的首渲染会 return null，晚于它的 useState 会让 hook 数随渲染漂移而崩溃
+      var infoState = react.useState(null);
+      var setInfo = infoState[1];
+      var modelsState = react.useState(null);
+      var setModels = modelsState[1];
+      var draftState = react.useState("");
+      var setDraft = draftState[1];
+      var manualState = react.useState("");
+      var manualModel = manualState[0];
+      var setManualModel = manualState[1];
+
+      react.useEffect(function () {
+        var load = function () {
+          rpc("dsh-memory/llm-providers", {})
+            .then(function (r) { if (r && r.ok) setInfo(r.value); })
+            .catch(function () {});
+        };
+        load();
+        var timer = setInterval(load, 5000);
+        return function () { clearInterval(timer); };
+      }, [rpc]);
+
+      var info = infoState[0];
+      // 草稿供应商（已选待挑模型）优先于已存选择
+      var draft = draftState[0];
+      var curProvider = draft || (info && info.current ? info.current.provider : "");
+      var curModel = info && info.current ? info.current.model : "";
+
+      react.useEffect(function () {
+        if (!curProvider) { setModels(null); return undefined; }
+        var alive = true;
+        setModels(null);
+        rpc("dsh-memory/llm-models", { provider: curProvider })
+          .then(function (r) { if (alive && r && r.ok) setModels(r.value.models || []); })
+          .catch(function () { if (alive) setModels([]); });
+        return function () { alive = false; };
+      }, [rpc, curProvider]);
+
+      var writeLlm = function (patch) {
+        if (!info) return;
+        // 乐观更新：立即写视图字段，失败回滚
+        var prev = info;
+        setInfo(Object.assign({}, prev, {
+          current: Object.assign({}, prev.current, patch),
+        }));
+        setDraft("");
+        rpc("dsh-memory/settings-set", patch)
+          .then(function (r) {
+            if (!r || !r.ok) {
+              setInfo(prev);
+              setDraft(draft);
+            }
+          })
+          .catch(function () {
+            setInfo(prev);
+            setDraft(draft);
+          });
+      };
+
+      if (!info) return null;
+      if (info.pinned) {
+        // 部署静态 pin：显示固定路由，选择器不出场
+        return react.createElement(
+          "div", { style: S.switchRow },
+          react.createElement("div", null,
+            react.createElement("div", { style: S.switchLabel }, "蒸馏模型"),
+            react.createElement(
+              "div", { style: S.switchDesc },
+              "已由部署配置固定：" + info.effective.provider + " / " + info.effective.model,
+            )),
+        );
+      }
+
+      var providers = info.providers || [];
+      var models = modelsState[0];
+      var providerKnown = curProvider === "" || providers.some(function (p) { return p.id === curProvider; });
+      var modelKnown = models && models.some(function (m) { return m.id === curModel; });
+      // 供应商列表为空数组 = 适配器不提供模型目录：降级为手动输入模型 id
+      var manualInput = models !== null && models.length === 0;
+
+      var defaultLabel = info.default
+        ? "跟随默认（" + info.default.provider + " / " + info.default.model + "）"
+        : "跟随默认";
+
+      var providerOptions = [{ id: "", label: defaultLabel }].concat(
+        providers.map(function (p) { return { id: p.id, label: p.name + "（" + p.id + "）" }; }),
+      );
+      if (curProvider && !providerKnown) {
+        providerOptions.push({ id: curProvider, label: curProvider + "（已不在列表）" });
+      }
+
+      var modelOptions = [{ id: "", label: "跟随默认" }].concat(
+        (models || []).map(function (m) { return { id: m.id, label: m.name !== m.id ? m.name + "（" + m.id + "）" : m.id }; }),
+      );
+      if (curModel && !modelKnown) {
+        modelOptions.push({ id: curModel, label: curModel + "（已不在列表）" });
+      }
+
+      return react.createElement(
+        "div", { style: Object.assign({}, S.switchRow, { flexWrap: "wrap" }) },
+        react.createElement(
+          "select",
+          {
+            className: "dsh-mem-select",
+            style: { flexShrink: 0, maxWidth: 220 },
+            value: curProvider,
+            disabled: disabled,
+            onChange: function (e) {
+              var v = e.target.value;
+              if (v === "") {
+                writeLlm({ distillProvider: "", distillModel: "" });
+              } else {
+                setDraft(v);
+              }
+            },
+          },
+          providerOptions.map(function (o) {
+            return react.createElement("option", { key: o.id, value: o.id }, o.label);
+          }),
+        ),
+        !curProvider
+          ? null
+          : manualInput
+            ? react.createElement(NInput, {
+                style: { flex: 1, minWidth: 160 },
+                placeholder: "模型 id（该供应商未提供列表，手动输入后回车）…",
+                value: manualModel,
+                onChange: function (e) { setManualModel(e.target.value); },
+                onKeyDown: function (e) {
+                  if (e.key === "Enter" && manualModel.trim()) {
+                    writeLlm({ distillProvider: curProvider, distillModel: manualModel.trim() });
+                    setManualModel("");
+                  }
+                },
+              })
+            : react.createElement(
+                "select",
+                {
+                  className: "dsh-mem-select",
+                  style: { flex: 1, minWidth: 160 },
+                  value: curModel,
+                  disabled: disabled || models === null,
+                  onChange: function (e) {
+                    writeLlm({ distillProvider: curProvider, distillModel: e.target.value });
+                  },
+                },
+                modelOptions.map(function (o) {
+                  return react.createElement("option", { key: o.id, value: o.id }, o.label);
+                }),
+              ),
+        react.createElement("div", null,
+          react.createElement("div", { style: S.switchLabel }, "蒸馏模型"),
+          react.createElement(
+            "div", { style: S.switchDesc },
+            info.effective
+              ? "当前生效 " + info.effective.provider + " / " + info.effective.model +
+                  (curProvider ? "" : "（跟随默认选择）")
+              : "暂无可用路由（未选择且无默认）",
+          ),
+          !providerKnown || (curModel && models !== null && !modelKnown)
+            ? react.createElement(
+                "div", { style: { fontSize: 12, color: "var(--dsh-mem-danger)" } },
+                "所选供应商或模型已不在已配置列表中，蒸馏调用可能失败，建议重新选择。",
+              )
+            : null),
+      );
+    }
+
+    // ── 蒸馏预算（分层输出 token 上限 + 输入字符上限）──
+    // 数据源：settings-get 的 budgets（current 运行时覆盖 0=跟随默认 / defaults
+    // 内置默认 / effective 实际生效）与 inputBudget（current 0=跟随配置 /
+    // fallback 静态配置值 / effective）。输出四键经 settings-set 的
+    // distillBudgets 成对提交；输入走 distillMaxInputChars 单键提交。
+    // 思考档 high/max 的 ×4 放大只作用于输出预算（提示文案注明）。
+    function BudgetInputs(props) {
+      var rpc = props.rpc;
+      var disabled = !!props.disabled;
+      var data = props.data;
+      var setData = props.setData;
+      var onError = props.onError;
+      var layers = [
+        ["extract", "抽取"],
+        ["dedup", "去重"],
+        ["l2", "L2 场景"],
+        ["l3", "L3 画像"],
+      ];
+      // 输入草稿（string|null）：击键只改本地，blur/回车才提交（input 键 = 输入预算）
+      var draftState = react.useState(null);
+      var draft = draftState[0];
+      var setDraft = draftState[1];
+
+      if (!data || !data.budgets) return null;
+      var cur = data.budgets.current || {};
+      var def = data.budgets.defaults || {};
+      var eff = data.budgets.effective || {};
+      var ib = data.inputBudget || {};
+      var curIn = ib.current || 0;
+      var effIn = ib.effective || ib.fallback || 0;
+
+      var shown = function (key) {
+        if (draft && draft[key] !== undefined) return draft[key];
+        var c = key === "input" ? curIn : cur[key];
+        return c > 0 ? String(c) : "";
+      };
+
+      /** 通用提交：patchKey 为 settings-set 载荷键名；pick 从草稿取值并校验。 */
+      var commitPart = function (keys, buildPayload, applyView) {
+        if (!draft) return;
+        var values = {};
+        for (var i = 0; i < keys.length; i++) {
+          var key = keys[i];
+          var raw = (draft[key] !== undefined ? draft[key] : shown(key)).trim();
+          var n = raw === "" ? 0 : Number(raw);
+          var max = key === "input" ? 1000000 : 1000000;
+          var min = key === "input" ? (raw === "" ? 0 : 1000) : 0;
+          if (!Number.isInteger(n) || n < min || n > max) {
+            onError(key === "input"
+              ? "输入预算须为 0 或 1000~1000000 的整数（留空或 0 = 跟随配置）"
+              : "输出预算须为 0~1000000 的整数（留空或 0 = 跟随默认）");
+            setDraft(null);
+            return;
+          }
+          values[key] = n;
+        }
+        setDraft(null);
+        var prev = data;
+        setData(applyView(prev, values));
+        rpc("dsh-memory/settings-set", buildPayload(values))
+          .then(function (r) {
+            if (!r || !r.ok) {
+              setData(prev);
+              onError(r && r.error ? "预算写入失败：" + r.error.message : "预算写入失败");
+            } else {
+              onError(null);
+            }
+          })
+          .catch(function (e) {
+            setData(prev);
+            onError("预算写入失败：" + String((e && e.message) || e));
+          });
+      };
+
+      /** 输出四键成对提交（distillBudgets）。 */
+      var commitOutputs = function () {
+        commitPart(
+          ["extract", "dedup", "l2", "l3"],
+          function (v) { return { distillBudgets: v }; },
+          function (prev, v) {
+            var effNext = {};
+            for (var j = 0; j < layers.length; j++) {
+              var k = layers[j][0];
+              effNext[k] = v[k] > 0 ? v[k] : (def[k] || 0);
+            }
+            return Object.assign({}, prev, {
+              settings: Object.assign({}, prev.settings, { distillBudgets: v }),
+              budgets: Object.assign({}, prev.budgets, { current: v, effective: effNext }),
+            });
+          },
+        );
+      };
+
+      /** 输入预算单键提交（distillMaxInputChars）。 */
+      var commitInput = function () {
+        commitPart(
+          ["input"],
+          function (v) { return { distillMaxInputChars: v.input }; },
+          function (prev, v) {
+            return Object.assign({}, prev, {
+              settings: Object.assign({}, prev.settings, { distillMaxInputChars: v.input }),
+              inputBudget: Object.assign({}, prev.inputBudget || {}, {
+                current: v.input,
+                effective: v.input > 0 ? v.input : (ib.fallback || 0),
+              }),
+            });
+          },
+        );
+      };
+
+      /** 某组键是否有未提交改动（触发 blur/Enter 提交）。 */
+      var dirty = function (keys) {
+        if (!draft) return false;
+        for (var i = 0; i < keys.length; i++) {
+          var key = keys[i];
+          var want = (draft[key] !== undefined ? draft[key] : "").trim();
+          var was = key === "input"
+            ? (curIn > 0 ? String(curIn) : "")
+            : (cur[key] > 0 ? String(cur[key]) : "");
+          if (want !== was) return true;
+        }
+        return false;
+      };
+      var outKeys = ["extract", "dedup", "l2", "l3"];
+
+      var inputBox = function (key, label, title, width, placeholder, onCommit) {
+        return react.createElement(NInput, {
+          key: key,
+          type: "number",
+          min: 0,
+          max: 1000000,
+          style: { width: width },
+          title: title,
+          placeholder: String(placeholder || ""),
+          value: shown(key),
+          disabled: disabled,
+          onChange: function (e) {
+            var v = e.target.value;
+            var d = Object.assign({}, draft || {});
+            d[key] = v;
+            setDraft(d);
+          },
+          onBlur: function () { if (dirty([key])) onCommit(); },
+          onKeyDown: function (e) { if (e.key === "Enter" && dirty([key])) onCommit(); },
+        });
+      };
+
+      return react.createElement(
+        "div", null,
+        react.createElement(
+          "div", { style: S.switchRow },
+          react.createElement(
+            "div", { style: Object.assign({}, S.flexRow, { gap: 6 }) },
+            layers.map(function (l) {
+              return inputBox(l[0], l[1], l[1] + " 输出预算（token，留空 = 默认 " + (def[l[0]] || "?") + "）", 92, def[l[0]], commitOutputs);
+            }),
+          ),
+          react.createElement("div", null,
+            react.createElement("div", { style: S.switchLabel }, "输出预算"),
+            react.createElement(
+              "div", { style: S.switchDesc },
+              "各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 " +
+                layers.map(function (l) { return eff[l[0]] || "?"; }).join(" / ") +
+                "）；思考档 high/max 时实际限额自动 ×4",
+            )),
+        ),
+        react.createElement(
+          "div", { style: S.switchRow },
+          inputBox("input", "输入", "单次蒸馏输入字符上限（≈token，中文 1 字≈1 token；留空 = 跟随配置 " + (ib.fallback || "?") + "）", 120, ib.fallback, commitInput),
+          react.createElement("div", null,
+            react.createElement("div", { style: S.switchLabel }, "输入预算"),
+            react.createElement(
+              "div", { style: S.switchDesc },
+              "单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；" +
+                "留空或 0 = 跟随配置（当前生效 " + (effIn || "?") + "，来自 llm.maxInputChars）",
+            )),
+        ),
+      );
+    }
+
     // ── Tab：概览（开关面板 + 计数） ──
     function OverviewTab(props) {
       var rpc = props.rpc;
@@ -1567,6 +1924,8 @@ window.__ModuleLoader__.load({
           : settingsData
             ? react.createElement(
                 "div", { style: S.switchPanel },
+                // 分组：记忆模式（总闸与三个分项开关）
+                react.createElement("div", { style: S.panelLabel }, "记忆模式"),
                 react.createElement(SwitchRow, {
                   label: "记忆模式",
                   desc: master ? "已开启：捕获对话并蒸馏记忆" : "已关闭：不捕获、不蒸馏、不注入（数据保留）",
@@ -1594,6 +1953,8 @@ window.__ModuleLoader__.load({
                   disabled: !master,
                   onChange: function (v) { toggle("recall", v); },
                 }),
+                // 分组：蒸馏参数（模型路由 / 思考档位 / 输出预算）
+                react.createElement("div", { style: S.panelLabel }, "蒸馏参数"),
                 settingsData.effort
                   ? react.createElement(
                       "div",
@@ -1619,6 +1980,14 @@ window.__ModuleLoader__.load({
                         )),
                     )
                   : null,
+                react.createElement(LlmModelRow, { rpc: rpc, disabled: !master }),
+                react.createElement(BudgetInputs, {
+                  rpc: rpc,
+                  disabled: !master,
+                  data: settingsData,
+                  setData: setSettingsData,
+                  onError: setError,
+                }),
                 ceilingNote
                   ? react.createElement("p", { style: S.hint }, ceilingNote)
                   : null,

@@ -5,7 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import type { Context } from '@deepseek-ai/cordis';
 import type { MemoryConfig } from '../config.js';
-import { callLLM, layerMaxTokens, LAYER_MAX_TOKENS_DEDUP, LAYER_MAX_TOKENS_EXTRACT, parseJsonLogged } from '../llm.js';
+import { callLLM, parseJsonLogged, resolveLayerTokens } from '../llm.js';
 import { formatExtractionPrompt, getExtractMemoriesSystemPrompt } from '../prompts/l1-extraction.js';
 import { formatBatchConflictPrompt, getConflictDetectionSystemPrompt } from '../prompts/l1-dedup.js';
 import type { L1Store } from '../store/l1.js';
@@ -118,7 +118,7 @@ export async function runExtraction(
     const raw = await callLLM(ctx, cfg, {
       system: getExtractMemoriesSystemPrompt(mode),
       user: userPrompt,
-      maxTokens: layerMaxTokens(LAYER_MAX_TOKENS_EXTRACT, cfg.llm.reasoningEffort),
+      maxTokens: resolveLayerTokens(cfg, 'extract'),
       logger,
     });
     const scenes = parseJsonLogged<SceneExtraction[]>(raw, 'L1 抽取', logger);
@@ -157,7 +157,7 @@ export async function runExtraction(
   const dedupRaw = await callLLM(ctx, cfg, {
     system: getConflictDetectionSystemPrompt(mode),
     user: dedupPrompt,
-    maxTokens: layerMaxTokens(LAYER_MAX_TOKENS_DEDUP, cfg.llm.reasoningEffort),
+    maxTokens: resolveLayerTokens(cfg, 'dedup'),
     logger,
   });
   const decisions = parseJsonLogged<DedupDecision[]>(dedupRaw, 'L1 去重判定', logger);

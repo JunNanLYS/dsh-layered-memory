@@ -99,7 +99,7 @@ export class RebuildController {
                 ...this.status,
                 sessionCount: est.sessions,
                 messageCount: est.messages,
-                estCalls: estimateCalls(est.sessions, est.messages, est.chars, this.cfg.llm.maxInputChars),
+                estCalls: estimateCalls(est.sessions, est.messages, est.chars, effectiveCfg(this.cfg, this.live).llm.maxInputChars),
             };
         }
         return { ...this.status };
@@ -123,7 +123,7 @@ export class RebuildController {
             phase: 'preparing',
             sessionCount: est.sessions,
             messageCount: est.messages,
-            estCalls: estimateCalls(est.sessions, est.messages, est.chars, this.cfg.llm.maxInputChars),
+            estCalls: estimateCalls(est.sessions, est.messages, est.chars, effectiveCfg(this.cfg, this.live).llm.maxInputChars),
             startedAt: Date.now(),
         };
         this.runner.enqueueRebuildTask(() => this.prepare());

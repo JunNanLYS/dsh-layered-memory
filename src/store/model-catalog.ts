@@ -75,7 +75,7 @@ export const MODEL_CATALOG: CatalogEntry[] = [
       { path: 'added_tokens.json', size: 35, sha256: '50b2f405ba56a26d4913fd772089992252d7f942123cc0a034d96424221ba946' },
       { path: 'special_tokens_map.json', size: 662, sha256: '2f7b0adf4fb469770bb1490e3e35df87b1dc578246c5e7e6fc76ecf33213a397' },
       { path: 'tokenizer_config.json', size: 1156830, sha256: '3ca953eea6c3c9fcda9cf3df22949ff18b216f7c74bd6459230f3f1013953f3a' },
-      { path: 'generation_config.json', size: 133, sha256: '1fb1efd221c1ca88a736b1b36cb47d754c177677e222acb3b1e5424c5d664870' },
+      { path: 'generation_config.json', size: 133, sha256: '1fb1efd221c1ca88a736d1b36cb47d754c177677e222acb3b1e5424c5d664870' },
       { path: 'tokenizer.json', size: 20323312, sha256: '4dda02faaf32bc91031dc8c88457ac272b00c1016cc679757d1c441b248b9c47' },
       { path: 'onnx/model_quantized.onnx', size: 567874, sha256: '172efde319fe1542dc41f31be6154910b05b78f7a861c265c4600eec906bd6d8' },
       { path: 'onnx/model_quantized.onnx_data', size: 308890624, sha256: '705626e28e4c23c82ade34566b4197d97f534c12275fa406dfb71e9937d388c0' },
