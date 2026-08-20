@@ -1,0 +1,76 @@
+{
+  "id": "work-deploy",
+  "family": "work",
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "部署环境的坑跟你说下，省得每次都踩：测试环境的数据库连接池上限是 20，超过就挂；预发环境的时钟比北京时间慢两分钟，定时任务调试要留意；生产环境只能走跳板机访问，SSH 别名 prod-jump。",
+        "日志方面：应用日志统一打到 ELK，查日志用 trace_id 串；但 ELK 索引保留只有 7 天，更早的要找运维从冷备份捞。"
+      ]
+    },
+    {
+      "kind": "change",
+      "messages": [
+        "环境更新：生产环境上个月上了新的权限网关，跳板机别名改成 prod-gw 了，旧的 prod-jump 已停用；另外 ELK 保留期延长到 30 天。"
+      ]
+    }
+  ],
+  "probes": [
+    {
+      "type": "extraction",
+      "q": "测试环境的数据库连接池上限是多少？",
+      "gold": [
+        "20"
+      ],
+      "judge": "contains-all"
+    },
+    {
+      "type": "multihop",
+      "q": "现在访问生产环境用什么方式？日志保留多久、更早的日志怎么查？",
+      "gold": [
+        "prod-gw 或权限网关",
+        "30 天",
+        "冷备份"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "temporal",
+      "q": "SSH 别名是什么时候从旧名换掉的？旧名是什么？",
+      "gold": [
+        "上个月",
+        "prod-jump"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "update",
+      "q": "现在查 20 天前的应用日志，还能从 ELK 直接查到吗？",
+      "gold": [
+        "可以",
+        "30 天保留期内"
+      ],
+      "stale": [
+        "7 天保留不够",
+        "要找运维冷备份"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "scene",
+      "q": "我最初说的预发环境那个坑是什么？",
+      "gold": [
+        "时钟慢两分钟",
+        "定时任务调试受影响"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "abstention",
+      "q": "我之前说测试环境的 Redis 密码统一改过一次，改成什么来着？",
+      "judge": "abstain-llm"
+    }
+  ],
+  "marker": "prod-jump"
+}

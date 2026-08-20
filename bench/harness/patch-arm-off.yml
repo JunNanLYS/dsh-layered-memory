@@ -1,0 +1,50 @@
+# B 组（记忆关）：整行禁用记忆插件——不捕获、不蒸馏、不召回、无记忆工具注入。
+# 教学输入与 A 组逐字相同，构成"同一测试集、记忆关"的对照组。
+
+# ---- 基准无工具面（两组共用，防 Agent 用 shell/文件工具翻记忆库作弊或被真实数据污染）----
+# 只关面向模型的工具行；`tools` 运行时服务本身保留（行本身不动）。
+- id: dsh-memory
+  disabled: true
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+- id: tool-subagent-list-agents
+  disabled: true
+- id: tool-subagent-report
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: tool-ralph
+  disabled: true
+- id: tool-str-replace-editor
+  disabled: true
+- id: tool-web
+  disabled: true
+
+# 基准 persona：纯对话作答，禁工具，不知道就直说（答案变短也让关键词判分可靠）。
+- id: system-prompt
+  config:
+    persona: >-
+      You are a participant in a memory benchmark. Answer the user directly
+      from the conversation context and your own memory only. Never use tools;
+      never explore the file system. Keep answers short (1-3 sentences).
+      If you don't know, say so plainly — never invent details.

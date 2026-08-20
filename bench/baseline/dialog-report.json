@@ -1,0 +1,786 @@
+{
+  "generatedAt": "2026-08-20T08:35:45.244Z",
+  "envLines": [
+    "A 组 bench/results/run-A-2026-08-20T07-35-32/rep-1：deepseek-official/deepseek-v4-flash（判卷 deepseek-official/deepseek-v4-flash，插件 0.8.0，15 场景）",
+    "A 组 bench/results/run-A-2026-08-20T07-35-32/rep-2：deepseek-official/deepseek-v4-flash（判卷 deepseek-official/deepseek-v4-flash，插件 0.8.0，15 场景）",
+    "A 组 bench/results/run-A-2026-08-20T07-35-32/rep-3：deepseek-official/deepseek-v4-flash（判卷 deepseek-official/deepseek-v4-flash，插件 0.8.0，15 场景）",
+    "B 组 bench/results/run-B-2026-08-20T08-14-29/rep-1：deepseek-official/deepseek-v4-flash（判卷 deepseek-official/deepseek-v4-flash，插件 0.8.0，15 场景）",
+    "B 组 bench/results/run-B-2026-08-20T08-14-29/rep-2：deepseek-official/deepseek-v4-flash（判卷 deepseek-official/deepseek-v4-flash，插件 0.8.0，15 场景）",
+    "B 组 bench/results/run-B-2026-08-20T08-14-29/rep-3：deepseek-official/deepseek-v4-flash（判卷 deepseek-official/deepseek-v4-flash，插件 0.8.0，15 场景）"
+  ],
+  "stats": {
+    "A": {
+      "reps": 3,
+      "hit": 250,
+      "total": 270,
+      "accuracy": 0.9259259259259259,
+      "byType": {
+        "extraction": {
+          "hit": 45,
+          "total": 45
+        },
+        "multihop": {
+          "hit": 45,
+          "total": 45
+        },
+        "temporal": {
+          "hit": 43,
+          "total": 45
+        },
+        "update": {
+          "hit": 31,
+          "total": 45
+        },
+        "scene": {
+          "hit": 41,
+          "total": 45
+        },
+        "abstention": {
+          "hit": 45,
+          "total": 45
+        }
+      },
+      "updateHit": 31,
+      "abstainFabricate": 0,
+      "perScenario": [
+        {
+          "id": "chat-entertainment",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-family",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-fitness",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-food",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-language",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-personal-basic",
+          "hit": 4,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-shopping",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-travel",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-api",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-coding-style",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-deploy",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-meeting",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-onboarding",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-project-stack",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-team",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-entertainment",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-family",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-fitness",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-food",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-language",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-personal-basic",
+          "hit": 4,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-shopping",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-travel",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-api",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-coding-style",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-deploy",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-meeting",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-onboarding",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-project-stack",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-team",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-entertainment",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-family",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-fitness",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-food",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-language",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-personal-basic",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-shopping",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-travel",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-api",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-coding-style",
+          "hit": 5,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-deploy",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-meeting",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-onboarding",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-project-stack",
+          "hit": 4,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-team",
+          "hit": 6,
+          "total": 6,
+          "distillTimeout": false
+        }
+      ],
+      "wf": {
+        "scenarios": 0,
+        "checksPassed": 0,
+        "checksTotal": 0,
+        "asks": 0,
+        "snoopSuspect": false
+      },
+      "contamination": [
+        "chat-food ← chat-entertainment(尘封十三载)",
+        "chat-language ← chat-family(襄阳)",
+        "chat-language ← chat-fitness(可调哑铃)",
+        "chat-personal-basic ← chat-fitness(可调哑铃)",
+        "chat-personal-basic ← chat-language(大家的日语)",
+        "chat-shopping ← chat-personal-basic(陈默)",
+        "chat-shopping ← chat-language(大家的日语)",
+        "chat-travel ← chat-personal-basic(陈默)",
+        "chat-travel ← chat-family(襄阳)",
+        "chat-travel ← chat-fitness(可调哑铃)",
+        "chat-travel ← chat-language(大家的日语)",
+        "work-api ← chat-language(大家的日语)",
+        "work-api ← chat-personal-basic(陈默)",
+        "work-coding-style ← chat-language(大家的日语)",
+        "work-coding-style ← chat-personal-basic(陈默)",
+        "work-coding-style ← work-api(游标分页)",
+        "work-coding-style ← chat-travel(春熙路)",
+        "work-coding-style ← chat-fitness(可调哑铃)",
+        "work-deploy ← chat-personal-basic(陈默)",
+        "work-deploy ← chat-language(大家的日语)",
+        "work-deploy ← work-api(游标分页)",
+        "work-deploy ← chat-fitness(可调哑铃)",
+        "work-deploy ← work-coding-style(约定式提交)",
+        "work-meeting ← work-api(游标分页)",
+        "work-meeting ← chat-fitness(可调哑铃)",
+        "work-meeting ← chat-personal-basic(陈默)",
+        "work-meeting ← chat-travel(春熙路)",
+        "work-meeting ← chat-language(大家的日语)",
+        "work-onboarding ← chat-personal-basic(陈默)",
+        "work-onboarding ← work-deploy(prod-jump)",
+        "work-onboarding ← chat-travel(春熙路)",
+        "work-onboarding ← work-api(游标分页)",
+        "work-onboarding ← chat-language(大家的日语)",
+        "work-onboarding ← work-coding-style(约定式提交)",
+        "work-project-stack ← chat-personal-basic(陈默)",
+        "work-project-stack ← work-coding-style(约定式提交)",
+        "work-project-stack ← work-onboarding(volta)",
+        "work-project-stack ← chat-language(大家的日语)",
+        "work-project-stack ← chat-travel(春熙路)",
+        "work-project-stack ← work-api(游标分页)",
+        "work-team ← chat-personal-basic(陈默)",
+        "work-team ← chat-shopping(官翻)",
+        "work-team ← work-coding-style(约定式提交)",
+        "work-team ← work-meeting(Lily)",
+        "work-team ← work-project-stack(星图)",
+        "work-team ← chat-family(襄阳)",
+        "work-team ← work-deploy(prod-jump)",
+        "work-team ← work-onboarding(volta)",
+        "work-team ← chat-fitness(可调哑铃)",
+        "work-team ← chat-language(大家的日语)",
+        "work-team ← work-api(游标分页)",
+        "chat-food ← chat-entertainment(尘封十三载)",
+        "chat-language ← chat-fitness(可调哑铃)",
+        "chat-personal-basic ← chat-fitness(可调哑铃)",
+        "chat-personal-basic ← chat-language(大家的日语)",
+        "chat-shopping ← chat-personal-basic(陈默)",
+        "chat-travel ← chat-personal-basic(陈默)",
+        "chat-travel ← chat-fitness(可调哑铃)",
+        "work-api ← chat-language(大家的日语)",
+        "work-api ← chat-personal-basic(陈默)",
+        "work-api ← chat-shopping(官翻)",
+        "work-coding-style ← chat-language(大家的日语)",
+        "work-coding-style ← chat-personal-basic(陈默)",
+        "work-coding-style ← work-api(游标分页)",
+        "work-coding-style ← chat-fitness(可调哑铃)",
+        "work-deploy ← chat-personal-basic(陈默)",
+        "work-deploy ← work-api(游标分页)",
+        "work-deploy ← work-coding-style(约定式提交)",
+        "work-deploy ← chat-fitness(可调哑铃)",
+        "work-meeting ← work-coding-style(约定式提交)",
+        "work-meeting ← chat-language(大家的日语)",
+        "work-meeting ← chat-personal-basic(陈默)",
+        "work-meeting ← work-deploy(prod-jump)",
+        "work-onboarding ← chat-personal-basic(陈默)",
+        "work-onboarding ← chat-shopping(官翻)",
+        "work-onboarding ← work-deploy(prod-jump)",
+        "work-onboarding ← chat-food(乳清蛋白粉)",
+        "work-onboarding ← work-api(游标分页)",
+        "work-onboarding ← work-coding-style(约定式提交)",
+        "work-onboarding ← chat-travel(春熙路)",
+        "work-project-stack ← work-coding-style(约定式提交)",
+        "work-project-stack ← work-onboarding(volta)",
+        "work-project-stack ← chat-personal-basic(陈默)",
+        "work-team ← chat-personal-basic(陈默)",
+        "work-team ← chat-shopping(官翻)",
+        "work-team ← work-meeting(Lily)",
+        "work-team ← work-project-stack(星图)",
+        "work-team ← work-coding-style(约定式提交)",
+        "work-team ← work-deploy(prod-jump)",
+        "chat-food ← chat-entertainment(尘封十三载)",
+        "chat-language ← chat-food(乳清蛋白粉)",
+        "chat-language ← chat-fitness(可调哑铃)",
+        "chat-personal-basic ← chat-fitness(可调哑铃)",
+        "chat-personal-basic ← chat-food(乳清蛋白粉)",
+        "chat-personal-basic ← chat-language(大家的日语)",
+        "chat-shopping ← chat-personal-basic(陈默)",
+        "chat-shopping ← chat-food(乳清蛋白粉)",
+        "chat-travel ← chat-personal-basic(陈默)",
+        "chat-travel ← chat-food(乳清蛋白粉)",
+        "chat-travel ← chat-fitness(可调哑铃)",
+        "chat-travel ← chat-language(大家的日语)",
+        "work-api ← chat-personal-basic(陈默)",
+        "work-api ← chat-food(乳清蛋白粉)",
+        "work-api ← chat-language(大家的日语)",
+        "work-api ← chat-shopping(官翻)",
+        "work-api ← chat-travel(春熙路)",
+        "work-coding-style ← chat-language(大家的日语)",
+        "work-coding-style ← chat-personal-basic(陈默)",
+        "work-coding-style ← work-api(游标分页)",
+        "work-coding-style ← chat-food(乳清蛋白粉)",
+        "work-coding-style ← chat-family(襄阳)",
+        "work-coding-style ← chat-fitness(可调哑铃)",
+        "work-coding-style ← chat-travel(春熙路)",
+        "work-deploy ← chat-personal-basic(陈默)",
+        "work-deploy ← work-api(游标分页)",
+        "work-deploy ← work-coding-style(约定式提交)",
+        "work-deploy ← chat-fitness(可调哑铃)",
+        "work-deploy ← chat-food(乳清蛋白粉)",
+        "work-meeting ← chat-food(乳清蛋白粉)",
+        "work-meeting ← work-coding-style(约定式提交)",
+        "work-meeting ← chat-personal-basic(陈默)",
+        "work-meeting ← chat-travel(春熙路)",
+        "work-meeting ← chat-language(大家的日语)",
+        "work-onboarding ← chat-personal-basic(陈默)",
+        "work-onboarding ← chat-shopping(官翻)",
+        "work-onboarding ← work-deploy(prod-jump)",
+        "work-onboarding ← chat-food(乳清蛋白粉)",
+        "work-onboarding ← chat-travel(春熙路)",
+        "work-onboarding ← work-coding-style(约定式提交)",
+        "work-onboarding ← chat-language(大家的日语)",
+        "work-project-stack ← work-coding-style(约定式提交)",
+        "work-project-stack ← work-deploy(prod-jump)",
+        "work-project-stack ← chat-food(乳清蛋白粉)",
+        "work-project-stack ← work-onboarding(volta)",
+        "work-project-stack ← chat-personal-basic(陈默)",
+        "work-team ← chat-personal-basic(陈默)",
+        "work-team ← chat-shopping(官翻)",
+        "work-team ← work-meeting(Lily)",
+        "work-team ← work-onboarding(volta)",
+        "work-team ← work-project-stack(星图)",
+        "work-team ← chat-food(乳清蛋白粉)",
+        "work-team ← work-coding-style(约定式提交)",
+        "work-team ← chat-fitness(可调哑铃)",
+        "work-team ← work-api(游标分页)"
+      ]
+    },
+    "B": {
+      "reps": 3,
+      "hit": 48,
+      "total": 270,
+      "accuracy": 0.17777777777777778,
+      "byType": {
+        "extraction": {
+          "hit": 3,
+          "total": 45
+        },
+        "multihop": {
+          "hit": 0,
+          "total": 45
+        },
+        "temporal": {
+          "hit": 0,
+          "total": 45
+        },
+        "update": {
+          "hit": 0,
+          "total": 45
+        },
+        "scene": {
+          "hit": 0,
+          "total": 45
+        },
+        "abstention": {
+          "hit": 45,
+          "total": 45
+        }
+      },
+      "updateHit": 0,
+      "abstainFabricate": 0,
+      "perScenario": [
+        {
+          "id": "chat-entertainment",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-family",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-fitness",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-food",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-language",
+          "hit": 2,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-personal-basic",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-shopping",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-travel",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-api",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-coding-style",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-deploy",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-meeting",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-onboarding",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-project-stack",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-team",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-entertainment",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-family",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-fitness",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-food",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-language",
+          "hit": 2,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-personal-basic",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-shopping",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-travel",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-api",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-coding-style",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-deploy",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-meeting",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-onboarding",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-project-stack",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-team",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-entertainment",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-family",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-fitness",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-food",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-language",
+          "hit": 2,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-personal-basic",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-shopping",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "chat-travel",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-api",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-coding-style",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-deploy",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-meeting",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-onboarding",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-project-stack",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        },
+        {
+          "id": "work-team",
+          "hit": 1,
+          "total": 6,
+          "distillTimeout": false
+        }
+      ],
+      "wf": {
+        "scenarios": 0,
+        "checksPassed": 0,
+        "checksTotal": 0,
+        "asks": 0,
+        "snoopSuspect": false
+      },
+      "contamination": []
+    }
+  }
+}

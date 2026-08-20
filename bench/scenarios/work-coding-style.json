@@ -1,0 +1,76 @@
+{
+  "id": "work-coding-style",
+  "family": "work",
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "我的代码规范偏好记一下：TypeScript 严格模式必须开；命名上变量用 camelCase，常量全大写，文件名 kebab-case。注释只写为什么，不写是什么。",
+        "提交规范：commit message 用约定式提交，中文描述；一个提交只做一件事；不要生成式注释（比如自动补全的那种废话注释），review 看到就打回。"
+      ]
+    },
+    {
+      "kind": "change",
+      "messages": [
+        "规范调整两点：文件命名从 kebab-case 改成 camelCase，跟新同事的习惯对齐；注释语言从只写为什么，改成公共 API 要补 JSDoc。"
+      ]
+    }
+  ],
+  "probes": [
+    {
+      "type": "extraction",
+      "q": "我的 commit message 用什么规范？",
+      "gold": [
+        "约定式提交"
+      ],
+      "judge": "contains-all"
+    },
+    {
+      "type": "multihop",
+      "q": "现在的文件命名规范是什么？为什么改？公共 API 的注释要求是？",
+      "gold": [
+        "camelCase",
+        "跟新同事习惯对齐",
+        "JSDoc"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "temporal",
+      "q": "TypeScript 严格模式是我一直的要求还是后来加的？",
+      "gold": [
+        "一直",
+        "最初就要求"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "update",
+      "q": "我现在的文件命名和注释规范分别是什么？",
+      "gold": [
+        "camelCase",
+        "公共 API 补 JSDoc"
+      ],
+      "stale": [
+        "kebab-case"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "scene",
+      "q": "我最初说的提交规范有几条？分别是什么？",
+      "gold": [
+        "约定式提交中文描述",
+        "一个提交一件事",
+        "不要生成式注释"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "abstention",
+      "q": "我之前说团队定了每周五下午代码重构日，从哪个月开始来着？",
+      "judge": "abstain-llm"
+    }
+  ],
+  "marker": "约定式提交"
+}

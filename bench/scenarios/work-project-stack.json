@@ -1,0 +1,74 @@
+{
+  "id": "work-project-stack",
+  "family": "work",
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "跟你说下我在做的项目：叫「星图」，是一个跨境电商的选品分析平台。后端 Node.js 22 + Fastify，数据库 PostgreSQL 16 加 Redis，前端 Next.js。部署在公司的 K8s 集群。",
+        "架构上两个关键决策：一是选品数据用事件溯源而不是 CRUD，方便回放；二是报告导出走的异步队列，不阻塞主流程。团队里我负责后端，另一个同事负责前端。"
+      ]
+    },
+    {
+      "kind": "change",
+      "messages": [
+        "项目技术栈有变更：Redis 换成了 KeyDB，原因是集群模块兼容性；另外报告导出从异步队列改成了临时签名直链方案，更简单。"
+      ]
+    }
+  ],
+  "probes": [
+    {
+      "type": "extraction",
+      "q": "星图项目的数据库用的什么？",
+      "gold": [
+        "PostgreSQL"
+      ],
+      "judge": "contains-all"
+    },
+    {
+      "type": "multihop",
+      "q": "星图现在用什么做缓存层？为什么换？报告导出现在是什么方案？",
+      "gold": [
+        "KeyDB",
+        "集群模块兼容性",
+        "临时签名直链"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "temporal",
+      "q": "报告导出方案是先有的异步队列还是先有的签名直链？",
+      "gold": [
+        "先异步队列",
+        "后改签名直链"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "update",
+      "q": "星图现在的缓存组件是什么？",
+      "gold": [
+        "KeyDB"
+      ],
+      "stale": [
+        "Redis"
+      ],
+      "judge": "contains-all"
+    },
+    {
+      "type": "scene",
+      "q": "星图最初的两个关键架构决策是什么？",
+      "gold": [
+        "选品数据事件溯源",
+        "报告导出异步队列"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "abstention",
+      "q": "我之前说星图要接 Shopify 的开放 API，密钥找谁申请来着？",
+      "judge": "abstain-llm"
+    }
+  ],
+  "marker": "星图"
+}

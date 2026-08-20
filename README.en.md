@@ -142,26 +142,43 @@ trajectory view):
        alt="The same settings memory browser overview in light theme: identical layout and information on light card backgrounds with the same accent family, theme switch without reload">
 </p>
 
-## Measured Comparison (DSH-MemBench: Learning Curve + Memory Probes)
+## Measured Comparison (DSH-MemBench: Automated Benchmark)
 
-Screenshots show what the plugin looks like — this section answers "**what does enabling it actually buy you?**" The repo ships a reproducible real-machine benchmark ([`bench/`](./bench/)) with two layers of evidence:
+Screenshots show what the plugin looks like — this section answers "**what does enabling it actually buy you?**" with measured numbers from an **automated benchmark** ([`bench/`](./bench/), one command to reproduce). Method: the same scenario bank with verbatim-identical inputs runs in **Group A (memory on)** and **Group B (memory off)**, 3 repetitions each, merged; environment DeepSeek official `deepseek-v4-flash`, plugin 0.8.0, Windows; taxonomy adapted from [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark).
 
-- **Learning curve (efficiency layer)**: the same workflow is executed twice, each time in a **fresh session**. The value of memory is not in the first run — with or without it, the agent has to trial-and-error. It shows in the second run: with memory on, the agent recalls the previous context, stops asking for login credentials, skips the dead ends it already hit, and takes the proven path directly; with memory off, every run starts from zero.
-- **Memory probes (quality layer)**: a typed questionnaire examines whether memory is *correct* — information extraction, cross-session multi-hop, temporal ordering, **knowledge updates** (the rule changes mid-run; answering with the stale rule fails), and **abstention** (fabricating something that never happened fails). The question taxonomy adapts [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark) to agentic workflows.
+### Dialog track (15 scenarios × 6 probe types × 3 reps = 270 questions/group): does it remember correctly
 
-Each test set follows a fixed matrix of 6 executions (A1→A2→A3→B1→B2→B3, fresh session each time):
+<p align="center">
+  <img src="./assets/readme/bench-dialog.svg" width="100%"
+       alt="DSH-MemBench dialog track, Group A vs Group B bar chart: overall accuracy A (memory on) 92.6% (250/270) vs B (memory off) 17.8% (48/270); per probe type, 45 each — extraction A 45/45 vs B 3/45, multi-hop A 45/45 vs B 0/45, temporal A 43/45 vs B 0/45, knowledge updates A 31/45 vs B 0/45, scene recall A 41/45 vs B 0/45, abstention both 45/45 with 0 fabricated">
+</p>
 
-| Run | Memory | What it measures |
-|---|---|---|
-| A1 / B1 | on / off | First-run baseline; the two should be roughly equal (fairness self-check) |
-| **A2 vs B2** | on vs off | **Core efficiency comparison**: tokens / steps / time / asks-back / failed attempts on the second run |
-| **A3 vs B3** | on vs off | **Core quality comparison**: accuracy over 5 probes × 3 test sets (incl. the update-probe special case and fabrication count) |
+**Dual-channel recall** (Group A): passive injection hit rate **75.1%** (the answer's key points appear in the recall injection, 169/225); most of the rest the model recovered by **actively calling the memory tools** — 84 questions with active queries, **60 rescued by tools**. The end-to-end 92.6% is the composite of both channels plus model utilization. With the memory store accumulating across scenarios for the whole run, 144 probe injections carried other scenarios' memories (honestly counted) — yet overall accuracy held at 92.6%: interference resistance under a growing store, measured.
 
-Three test sets, each targeting a different kind of memory — **credentials & procedure** (GitHub token auth → list repos & check issues, a pure-CLI task), **user preferences** ("tidy my downloads folder the usual way", with the naming rule changed mid-run), and **proven paths** (pip installs via mirror — does the first command of the second run carry `-i` on its own?). Six efficiency metrics plus probe accuracy are hand-recorded in [`bench/results.md`](./bench/results.md), with a step-by-step runbook at [`bench/runbook.md`](./bench/runbook.md); the memory system's own distillation overhead is included as an optional cost line (reporting savings without costs would be cheating).
+### Workflow track (4 scenarios × 3 reps, real tool sandbox): does it do it right, and cheaper
 
-> **First batch of measured data is being recorded; results will be published here** (with the execution environment declared).
+<p align="center">
+  <img src="./assets/readme/bench-workflow.svg" width="100%"
+       alt="DSH-MemBench workflow track, Group A vs Group B: task completion A 24/33 (72.7%) vs B 11/33 (33.3%); cost comparison (Group B as the full-bar baseline) — steps 125 vs 186 (B +49%), tool calls 184 vs 296 (B +61%), input tokens 1.30M vs 1.86M (B +43%); asks-user-for-help A 0 vs B 3; login scenario input tokens A 241k vs B 453k (+88%)">
+</p>
 
-Methodology notes and limitations (declared alongside the published numbers): single operator, single machine, one execution per cell, results vary with model and network (non-deterministic); the fixed run order makes the practice effect bias efficiency gains **conservatively** (probes are objectively scored and unaffected); probe gold answers are recorded before the probe session to prevent post-hoc fitting; the playbook author is also the plugin author, so task selection naturally favors memory-advantage scenarios — you are welcome to reproduce it yourself with [bench/playbook.md](./bench/playbook.md).
+**Login scenario close-up** (credentials exist only in memory; the site is a local service with unforgeable tokens): Group A completed all three runs **in a single turn each** (6/6, 241k input); Group B had to **ask the user for credentials every time** (3 asks, double the turns) and still finished only 5/6, at 453k input — **+88%**. This is one of memory's core values: **what it saves is not task difficulty, but pointless round-trips and re-teaching**.
+
+### Methodology & reproduction
+
+```bash
+node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --model deepseek-v4-flash
+node bench/harness/run.mjs --arm B --repeats 3 --provider deepseek-official --model deepseek-v4-flash   # dialog track
+node bench/harness/run.mjs --track workflow --arm A/B --repeats 3 ...                                  # workflow track
+node bench/harness/report.mjs --latest [dialog|workflow]                                               # aggregate report
+```
+
+- Scoring: programmatic `contains-all` plus an LLM judge against key points (every answer and verdict is preserved in `result.json` for human audit); workflow completion is verified programmatically from produced files and their contents;
+- Metrics come from provider-reported usage (input with cache-hit split) and session-event folding; the **steady-state cache rate** excludes each session's first request (A 88.7% vs B 85.4% — memory injection does not hurt caching);
+- Regression use: run before/after a plugin change and diff with `compare.mjs` (environment header check + Group-B control-drift warning);
+- Limitations (stated honestly): single machine, 3 merged runs; the judge model is the same as the tested model; the scenario bank is author-built (biased toward memory-advantage scenarios — reproduce it yourself); the tool audit flags out-of-sandbox access (agents occasionally probed the user home dir in tests; this benchmark's answers never exist in the real memory store, so the numbers are unaffected).
+
+Full reports and per-question data: [`bench/baseline/`](./bench/baseline/).
 
 ## Configuration
 

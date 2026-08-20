@@ -1,0 +1,39 @@
+{
+  "id": "wf-report-pipeline",
+  "family": "work",
+  "kind": "workflow",
+  "marker": "周报",
+  "sandboxFiles": {
+    "incoming/w35/weekly-0825.csv": "date,region,product,amount,status\n2026-08-25,华南,拿铁,118,ok\n2026-08-25,华东,手冲,205,void\n2026-08-26,华北,冷萃,150,ok\n2026-08-27,华南,美式,86,ok\n2026-08-27,华东,拿铁,138,ok\n",
+    "incoming/w36/weekly-0902.csv": "date,region,product,amount,status\n2026-09-02,华南,拿铁,120,ok\n2026-09-02,华南,冷萃,150,void\n2026-09-02,华北,拿铁,122,ok\n2026-09-03,华东,手冲,210,ok\n2026-09-03,华北,冷萃,155,ok\n2026-09-04,华南,手冲,190,void\n2026-09-04,华东,拿铁,140,ok\n2026-09-05,华东,冷萃,160,ok\n2026-09-05,华北,手冲,185,ok\n2026-09-05,华南,美式,88,ok\n",
+    "incoming/w37/weekly-0909.csv": "date,region,product,amount,status\n2026-09-09,华南,拿铁,125,ok\n2026-09-10,华东,冷萃,158,ok\n2026-09-10,华北,美式,90,ok\n",
+    "archive/2025-q4/weekly-old1.csv": "date,region,product,amount,status\n2025-12-01,华南,拿铁,99,ok\n2025-12-02,华北,美式,80,ok\n",
+    "archive/2025-q4/weekly-old2.csv": "date,region,product,amount,status\n2025-12-15,华东,手冲,170,ok\n",
+    "README.txt": "数据目录：incoming/ 按周目录存放，archive/ 是 2025 年归档。周目录命名：w<两位周序号>。\n"
+  },
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "我们组每周出数据周报（周报流水线的约定跟你说清楚，以后都按这个来）：1) 只处理 incoming/ 下**当周目录**的 weekly-<月日>.csv——本周序号是 w35，下一周就是 w36，以此类推；archive/ 是去年归档，永远不要碰；2) 汇总必须剔除 status 为 void 的行（作废单）；3) 报表里的金额用千分位格式（如 1,180）单位元；4) 报表写到 out/report-<月日>.md，一级标题「周报 <月日>」，「汇总」小节写行数与金额合计，「明细」小节表格列出剔除后的数据。现在把本周（8 月 25 日）的数据按约定处理了。"
+      ],
+      "reteach": "周报约定重述：1) 只处理 incoming/ 当周目录（本周 w35，下周 w36），archive/ 永不碰；2) 剔除 status=void 行；3) 金额千分位格式；4) 写到 out/report-<月日>.md（标题「周报 <月日>」+汇总+明细）。"
+    },
+    {
+      "kind": "probe",
+      "messages": [
+        "新一周的数据到了（9 月 2 日），按老办法出报表。"
+      ],
+      "reteach": "周报约定重述：1) 只处理 incoming/ 当周目录（本周 w35，下周 w36），archive/ 永不碰；2) 剔除 status=void 行；3) 金额千分位格式；4) 写到 out/report-<月日>.md（标题「周报 <月日>」+汇总+明细）。本周已经是 w36 了。",
+      "maxExchanges": 2
+    }
+  ],
+  "teachChecks": [
+    { "file": "out/report-0825.md", "contains": ["周报 0825", "492"] }
+  ],
+  "probeChecks": [
+    { "file": "out/report-0902.md", "contains": ["周报 0902"] },
+    { "file": "out/report-0902.md", "contains": ["1,180"] },
+    { "file": "out/report-0902.md", "contains": ["明细"] }
+  ]
+}

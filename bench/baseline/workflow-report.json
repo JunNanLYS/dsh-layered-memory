@@ -1,0 +1,99 @@
+{
+  "generatedAt": "2026-08-20T09:52:57.204Z",
+  "envLines": [
+    "A 组 bench/results/run-wf-A-2026-08-20T08-28-55/rep-1：deepseek-official/deepseek-v4-flash（判卷 deepseek-official/deepseek-v4-flash，插件 0.8.0，4 场景）",
+    "A 组 bench/results/run-wf-A-2026-08-20T08-28-55/rep-2：deepseek-official/deepseek-v4-flash（判卷 deepseek-official/deepseek-v4-flash，插件 0.8.0，4 场景）",
+    "A 组 bench/results/run-wf-A-2026-08-20T08-28-55/rep-3：deepseek-official/deepseek-v4-flash（判卷 deepseek-official/deepseek-v4-flash，插件 0.8.0，4 场景）",
+    "B 组 bench/results/run-wf-B-2026-08-20T08-58-26/rep-1：deepseek-official/deepseek-v4-flash（判卷 deepseek-official/deepseek-v4-flash，插件 0.8.0，4 场景）",
+    "B 组 bench/results/run-wf-B-2026-08-20T08-58-26/rep-2：deepseek-official/deepseek-v4-flash（判卷 deepseek-official/deepseek-v4-flash，插件 0.8.0，4 场景）",
+    "B 组 bench/results/run-wf-B-2026-08-20T08-58-26/rep-3：deepseek-official/deepseek-v4-flash（判卷 deepseek-official/deepseek-v4-flash，插件 0.8.0，4 场景）"
+  ],
+  "stats": {
+    "A": {
+      "reps": 3,
+      "hit": 0,
+      "total": 0,
+      "accuracy": 0,
+      "byType": {
+        "extraction": {
+          "hit": 0,
+          "total": 0
+        },
+        "multihop": {
+          "hit": 0,
+          "total": 0
+        },
+        "temporal": {
+          "hit": 0,
+          "total": 0
+        },
+        "update": {
+          "hit": 0,
+          "total": 0
+        },
+        "scene": {
+          "hit": 0,
+          "total": 0
+        },
+        "abstention": {
+          "hit": 0,
+          "total": 0
+        }
+      },
+      "updateHit": 0,
+      "abstainFabricate": 0,
+      "perScenario": [],
+      "wf": {
+        "scenarios": 12,
+        "checksPassed": 46,
+        "checksTotal": 57,
+        "asks": 0,
+        "snoopSuspect": true
+      },
+      "contamination": []
+    },
+    "B": {
+      "reps": 3,
+      "hit": 0,
+      "total": 0,
+      "accuracy": 0,
+      "byType": {
+        "extraction": {
+          "hit": 0,
+          "total": 0
+        },
+        "multihop": {
+          "hit": 0,
+          "total": 0
+        },
+        "temporal": {
+          "hit": 0,
+          "total": 0
+        },
+        "update": {
+          "hit": 0,
+          "total": 0
+        },
+        "scene": {
+          "hit": 0,
+          "total": 0
+        },
+        "abstention": {
+          "hit": 0,
+          "total": 0
+        }
+      },
+      "updateHit": 0,
+      "abstainFabricate": 0,
+      "perScenario": [],
+      "wf": {
+        "scenarios": 12,
+        "checksPassed": 35,
+        "checksTotal": 57,
+        "asks": 3,
+        "snoopSuspect": true
+      },
+      "contamination": []
+    }
+  }
+}

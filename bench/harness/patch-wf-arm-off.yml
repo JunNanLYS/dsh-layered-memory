@@ -1,0 +1,56 @@
+# 工作流赛道 B 组（记忆关 + 工具沙箱）：插件整行禁用，其余与 A 组完全一致。
+- id: dsh-memory
+  disabled: true
+
+# 强制启用 bash（win32 下 dsh-base 默认禁用）：沙箱脚本均为 bash 语法
+- id: tool-bash
+  disabled: false
+
+- id: permission
+  config:
+    presets:
+      bench-sandbox:
+        sandbox: workspace-write
+        approval: never
+        name: bench-sandbox
+        description: Bench workflow sandbox - write confined to cwd, no approval prompts.
+    defaultPreset: bench-sandbox
+
+- id: tool-pwsh
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+- id: tool-subagent-list-agents
+  disabled: true
+- id: tool-subagent-report
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: tool-ralph
+  disabled: true
+- id: tool-str-replace-editor
+  disabled: true
+- id: tool-web
+  disabled: true
+
+- id: system-prompt
+  config:
+    persona: >-
+      You are a diligent engineer working inside a benchmark sandbox directory.
+      Complete the user's tasks with your tools, staying strictly inside the
+      current working directory; never explore outside it (especially any
+      user home or memory directories). Follow the user's established
+      conventions whenever you know them; otherwise ask. Report what you did
+      briefly when done.

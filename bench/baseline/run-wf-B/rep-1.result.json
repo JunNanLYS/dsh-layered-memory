@@ -1,0 +1,1359 @@
+{
+  "version": 1,
+  "startedAt": "2026-08-20T08:58:27.643Z",
+  "arm": "B",
+  "environment": {
+    "provider": "deepseek-official",
+    "model": "deepseek-v4-flash",
+    "judgeProvider": "deepseek-official",
+    "judgeModel": "deepseek-v4-flash",
+    "pluginVersion": "0.8.0",
+    "scenarioFiles": [
+      "wf-incident-runbook.json",
+      "wf-release-steps.json",
+      "wf-report-pipeline.json",
+      "wf-site-login.json"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "wf-incident-runbook",
+      "family": "work",
+      "kind": "workflow",
+      "teach": {
+        "sessionId": "bench-wf-incident-runbook-teach-7c63d6f1-56fb-4580-b195-13f3bd3586e0",
+        "metrics": {
+          "turns": 1,
+          "steps": 17,
+          "inputTokens": 9264,
+          "cacheReadTokens": 249856,
+          "outputTokens": 21390,
+          "reasoningTokens": 17505,
+          "toolCalls": 27,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 2964,
+          "steadyCacheRate": 0.9654117022439451,
+          "wallMs": 303790
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"ls -la\", \"description\": \"List files in the sandbox workspace\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"logs/app-0820.log\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"config/mem.ini\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"scripts/restart.sh\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"scripts/reload.sh\"}"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"config/mem.ini\", \"old_string\": \"[heap]\\nmax = 2g\", \"new_string\": \"[heap]\\nmax = 4g\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash scripts/restart.sh\", \"description\": \"Restart order-svc using bash restart script\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"where.exe bash; echo \\\"---\\\"; where.exe sh; echo \\\"---\\\"; echo $0; echo \\\"---\\\"; bash --version 2>&1 | head"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"cmd /c \\\"echo native cmd ok\\\"; cmd /c \\\"type config\\\\mem.ini\\\"\", \"description\": \"Verify native Windows comm"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"wsl.exe --status 2>&1 | head -20; echo \\\"exit: $?\\\"\", \"description\": \"Check WSL availability and status\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash scripts/restart.sh\", \"description\": \"Retry restart script with bash\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"& 'C:\\\\Windows\\\\System32\\\\bash.exe' -c 'echo wsl-bash-ok' 2>&1\", \"description\": \"Test Windows System32 bash"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"cmd /c \\\"where /R C:\\\\Program Files bash.exe 2>nul\\\"; cmd /c \\\"where /R C:\\\\msys64 bash.exe 2>nul\\\"; cmd /c"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"cmd /c \\\"cd /d C:\\\\ && C:\\\\Program Files\\\\Git\\\\usr\\\\bin\\\\bash.exe -c \\\\\\\"echo gitbash-from-c\\\\\\\"\\\" 2>&1\", \""
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem Env: | Sort-Object Name | Format-Table -AutoSize -Wrap | Out-String -Width 200\", \"description"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"cmd /c \\\"dir /b C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe C:\\\\ProgramData\\\\chocolatey\\\\bin 2>nul\\\"; cmd /c \\\"if"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"& 'C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe' -c 'echo bin-bash-ok' 2>&1; Write-Output \\\"---\\\"; & 'C:\\\\Program "
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"cmd /c \\\"dir /b /s C:\\\\Program Files\\\\Git\\\\bash.exe C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe 2>nul\\\"; cmd /c \\"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"echo \\\"BASH_VERSION=$BASH_VERSION\\\"; if [ -n \\\"$BASH_VERSION\\\" ]; then echo REAL_BASH; else echo NOT_BASH; "
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$env:TMP = 'C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp'; $env:TEMP = 'C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp'; "
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem -Path 'C:\\\\Program Files\\\\Git','C:\\\\Program Files\\\\GitHub CLI','C:\\\\Program Files\\\\Docker','C"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$out = & wsl.exe --list --verbose 2>&1; $out | Out-String; Write-Output \\\"exit=$LASTEXITCODE\\\"\", \"descripti"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-Location; Write-Output \\\"---\\\"; Test-Path 'restart.log'; Write-Output \\\"---\\\"; Get-Content 'config\\\\mem"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"cmd /c \\\"dir /b C:\\\\Program Files\\\\Git\\\\cmd 2>nul & echo --- & dir /b C:\\\\Program Files\\\\Git\\\\mingw64\\\\bin\\"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$line = \\\"restart ok: order-svc \\\" + (Get-Date -Format 'HH:mm:ss'); Add-Content -Path 'restart.log' -Value "
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem | Select-Object Name; Write-Output \\\"--- restart.log ---\\\"; Get-Content 'restart.log'; Write-"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "metrics": null,
+        "skipped": true
+      },
+      "distill": {
+        "skipped": true
+      },
+      "probes": [],
+      "workflow": {
+        "probe": {
+          "asks": 0,
+          "toolAudit": {
+            "calls": [
+              {
+                "name": "bash",
+                "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show current directory and list files\"}"
+              },
+              {
+                "name": "glob",
+                "args": "{\"pattern\": \"**/*\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"config/mem.ini\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"config/cache.ini\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"config/db.ini\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"scripts/restart.sh\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"scripts/reload.sh\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"logs/app-0820.log\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"logs/app-0819.log\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"logs/legacy.log\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force -Recurse | Select-Object FullName, Length | Format-Table -AutoSize\", \"description\": \"L"
+              },
+              {
+                "name": "grep",
+                "args": "{\"pattern\": \"runbook|run book|上次|OOM|heap|6g|处置|处理\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem Env:DSH_* | Format-Table -AutoSize\", \"description\": \"Show DSH harness environment variables\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force -Recurse | Sort-Object FullName | ForEach-Object { \\\"{0}`t{1}`t{2}\\\" -f $_.FullName, $"
+              },
+              {
+                "name": "edit",
+                "args": "{\"file_path\": \"config/mem.ini\", \"old_string\": \"max = 2g\", \"new_string\": \"max = 6g\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"bash --version | head -1\", \"description\": \"Check bash availability and version\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"bash scripts/restart.sh\", \"description\": \"Restart order-svc using required bash script\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"where.exe bash 2>$null; where.exe wsl 2>$null; where.exe sh 2>$null; Get-Command bash, wsl, sh, dash -Error"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"\\\"C:\\\\Program Files\\\\Git\\\\usr\\\\bin\\\\bash.exe\\\" -c \\\"echo probe-ok\\\"\", \"description\": \"Probe Git bash with t"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"& 'C:\\\\Program Files\\\\Git\\\\usr\\\\bin\\\\bash.exe' -c 'echo probe-ok'; \\\"exit=$LASTEXITCODE\\\"\", \"description\": "
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"wsl.exe -- echo probe-ok-wsl; \\\"exit=$LASTEXITCODE\\\"\", \"description\": \"Probe Windows Subsystem for Linux\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"$line = \\\"restart ok: order-svc $(Get-Date -Format HH:mm:ss)\\\"; Add-Content -Path restart.log -Value $line "
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-Date -Format HH:mm:ss\", \"description\": \"Get current time for restart log\"}"
+              },
+              {
+                "name": "write",
+                "args": "{\"file_path\": \"restart.log\", \"content\": \"restart ok: order-svc 17:04:54\\n\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"config/mem.ini\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"restart.log\"}"
+              }
+            ],
+            "truncated": false,
+            "snoopSuspect": false
+          }
+        },
+        "teachToolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"ls -la\", \"description\": \"List files in the sandbox workspace\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"logs/app-0820.log\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"config/mem.ini\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"scripts/restart.sh\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"scripts/reload.sh\"}"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"config/mem.ini\", \"old_string\": \"[heap]\\nmax = 2g\", \"new_string\": \"[heap]\\nmax = 4g\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash scripts/restart.sh\", \"description\": \"Restart order-svc using bash restart script\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"where.exe bash; echo \\\"---\\\"; where.exe sh; echo \\\"---\\\"; echo $0; echo \\\"---\\\"; bash --version 2>&1 | head"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"cmd /c \\\"echo native cmd ok\\\"; cmd /c \\\"type config\\\\mem.ini\\\"\", \"description\": \"Verify native Windows comm"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"wsl.exe --status 2>&1 | head -20; echo \\\"exit: $?\\\"\", \"description\": \"Check WSL availability and status\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash scripts/restart.sh\", \"description\": \"Retry restart script with bash\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"& 'C:\\\\Windows\\\\System32\\\\bash.exe' -c 'echo wsl-bash-ok' 2>&1\", \"description\": \"Test Windows System32 bash"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"cmd /c \\\"where /R C:\\\\Program Files bash.exe 2>nul\\\"; cmd /c \\\"where /R C:\\\\msys64 bash.exe 2>nul\\\"; cmd /c"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"cmd /c \\\"cd /d C:\\\\ && C:\\\\Program Files\\\\Git\\\\usr\\\\bin\\\\bash.exe -c \\\\\\\"echo gitbash-from-c\\\\\\\"\\\" 2>&1\", \""
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem Env: | Sort-Object Name | Format-Table -AutoSize -Wrap | Out-String -Width 200\", \"description"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"cmd /c \\\"dir /b C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe C:\\\\ProgramData\\\\chocolatey\\\\bin 2>nul\\\"; cmd /c \\\"if"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"& 'C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe' -c 'echo bin-bash-ok' 2>&1; Write-Output \\\"---\\\"; & 'C:\\\\Program "
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"cmd /c \\\"dir /b /s C:\\\\Program Files\\\\Git\\\\bash.exe C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe 2>nul\\\"; cmd /c \\"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"echo \\\"BASH_VERSION=$BASH_VERSION\\\"; if [ -n \\\"$BASH_VERSION\\\" ]; then echo REAL_BASH; else echo NOT_BASH; "
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$env:TMP = 'C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp'; $env:TEMP = 'C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp'; "
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem -Path 'C:\\\\Program Files\\\\Git','C:\\\\Program Files\\\\GitHub CLI','C:\\\\Program Files\\\\Docker','C"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$out = & wsl.exe --list --verbose 2>&1; $out | Out-String; Write-Output \\\"exit=$LASTEXITCODE\\\"\", \"descripti"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-Location; Write-Output \\\"---\\\"; Test-Path 'restart.log'; Write-Output \\\"---\\\"; Get-Content 'config\\\\mem"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"cmd /c \\\"dir /b C:\\\\Program Files\\\\Git\\\\cmd 2>nul & echo --- & dir /b C:\\\\Program Files\\\\Git\\\\mingw64\\\\bin\\"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$line = \\\"restart ok: order-svc \\\" + (Get-Date -Format 'HH:mm:ss'); Add-Content -Path 'restart.log' -Value "
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem | Select-Object Name; Write-Output \\\"--- restart.log ---\\\"; Get-Content 'restart.log'; Write-"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        },
+        "checks": [
+          {
+            "phase": "teach",
+            "file": "config/mem.ini",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "teach",
+            "file": "restart.log",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "probe",
+            "file": "config/mem.ini",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "probe",
+            "file": "restart.log",
+            "ok": true,
+            "detail": "命中"
+          }
+        ],
+        "checksPassed": 4,
+        "checksTotal": 4
+      },
+      "probeMetrics": {
+        "turns": 1,
+        "steps": 14,
+        "inputTokens": 5568,
+        "cacheReadTokens": 139648,
+        "outputTokens": 10819,
+        "reasoningTokens": 8405,
+        "toolCalls": 26,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 2793,
+        "steadyCacheRate": 0.9616424313488692,
+        "wallMs": 91026
+      },
+      "file": "wf-incident-runbook.json",
+      "durationMs": 394881
+    },
+    {
+      "id": "wf-release-steps",
+      "family": "work",
+      "kind": "workflow",
+      "teach": {
+        "sessionId": "bench-wf-release-steps-teach-7fea8fd2-032b-4693-8b7e-0287ebef9c50",
+        "metrics": {
+          "turns": 1,
+          "steps": 8,
+          "inputTokens": 2886,
+          "cacheReadTokens": 41600,
+          "outputTokens": 3703,
+          "reasoningTokens": 1763,
+          "toolCalls": 18,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 2972,
+          "steadyCacheRate": 0.9404056462879993,
+          "wallMs": 27699
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show current directory and list files\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"*\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-Date -Format \\\"yyyy-MM-dd\\\"\", \"description\": \"Get current date\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem -Recurse dist | Select-Object FullName, Length\", \"description\": \"List dist directory contents"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"node scripts/check.js\", \"description\": \"Run pre-release check script\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"git log --oneline -20 2>&1; echo \\\"---STATUS---\\\"; git status --short 2>&1\", \"description\": \"Show git log a"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem -Recurse src | Select-Object FullName; echo \\\"---\\\"; Get-Content src\\\\app.js; echo \\\"---DIST-"
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"node scripts/check.js\", \"description\": \"Run post-release check script\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "metrics": null,
+        "skipped": true
+      },
+      "distill": {
+        "skipped": true
+      },
+      "probes": [],
+      "workflow": {
+        "probe": {
+          "asks": 0,
+          "toolAudit": {
+            "calls": [
+              {
+                "name": "bash",
+                "args": "{\"command\": \"ls -la\", \"description\": \"List files in current working directory\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force | Format-Table Name, Length, LastWriteTime\", \"description\": \"List all files including "
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Recurse -Force | Select-Object FullName, Length | Format-Table -AutoSize\", \"description\": \"L"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"VERSION\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"RELEASE-NOTES.txt\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"CHANGELOG.md\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"src\\\\app.js\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"src\\\\cli.js\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem scripts, dist | Select-Object FullName, Length\", \"description\": \"List scripts and dist direct"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem scripts, dist | ForEach-Object { $_.FullName + \\\" | \\\" + $_.Length }\", \"description\": \"Show f"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"scripts\\\\check.js\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"scripts\\\\deploy.sh\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"scripts\\\\test.js\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"dist\\\\app.js\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem Env:DSH_* | Format-Table -AutoSize\", \"description\": \"Show DSH environment variables\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force -Recurse | Where-Object { $_.Name -match '^\\\\.' } | Select-Object FullName\", \"descript"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"node --version; node scripts/check.js\", \"description\": \"Check node version and run release check script\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-Date -Format \\\"yyyy-MM-dd\\\"\", \"description\": \"Show current date\"}"
+              },
+              {
+                "name": "write",
+                "args": "{\"file_path\": \"VERSION\", \"content\": \"1.5.0\\n\"}"
+              },
+              {
+                "name": "write",
+                "args": "{\"file_path\": \"CHANGELOG.md\", \"content\": \"# Changelog\\n\\n## v1.5.0 - 2026-08-20\\n\\n- 发布新一版，同步更新变更记录与发布说明。\\n\\n## v1.4.0 -"
+              },
+              {
+                "name": "write",
+                "args": "{\"file_path\": \"RELEASE-NOTES.txt\", \"content\": \"v1.5.0 2026-08-20 产物 3 项\\n\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"node scripts/check.js\", \"description\": \"Run release consistency check\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"node scripts/test.js; echo \\\"test exit: $LASTEXITCODE\\\"\", \"description\": \"Run test script to confirm CI-onl"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"bash scripts/deploy.sh; echo \\\"deploy exit: $LASTEXITCODE\\\"\", \"description\": \"Run deploy script to confirm "
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-Content VERSION; Get-Content CHANGELOG.md; Get-Content RELEASE-NOTES.txt\", \"description\": \"Show final r"
+              }
+            ],
+            "truncated": false,
+            "snoopSuspect": false
+          }
+        },
+        "teachToolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show current directory and list files\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"*\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-Date -Format \\\"yyyy-MM-dd\\\"\", \"description\": \"Get current date\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem -Recurse dist | Select-Object FullName, Length\", \"description\": \"List dist directory contents"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"node scripts/check.js\", \"description\": \"Run pre-release check script\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"git log --oneline -20 2>&1; echo \\\"---STATUS---\\\"; git status --short 2>&1\", \"description\": \"Show git log a"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem -Recurse src | Select-Object FullName; echo \\\"---\\\"; Get-Content src\\\\app.js; echo \\\"---DIST-"
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"node scripts/check.js\", \"description\": \"Run post-release check script\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-rele"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        },
+        "checks": [
+          {
+            "phase": "teach",
+            "file": "VERSION",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "teach",
+            "file": "CHANGELOG.md",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "teach",
+            "file": "RELEASE-NOTES.txt",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "probe",
+            "file": "VERSION",
+            "ok": false,
+            "detail": "缺关键词：2."
+          },
+          {
+            "phase": "probe",
+            "file": "VERSION",
+            "ok": false,
+            "detail": "缺关键词：2.1.0"
+          },
+          {
+            "phase": "probe",
+            "file": "CHANGELOG.md",
+            "ok": false,
+            "detail": "缺关键词：## v2.1.0"
+          },
+          {
+            "phase": "probe",
+            "file": "RELEASE-NOTES.txt",
+            "ok": false,
+            "detail": "缺关键词：v2.1.0"
+          }
+        ],
+        "checksPassed": 3,
+        "checksTotal": 7
+      },
+      "probeMetrics": {
+        "turns": 1,
+        "steps": 13,
+        "inputTokens": 4314,
+        "cacheReadTokens": 92544,
+        "outputTokens": 7054,
+        "reasoningTokens": 5110,
+        "toolCalls": 25,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 2775,
+        "steadyCacheRate": 0.955071585727496,
+        "wallMs": 62174
+      },
+      "file": "wf-release-steps.json",
+      "durationMs": 89927
+    },
+    {
+      "id": "wf-report-pipeline",
+      "family": "work",
+      "kind": "workflow",
+      "teach": {
+        "sessionId": "bench-wf-report-pipeline-teach-a5e14cfc-f35b-4aef-8f90-afd47d866a1c",
+        "metrics": {
+          "turns": 1,
+          "steps": 8,
+          "inputTokens": 1501,
+          "cacheReadTokens": 34944,
+          "outputTokens": 2502,
+          "reasoningTokens": 1273,
+          "toolCalls": 10,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 2941,
+          "steadyCacheRate": 0.958930276981853,
+          "wallMs": 20803
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show current directory and list files\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-repo"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-repo"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"out/**\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"ls incoming/w36 incoming/w37 archive/2025-q4\", \"description\": \"List other week directories and archive\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem -Name incoming/w36, incoming/w37, archive/2025-q4\", \"description\": \"List other week directori"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"New-Item -ItemType Directory -Force -Path out | Out-Null; Test-Path out\", \"description\": \"Create out direct"
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-repo"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-repo"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "metrics": null,
+        "skipped": true
+      },
+      "distill": {
+        "skipped": true
+      },
+      "probes": [],
+      "workflow": {
+        "probe": {
+          "asks": 0,
+          "toolAudit": {
+            "calls": [
+              {
+                "name": "bash",
+                "args": "{\"command\": \"ls -la\", \"description\": \"List files in current directory\"}"
+              },
+              {
+                "name": "glob",
+                "args": "{\"pattern\": \"**/*\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"README.txt\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"dir /s /b\", \"description\": \"List all files recursively\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Recurse -File | Select-Object FullName, Length\", \"description\": \"List all files recursively "
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"incoming\\\\w36\\\\weekly-0902.csv\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"archive\\\\2025-q4\\\\weekly-old1.csv\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"archive\\\\2025-q4\\\\weekly-old2.csv\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"incoming\\\\w35\\\\weekly-0825.csv\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"incoming\\\\w37\\\\weekly-0909.csv\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force -Recurse | ForEach-Object { $_.FullName }\", \"description\": \"List all files including h"
+              },
+              {
+                "name": "grep",
+                "args": "{\"pattern\": \"report|报表|汇总|合计|weekly\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem Env: | Where-Object { $_.Name -like 'DSH*' } | Format-Table -AutoSize\", \"description\": \"Show "
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force | Select-Object Name, Mode, Length\", \"description\": \"List top-level entries with attri"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force -Recurse -Directory | Select-Object FullName; Get-ChildItem -Force -Recurse -File | Se"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Recurse -File | Get-Content -Raw | Select-String -Pattern 'report|old' -AllMatches | Out-Nul"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"python --version; py --version\", \"description\": \"Check Python availability\"}"
+              },
+              {
+                "name": "write",
+                "args": "{\"file_path\": \"build_report.py\", \"content\": \"# -*- coding: utf-8 -*-\\n\\\"\\\"\\\"Weekly report pipeline (老办法):\\nReads a week'"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"python build_report.py\", \"description\": \"Run weekly report generator\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"New-Item -ItemType Directory -Path reports | Out-Null; if (Test-Path reports) { 'created' } else { 'failed'"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"New-Item -ItemType Directory -Path incoming\\\\w36\\\\sub | Out-Null; if (Test-Path incoming\\\\w36\\\\sub) { 'crea"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Set-Content -Path incoming\\\\w36\\\\probe.txt -Value 'x'; if (Test-Path incoming\\\\w36\\\\probe.txt) { 'file writ"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"python -c \\\"\\nimport csv, io, sys\\nsys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')\\nrows"
+              },
+              {
+                "name": "write",
+                "args": "{\"content\": \"section,key,orders,amount\\ntotal,all_ok,8,1180\\nby_region,华南,2,208\\nby_region,华北,3,462\\nby_region,华东,3,510\\"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Remove-Item build_report.py -ErrorAction SilentlyContinue; if (Test-Path build_report.py) { 'still there' }"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"weekly-report-0902.csv\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Recurse -File | ForEach-Object { $_.FullName.Substring($PWD.Path.Length+1) }\", \"description\""
+              }
+            ],
+            "truncated": false,
+            "snoopSuspect": false
+          }
+        },
+        "teachToolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show current directory and list files\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-repo"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-repo"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"out/**\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"ls incoming/w36 incoming/w37 archive/2025-q4\", \"description\": \"List other week directories and archive\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem -Name incoming/w36, incoming/w37, archive/2025-q4\", \"description\": \"List other week directori"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"New-Item -ItemType Directory -Force -Path out | Out-Null; Test-Path out\", \"description\": \"Create out direct"
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-repo"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-repo"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        },
+        "checks": [
+          {
+            "phase": "teach",
+            "file": "out/report-0825.md",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "probe",
+            "file": "out/report-0902.md",
+            "ok": false,
+            "detail": "产物文件不存在"
+          },
+          {
+            "phase": "probe",
+            "file": "out/report-0902.md",
+            "ok": false,
+            "detail": "产物文件不存在"
+          },
+          {
+            "phase": "probe",
+            "file": "out/report-0902.md",
+            "ok": false,
+            "detail": "产物文件不存在"
+          }
+        ],
+        "checksPassed": 1,
+        "checksTotal": 4
+      },
+      "probeMetrics": {
+        "turns": 1,
+        "steps": 17,
+        "inputTokens": 5766,
+        "cacheReadTokens": 152960,
+        "outputTokens": 8167,
+        "reasoningTokens": 4918,
+        "toolCalls": 27,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 2789,
+        "steadyCacheRate": 0.9636712262003245,
+        "wallMs": 71760
+      },
+      "file": "wf-report-pipeline.json",
+      "durationMs": 92604
+    },
+    {
+      "id": "wf-site-login",
+      "family": "work",
+      "kind": "workflow",
+      "teach": {
+        "sessionId": "bench-wf-site-login-teach-c3208c21-a677-4313-b333-0c90924d2c94",
+        "metrics": {
+          "turns": 1,
+          "steps": 9,
+          "inputTokens": 1903,
+          "cacheReadTokens": 43008,
+          "outputTokens": 3808,
+          "reasoningTokens": 2278,
+          "toolCalls": 11,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 2908,
+          "steadyCacheRate": 0.9568840320929457,
+          "wallMs": 32653
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"ls -la\", \"description\": \"List files in current directory\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"README.txt\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"tools/site\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-Content .site-port; Get-Command bash | Select-Object -ExpandProperty Source\", \"description\": \"Show site"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash tools/site login benchfan2026 'Xq-9t2Lw-v7'\", \"description\": \"Log in to internal site with credentials"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash -c 'echo bash-ok'\", \"description\": \"Test if bash runs at all\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"where.exe curl\", \"description\": \"Locate curl executable\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$out = curl.exe -s -w \\\"`n%{http_code}\\\" -X POST \\\"http://127.0.0.1:61643/login\\\" --data-urlencode \\\"u=benc"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Set-Content -Path .site-session -Value 'session-ok-cead0670-cd65-42d1-9065-cc9943fd8d74' -NoNewline; Get-Co"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$token = (Get-Content .site-session -Raw).Trim(); $content = curl.exe -sf \\\"http://127.0.0.1:61643/fetch?to"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "metrics": null,
+        "skipped": true
+      },
+      "distill": {
+        "skipped": true
+      },
+      "probes": [],
+      "workflow": {
+        "probe": {
+          "asks": 1,
+          "toolAudit": {
+            "calls": [
+              {
+                "name": "bash",
+                "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show working directory and list files\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"echo \\\"--- env ---\\\"; env | sort | head -50\", \"description\": \"Show environment variables\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force | Format-Table -AutoSize\", \"description\": \"List files in working directory\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem Env: | Where-Object { $_.Name -like 'DSH*' } | Format-Table -AutoSize\", \"description\": \"Show "
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-site"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-site"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force -Recurse tools | Format-Table -AutoSize\", \"description\": \"List tools directory recursi"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-site"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"cat .site-port; echo; Test-NetConnection -ComputerName 127.0.0.1 -Port 61643 -WarningAction SilentlyContinu"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"if (Test-Path .site-session) { Get-Content .site-session } else { echo \\\"no .site-session yet\\\" }\", \"descri"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"curl -s -i http://127.0.0.1:61643/ | Select-Object -First 30\", \"description\": \"Fetch site root page headers"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"curl -s -o NUL -w \\\"GET /login -> %{http_code}\\\\n\\\" http://127.0.0.1:61643/login; curl -s -o NUL -w \\\"GET /"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"curl -s -i \\\"http://127.0.0.1:61643/fetch?path=/reports/daily\\\" | Select-Object -First 15; echo \\\"-----\\\"; "
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force -Recurse | Select-Object FullName, Length | Format-Table -AutoSize\", \"description\": \"F"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"bash tools/site login benchfan2026 \\\"Xq-9t2Lw-v7\\\"\", \"description\": \"Login to site with provided credential"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"$out = curl.exe -s -w \\\"`n%{http_code}\\\" -X POST \\\"http://127.0.0.1:61643/login\\\" --data-urlencode \\\"u=benc"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"$out = curl.exe -s -X POST \\\"http://127.0.0.1:61643/login\\\" --data-urlencode \\\"u=benchfan2026\\\" --data-urle"
+              },
+              {
+                "name": "write",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep1\\\\sandbox-wf-site"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"$token = (Get-Content .site-session).Trim()\\nWrite-Output \\\"token: $token\\\"\\ncurl.exe -s \\\"http://127.0.0.1"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"$token = (Get-Content .site-session).Trim()\\n$body = curl.exe -s -w \\\"`n%{http_code}\\\" \\\"http://127.0.0.1:6"
+              },
+              {
+                "name": "write",
+                "args": "{\"content\": \"DAILY-2026-09-06 营收 1,204 单 关键指标正常 备货提醒：华东仓周一盘点\\n\", \"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\d"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize\", \"description\": "
+              }
+            ],
+            "truncated": false,
+            "snoopSuspect": false
+          }
+        },
+        "teachToolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"ls -la\", \"description\": \"List files in current directory\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"README.txt\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"tools/site\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-Content .site-port; Get-Command bash | Select-Object -ExpandProperty Source\", \"description\": \"Show site"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash tools/site login benchfan2026 'Xq-9t2Lw-v7'\", \"description\": \"Log in to internal site with credentials"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash -c 'echo bash-ok'\", \"description\": \"Test if bash runs at all\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"where.exe curl\", \"description\": \"Locate curl executable\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$out = curl.exe -s -w \\\"`n%{http_code}\\\" -X POST \\\"http://127.0.0.1:61643/login\\\" --data-urlencode \\\"u=benc"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Set-Content -Path .site-session -Value 'session-ok-cead0670-cd65-42d1-9065-cc9943fd8d74' -NoNewline; Get-Co"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$token = (Get-Content .site-session -Raw).Trim(); $content = curl.exe -sf \\\"http://127.0.0.1:61643/fetch?to"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        },
+        "checks": [
+          {
+            "phase": "teach",
+            "file": ".site-session",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "teach",
+            "file": "fetched-daily.txt",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "probe",
+            "file": ".site-session",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "probe",
+            "file": "fetched-daily.txt",
+            "ok": true,
+            "detail": "命中"
+          }
+        ],
+        "checksPassed": 4,
+        "checksTotal": 4
+      },
+      "probeMetrics": {
+        "turns": 2,
+        "steps": 17,
+        "inputTokens": 4130,
+        "cacheReadTokens": 117376,
+        "outputTokens": 5289,
+        "reasoningTokens": 2326,
+        "toolCalls": 22,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 2793,
+        "steadyCacheRate": 0.9660946989798926,
+        "wallMs": 56779
+      },
+      "file": "wf-site-login.json",
+      "durationMs": 89465
+    }
+  ],
+  "finishedAt": "2026-08-20T09:09:34.525Z"
+}

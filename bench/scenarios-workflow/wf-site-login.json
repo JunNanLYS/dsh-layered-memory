@@ -1,0 +1,36 @@
+{
+  "id": "wf-site-login",
+  "family": "work",
+  "kind": "workflow",
+  "marker": "benchfan2026",
+  "server": { "type": "site-login", "user": "benchfan2026", "pass": "Xq-9t2Lw-v7" },
+  "sandboxFiles": {
+    "tools/site": "#!/usr/bin/env bash\n# 内部站点 CLI：会话状态在站点服务（端口见 .site-port）内存中，沙箱内无法伪造令牌\nPORT=$(cat .site-port 2>/dev/null) || { echo '站点服务未启动（缺 .site-port）' >&2; exit 2; }\nAPI=\"http://127.0.0.1:$PORT\"\ncase \"$1\" in\n  login)\n    [ $# -eq 3 ] || { echo '用法: tools/site login <用户名> <密码>' >&2; exit 2; }\n    out=$(curl -s -w '\\n%{http_code}' -X POST \"$API/login\" --data-urlencode \"u=$2\" --data-urlencode \"p=$3\")\n    code=$(printf '%s\\n' \"$out\" | tail -1)\n    body=$(printf '%s\\n' \"$out\" | sed '$d')\n    if [ \"$code\" = \"200\" ]; then\n      printf '%s\\n' \"$body\" > .site-session\n      echo '登录成功（会话令牌已写入 .site-session）'\n    else\n      echo \"登录失败：$body\" >&2\n      exit 1\n    fi\n    ;;\n  whoami)\n    [ -f .site-session ] || { echo '未登录（先 tools/site login）' >&2; exit 1; }\n    curl -sf \"$API/whoami?token=$(cat .site-session)\" || { echo '会话无效' >&2; exit 1; }\n    ;;\n  fetch)\n    [ -f .site-session ] || { echo '未登录，拒绝拉取' >&2; exit 1; }\n    [ -n \"$2\" ] || { echo '用法: tools/site fetch <路径>' >&2; exit 2; }\n    curl -sf \"$API/fetch?token=$(cat .site-session)&path=$2\" || { echo '拉取失败（会话无效或路径不存在）' >&2; exit 1; }\n    ;;\n  *) echo '用法: tools/site login <用户名> <密码> | whoami | fetch <路径>' >&2; exit 2 ;;\nesac\n",
+    "README.txt": "内部站点工具：tools/site（登录后可拉取 /reports/daily 等只读内容）。站点服务由基准运行方启动。\n"
+  },
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "内部站点的访问方式跟你说清楚（记好，以后直接用，不用再问我）：工具是 tools/site，登录命令 `tools/site login <用户名> <密码>`，我们的凭据是——用户名 benchfan2026，密码 Xq-9t2Lw-v7。登录成功会在当前目录生成 .site-session（令牌由站点服务签发），之后用 `tools/site fetch <路径>` 拉内容，常用路径 /reports/daily；拉到的内容存到 fetched-<名字>.txt 里方便回看。现在登录一次确认凭据没问题，并把 /reports/daily 的内容拉下来存好。"
+      ],
+      "reteach": "站点访问约定重述：tools/site login benchfan2026 Xq-9t2Lw-v7 → 生成 .site-session → tools/site fetch /reports/daily，内容存 fetched-<名字>.txt。以后我让你看站点内容就直接办，不用再问凭据。"
+    },
+    {
+      "kind": "probe",
+      "messages": [
+        "帮我看下站点上 /reports/daily 的最新内容，存下来。缺什么信息直接问我。"
+      ],
+      "reteach": "站点访问约定重述：tools/site login benchfan2026 Xq-9t2Lw-v7 → 生成 .site-session → tools/site fetch /reports/daily，内容存 fetched-<名字>.txt。以后我让你看站点内容就直接办，不用再问凭据。",
+      "maxExchanges": 2
+    }
+  ],
+  "teachChecks": [
+    { "file": ".site-session", "contains": ["session-ok"] },
+    { "file": "fetched-daily.txt", "contains": ["DAILY"] }
+  ],
+  "probeChecks": [
+    { "file": ".site-session", "contains": ["session-ok"] },
+    { "file": "fetched-daily.txt", "contains": ["DAILY"] }
+  ]
+}

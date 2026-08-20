@@ -1,0 +1,74 @@
+{
+  "id": "work-api",
+  "family": "work",
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "接口约定说清楚：内部 API 全部走 REST，路径用复数名词；错误响应用统一信封结构 code/message/data，code 是五位数字符串；鉴权全部 Bearer Token。",
+        "分页约定：老接口用 page/size 参数，默认 size 20；排序参数 sort 字段名加减号前缀。时间字段全部 ISO 8601 带时区，不用时间戳。"
+      ]
+    },
+    {
+      "kind": "change",
+      "messages": [
+        "分页规范要迁移：新接口一律改用游标分页 cursor/limit，不再用 page/size；存量接口保留但标记废弃。错误信封结构不变。"
+      ]
+    }
+  ],
+  "probes": [
+    {
+      "type": "extraction",
+      "q": "我们错误响应的 code 字段是什么格式？",
+      "gold": [
+        "五位数字符串"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "multihop",
+      "q": "新接口的分页参数用什么？存量老接口的分页还能用吗？",
+      "gold": [
+        "cursor/limit",
+        "保留但标记废弃"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "temporal",
+      "q": "分页方式上，是先有的 page/size 还是先有的游标分页？",
+      "gold": [
+        "先 page/size",
+        "后改游标"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "update",
+      "q": "现在新写的接口应该用什么分页方式？",
+      "gold": [
+        "游标分页",
+        "cursor/limit"
+      ],
+      "stale": [
+        "用 page/size"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "scene",
+      "q": "我最初说的接口约定里，时间字段和鉴权分别怎么定的？",
+      "gold": [
+        "ISO 8601 带时区",
+        "Bearer Token"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "abstention",
+      "q": "我之前说接口网关限流定的是每秒一百次，对吧？",
+      "judge": "abstain-llm"
+    }
+  ],
+  "marker": "游标分页"
+}

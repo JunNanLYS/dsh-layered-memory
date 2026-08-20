@@ -1,0 +1,1383 @@
+{
+  "version": 1,
+  "startedAt": "2026-08-20T09:09:36.229Z",
+  "arm": "B",
+  "environment": {
+    "provider": "deepseek-official",
+    "model": "deepseek-v4-flash",
+    "judgeProvider": "deepseek-official",
+    "judgeModel": "deepseek-v4-flash",
+    "pluginVersion": "0.8.0",
+    "scenarioFiles": [
+      "wf-incident-runbook.json",
+      "wf-release-steps.json",
+      "wf-report-pipeline.json",
+      "wf-site-login.json"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "wf-incident-runbook",
+      "family": "work",
+      "kind": "workflow",
+      "teach": {
+        "sessionId": "bench-wf-incident-runbook-teach-257c02c3-8596-4c54-bfc9-248c62227dd0",
+        "metrics": {
+          "turns": 1,
+          "steps": 19,
+          "inputTokens": 7291,
+          "cacheReadTokens": 241920,
+          "outputTokens": 15996,
+          "reasoningTokens": 12293,
+          "toolCalls": 28,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 2964,
+          "steadyCacheRate": 0.9709925400106397,
+          "wallMs": 151220
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"ls -la\", \"description\": \"List files in workspace root\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"logs/app-0820.log\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"config/mem.ini\"}"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"config/mem.ini\", \"old_string\": \"max = 2g\", \"new_string\": \"max = 4g\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"scripts/restart.sh\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash scripts/restart.sh\", \"description\": \"Restart order-svc via restart.sh\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash --version\", \"description\": \"Check if bash runs at all\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"which -a bash; echo \\\"---\\\"; echo $PATH\", \"description\": \"Locate bash binaries and PATH\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"env | sort\", \"description\": \"Show environment variables\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"where.exe bash 2>nul; echo \\\"---git bin---\\\"; dir \\\"C:\\\\Program Files\\\\Git\\\\bin\\\\*.exe\\\" 2>nul | findstr /i"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"C:\\\\Windows\\\\System32\\\\bash.exe -c \\\"echo wsl-bash-ok; pwd\\\"\", \"description\": \"Test WSL bash launcher\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -Command \\\"Get-ChildItem Env: | Sort-Object Name | Format-Table -AutoSize | Out-Strin"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -Command \\\"$paths = @('C:\\\\Users\\\\18906\\\\.dsh','C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\her"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"\\\"C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe\\\" -c \\\"echo bin-bash-ok\\\"\", \"description\": \"Try Git bin bash explic"
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"_probe.ps1\", \"content\": \"$paths = @(\\n  'C:\\\\Users\\\\18906\\\\.dsh',\\n  'C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\h"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -ExecutionPolicy Bypass -File _probe.ps1\", \"description\": \"Run probe script to find b"
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"_probe2.ps1\", \"content\": \"$ErrorActionPreference = 'Continue'\\n$ws = (Get-Location).Path\\n$env:TMP = $ws\\"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -ExecutionPolicy Bypass -File _probe2.ps1\", \"description\": \"Probe bash variants with "
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"_probe3.ps1\", \"content\": \"Write-Output '--- wsl.exe --status ---'\\ntry { & wsl.exe --status 2>&1 | Out-St"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -ExecutionPolicy Bypass -File _probe3.ps1\", \"description\": \"Confirm WSL/git status\"}"
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"_restart.ps1\", \"content\": \"# Faithful replication of scripts/restart.sh:\\n#   declare -A SVC=( [name]=\\\"o"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -ExecutionPolicy Bypass -File _restart.ps1\", \"description\": \"Execute restart script e"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"restart.log\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"config/mem.ini\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -Command \\\"Remove-Item -Force _probe.ps1, _probe2.ps1, _probe3.ps1, _restart.ps1 -Err"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"config/cache.ini\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"config/db.ini\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": true
+        }
+      },
+      "change": {
+        "metrics": null,
+        "skipped": true
+      },
+      "distill": {
+        "skipped": true
+      },
+      "probes": [],
+      "workflow": {
+        "probe": {
+          "asks": 0,
+          "toolAudit": {
+            "calls": [
+              {
+                "name": "bash",
+                "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show current directory and list files\"}"
+              },
+              {
+                "name": "glob",
+                "args": "{\"pattern\": \"**/*\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"ls -R\", \"description\": \"Recursively list all files\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep2\\\\sandbox-wf-inci"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep2\\\\sandbox-wf-inci"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep2\\\\sandbox-wf-inci"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep2\\\\sandbox-wf-inci"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep2\\\\sandbox-wf-inci"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep2\\\\sandbox-wf-inci"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep2\\\\sandbox-wf-inci"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep2\\\\sandbox-wf-inci"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"ls -Force -Recurse | Select-Object FullName, Length\", \"description\": \"List all files including hidden ones\""
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem Env: | Where-Object { $_.Name -like 'DSH*' } | Sort-Object Name | Format-Table -AutoSize\", \"d"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"bash --version | Select-Object -First 1\", \"description\": \"Check bash availability and version\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"bash -c \\\"echo bash-ok && date +%H:%M:%S\\\"\", \"description\": \"Retry bash execution with a simple command\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-Command bash, sh, dash, wsl -ErrorAction SilentlyContinue | Select-Object Name, Source | Format-Table -"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem 'C:\\\\Program Files\\\\Git' -Filter 'bash.exe' -Recurse -ErrorAction SilentlyContinue | Select-O"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"& 'C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe' -c 'echo ok'\", \"description\": \"Try alternate Git bash binary path"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"wsl -l -q 2>&1 | Select-Object -First 5; wsl echo wsl-ok 2>&1 | Select-Object -First 3\", \"description\": \"Ch"
+              },
+              {
+                "name": "edit",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep2\\\\sandbox-wf-inci"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"$ts = Get-Date -Format 'HH:mm:ss'; \\\"restart ok: order-svc $ts\\\" | Add-Content -Path 'restart.log' -Encodin"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-Date -Format 'HH:mm:ss'\", \"description\": \"Get current time in HH:MM:SS format\"}"
+              },
+              {
+                "name": "write",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep2\\\\sandbox-wf-inci"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep2\\\\sandbox-wf-inci"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\Temp\\\\dsh-mem-bench\\\\run-wf-B-2026-08-20T08-58-26-rep2\\\\sandbox-wf-inci"
+              }
+            ],
+            "truncated": false,
+            "snoopSuspect": false
+          }
+        },
+        "teachToolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"ls -la\", \"description\": \"List files in workspace root\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"logs/app-0820.log\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"config/mem.ini\"}"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"config/mem.ini\", \"old_string\": \"max = 2g\", \"new_string\": \"max = 4g\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"scripts/restart.sh\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash scripts/restart.sh\", \"description\": \"Restart order-svc via restart.sh\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash --version\", \"description\": \"Check if bash runs at all\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"which -a bash; echo \\\"---\\\"; echo $PATH\", \"description\": \"Locate bash binaries and PATH\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"env | sort\", \"description\": \"Show environment variables\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"where.exe bash 2>nul; echo \\\"---git bin---\\\"; dir \\\"C:\\\\Program Files\\\\Git\\\\bin\\\\*.exe\\\" 2>nul | findstr /i"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"C:\\\\Windows\\\\System32\\\\bash.exe -c \\\"echo wsl-bash-ok; pwd\\\"\", \"description\": \"Test WSL bash launcher\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -Command \\\"Get-ChildItem Env: | Sort-Object Name | Format-Table -AutoSize | Out-Strin"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -Command \\\"$paths = @('C:\\\\Users\\\\18906\\\\.dsh','C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\her"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"\\\"C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe\\\" -c \\\"echo bin-bash-ok\\\"\", \"description\": \"Try Git bin bash explic"
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"_probe.ps1\", \"content\": \"$paths = @(\\n  'C:\\\\Users\\\\18906\\\\.dsh',\\n  'C:\\\\Users\\\\18906\\\\AppData\\\\Local\\\\h"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -ExecutionPolicy Bypass -File _probe.ps1\", \"description\": \"Run probe script to find b"
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"_probe2.ps1\", \"content\": \"$ErrorActionPreference = 'Continue'\\n$ws = (Get-Location).Path\\n$env:TMP = $ws\\"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -ExecutionPolicy Bypass -File _probe2.ps1\", \"description\": \"Probe bash variants with "
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"_probe3.ps1\", \"content\": \"Write-Output '--- wsl.exe --status ---'\\ntry { & wsl.exe --status 2>&1 | Out-St"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -ExecutionPolicy Bypass -File _probe3.ps1\", \"description\": \"Confirm WSL/git status\"}"
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"_restart.ps1\", \"content\": \"# Faithful replication of scripts/restart.sh:\\n#   declare -A SVC=( [name]=\\\"o"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -ExecutionPolicy Bypass -File _restart.ps1\", \"description\": \"Execute restart script e"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"restart.log\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"config/mem.ini\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"powershell -NoProfile -Command \\\"Remove-Item -Force _probe.ps1, _probe2.ps1, _probe3.ps1, _restart.ps1 -Err"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"config/cache.ini\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"config/db.ini\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": true
+        },
+        "checks": [
+          {
+            "phase": "teach",
+            "file": "config/mem.ini",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "teach",
+            "file": "restart.log",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "probe",
+            "file": "config/mem.ini",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "probe",
+            "file": "restart.log",
+            "ok": true,
+            "detail": "命中"
+          }
+        ],
+        "checksPassed": 4,
+        "checksTotal": 4
+      },
+      "probeMetrics": {
+        "turns": 1,
+        "steps": 14,
+        "inputTokens": 4718,
+        "cacheReadTokens": 210560,
+        "outputTokens": 18442,
+        "reasoningTokens": 15342,
+        "toolCalls": 25,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 2793,
+        "steadyCacheRate": 0.9782902322516883,
+        "wallMs": 151138
+      },
+      "file": "wf-incident-runbook.json",
+      "durationMs": 302415
+    },
+    {
+      "id": "wf-release-steps",
+      "family": "work",
+      "kind": "workflow",
+      "teach": {
+        "sessionId": "bench-wf-release-steps-teach-bb59eeb0-7e05-4f2f-ad83-b709c7f93270",
+        "metrics": {
+          "turns": 1,
+          "steps": 7,
+          "inputTokens": 3693,
+          "cacheReadTokens": 41216,
+          "outputTokens": 3936,
+          "reasoningTokens": 2413,
+          "toolCalls": 20,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 2972,
+          "steadyCacheRate": 0.9156592030903498,
+          "wallMs": 28458
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show current directory and list files\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"ls -Force; echo \\\"---\\\"; Get-ChildItem -Recurse -Force | Select-Object FullName\", \"description\": \"List all "
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"CHANGELOG.md\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"VERSION\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"RELEASE-NOTES.txt\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"scripts/check.js\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-Date -Format \\\"yyyy-MM-dd\\\"; echo \\\"---\\\"; (Get-ChildItem dist -Force | Measure-Object).Count; echo \\\"-"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"scripts/test.js\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"scripts/deploy.sh\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"src/app.js\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"src/cli.js\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"node scripts/check.js\", \"description\": \"Run pre-release check script\"}"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"CHANGELOG.md\", \"old_string\": \"# Changelog\\n\\n## v1.4.0 - 2026-08-05\", \"new_string\": \"# Changelog\\n\\n## v2"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"RELEASE-NOTES.txt\", \"old_string\": \"v1.4.0 2026-08-05 产物 3 项\", \"new_string\": \"v2.0.0 2026-08-20 产物 1 项\\nv1"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"VERSION\", \"old_string\": \"1.4.0\", \"new_string\": \"2.0.0\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"node scripts/check.js\", \"description\": \"Run post-update check script\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"CHANGELOG.md\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"RELEASE-NOTES.txt\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"VERSION\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "metrics": null,
+        "skipped": true
+      },
+      "distill": {
+        "skipped": true
+      },
+      "probes": [],
+      "workflow": {
+        "probe": {
+          "asks": 0,
+          "toolAudit": {
+            "calls": [
+              {
+                "name": "bash",
+                "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show current directory and contents\"}"
+              },
+              {
+                "name": "glob",
+                "args": "{\"pattern\": \"*\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force | Select-Object Mode, Length, Name | Format-Table -AutoSize\", \"description\": \"List all"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"VERSION\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"CHANGELOG.md\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"RELEASE-NOTES.txt\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"scripts/deploy.sh\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"scripts/check.js\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"scripts/test.js\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"src/app.js\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"src/cli.js\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"dist/app.js\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Recurse -Force -File | Select-Object FullName, Length | Format-Table -AutoSize\", \"descriptio"
+              },
+              {
+                "name": "glob",
+                "args": "{\"pattern\": \"**/*\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"git status 2>&1; echo \\\"---LOG---\\\"; git log --oneline -20 2>&1; echo \\\"---TAGS---\\\"; git tag -l 2>&1\", \"de"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-Date -Format \\\"yyyy-MM-dd HH:mm:ss\\\"\", \"description\": \"Show current system date and time\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Recurse -Force | Where-Object { $_.Name -like '.*' -or $_.PSIsContainer -eq $false } | Selec"
+              },
+              {
+                "name": "write",
+                "args": "{\"file_path\": \"VERSION\", \"content\": \"1.5.0\\n\"}"
+              },
+              {
+                "name": "edit",
+                "args": "{\"file_path\": \"CHANGELOG.md\", \"old_string\": \"# Changelog\\n\\n## v1.4.0 - 2026-08-05\", \"new_string\": \"# Changelog\\n\\n## v1"
+              },
+              {
+                "name": "write",
+                "args": "{\"file_path\": \"RELEASE-NOTES.txt\", \"content\": \"v1.5.0 2026-08-20 产物 3 项\\n\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"node scripts/check.js; echo \\\"exit=$?\\\"\", \"description\": \"Run release consistency check script\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"VERSION\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"CHANGELOG.md\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"RELEASE-NOTES.txt\"}"
+              }
+            ],
+            "truncated": false,
+            "snoopSuspect": false
+          }
+        },
+        "teachToolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show current directory and list files\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"ls -Force; echo \\\"---\\\"; Get-ChildItem -Recurse -Force | Select-Object FullName\", \"description\": \"List all "
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"CHANGELOG.md\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"VERSION\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"RELEASE-NOTES.txt\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"scripts/check.js\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-Date -Format \\\"yyyy-MM-dd\\\"; echo \\\"---\\\"; (Get-ChildItem dist -Force | Measure-Object).Count; echo \\\"-"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"scripts/test.js\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"scripts/deploy.sh\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"src/app.js\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"src/cli.js\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"node scripts/check.js\", \"description\": \"Run pre-release check script\"}"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"CHANGELOG.md\", \"old_string\": \"# Changelog\\n\\n## v1.4.0 - 2026-08-05\", \"new_string\": \"# Changelog\\n\\n## v2"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"RELEASE-NOTES.txt\", \"old_string\": \"v1.4.0 2026-08-05 产物 3 项\", \"new_string\": \"v2.0.0 2026-08-20 产物 1 项\\nv1"
+            },
+            {
+              "name": "edit",
+              "args": "{\"file_path\": \"VERSION\", \"old_string\": \"1.4.0\", \"new_string\": \"2.0.0\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"node scripts/check.js\", \"description\": \"Run post-update check script\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"CHANGELOG.md\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"RELEASE-NOTES.txt\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"VERSION\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        },
+        "checks": [
+          {
+            "phase": "teach",
+            "file": "VERSION",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "teach",
+            "file": "CHANGELOG.md",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "teach",
+            "file": "RELEASE-NOTES.txt",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "probe",
+            "file": "VERSION",
+            "ok": false,
+            "detail": "缺关键词：2."
+          },
+          {
+            "phase": "probe",
+            "file": "VERSION",
+            "ok": false,
+            "detail": "缺关键词：2.1.0"
+          },
+          {
+            "phase": "probe",
+            "file": "CHANGELOG.md",
+            "ok": false,
+            "detail": "缺关键词：## v2.1.0"
+          },
+          {
+            "phase": "probe",
+            "file": "RELEASE-NOTES.txt",
+            "ok": false,
+            "detail": "缺关键词：v2.1.0"
+          }
+        ],
+        "checksPassed": 3,
+        "checksTotal": 7
+      },
+      "probeMetrics": {
+        "turns": 1,
+        "steps": 12,
+        "inputTokens": 4484,
+        "cacheReadTokens": 72960,
+        "outputTokens": 5741,
+        "reasoningTokens": 3925,
+        "toolCalls": 24,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 2775,
+        "steadyCacheRate": 0.9411134473476275,
+        "wallMs": 47830
+      },
+      "file": "wf-release-steps.json",
+      "durationMs": 76341
+    },
+    {
+      "id": "wf-report-pipeline",
+      "family": "work",
+      "kind": "workflow",
+      "teach": {
+        "sessionId": "bench-wf-report-pipeline-teach-2e537c98-0380-4ecf-a487-d019bac98700",
+        "metrics": {
+          "turns": 1,
+          "steps": 7,
+          "inputTokens": 2060,
+          "cacheReadTokens": 32128,
+          "outputTokens": 2230,
+          "reasoningTokens": 1360,
+          "toolCalls": 8,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 2941,
+          "steadyCacheRate": 0.9380740551092905,
+          "wallMs": 19319
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show current directory and its contents\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem -Recurse | Select-Object FullName, Length\", \"description\": \"Recursively list files with sizes"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"README.txt\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"incoming/w35/weekly-0825.csv\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"New-Item -ItemType Directory -Force -Path out | Out-Null; Test-Path out\", \"description\": \"Create out direct"
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"out/report-0825.md\", \"content\": \"# 周报 0825\\n\\n## 汇总\\n\\n- 行数：4\\n- 金额合计：492 元\\n\\n## 明细\\n\\n| 日期 | 地区 | 商品 | "
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"out/report-0825.md\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "metrics": null,
+        "skipped": true
+      },
+      "distill": {
+        "skipped": true
+      },
+      "probes": [],
+      "workflow": {
+        "probe": {
+          "asks": 0,
+          "toolAudit": {
+            "calls": [
+              {
+                "name": "bash",
+                "args": "{\"command\": \"ls -la\", \"description\": \"List files in current directory\"}"
+              },
+              {
+                "name": "glob",
+                "args": "{\"pattern\": \"**/*\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"README.txt\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"ls -la; echo \\\"---\\\"; ls -la incoming; echo \\\"---\\\"; ls -la archive; echo \\\"---\\\"; ls -la archive/2025-q4\","
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"ls; echo \\\"---incoming---\\\"; ls incoming; echo \\\"---incoming w35---\\\"; ls incoming/w35; echo \\\"---incoming "
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"incoming/w35/weekly-0825.csv\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"incoming/w36/weekly-0902.csv\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"incoming/w37/weekly-0909.csv\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"archive/2025-q4/weekly-old1.csv\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"archive/2025-q4/weekly-old2.csv\"}"
+              },
+              {
+                "name": "glob",
+                "args": "{\"pattern\": \"**/*.*\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Recurse -Force | Select-Object FullName, Length\", \"description\": \"List all files including h"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem Env: | Where-Object { $_.Name -like 'DSH*' } | Format-Table -AutoSize\", \"description\": \"Show "
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"python --version 2>&1; echo \\\"---\\\"; python3 --version 2>&1; echo \\\"---\\\"; py --version 2>&1\", \"description"
+              },
+              {
+                "name": "write",
+                "args": "{\"file_path\": \"make_report.py\", \"content\": \"# -*- coding: utf-8 -*-\\n\\\"\\\"\\\"\\n周销售报表生成脚本（老办法）\\n用法：\\n    python make_report"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"python make_report.py incoming/w36/weekly-0902.csv incoming/w35/weekly-0825.csv\", \"description\": \"Generate "
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"New-Item -ItemType Directory -Path reports | Out-Null; echo \\\"mkdir ok\\\"\", \"description\": \"Try creating rep"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"echo \\\"test\\\" > test.txt; echo \\\"file write ok\\\"; Get-ChildItem\", \"description\": \"Test writing a file in wo"
+              },
+              {
+                "name": "edit",
+                "args": "{\"file_path\": \"make_report.py\", \"old_string\": \"    m = re.search(r\\\"(\\\\d{4})\\\\.csv$\\\", csv_path)\\n    tag = m.group(1) i"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"python make_report.py incoming/w36/weekly-0902.csv incoming/w35/weekly-0825.csv\", \"description\": \"Generate "
+              },
+              {
+                "name": "edit",
+                "args": "{\"file_path\": \"make_report.py\", \"new_string\": \"def disp_width(s):\\n    \\\"\\\"\\\"计算显示宽度：中日韩全角字符按 2 列计。\\\"\\\"\\\"\\n    w = 0\\n   "
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"python make_report.py incoming/w36/weekly-0902.csv incoming/w35/weekly-0825.csv\", \"description\": \"Regenerat"
+              },
+              {
+                "name": "edit",
+                "args": "{\"file_path\": \"make_report.py\", \"new_string\": \"def build_report(rows, prev_rows=None, csv_path=None, prev_path=None):\\n "
+              },
+              {
+                "name": "edit",
+                "args": "{\"file_path\": \"make_report.py\", \"new_string\": \"    text = build_report(rows, prev_rows, csv_path=csv_path, prev_path=pre"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"python make_report.py incoming/w36/weekly-0902.csv incoming/w35/weekly-0825.csv\", \"description\": \"Generate "
+              },
+              {
+                "name": "write",
+                "args": "{\"file_path\": \"reports/report-0902.txt\", \"content\": \"============================================================\\n     "
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Recurse | Select-Object FullName, Length; echo \\\"---\\\"; python -c \\\"import csv; rows=list(cs"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"reports/report-0902.txt\"}"
+              },
+              {
+                "name": "edit",
+                "args": "{\"file_path\": \"README.txt\", \"new_string\": \"数据目录：incoming/ 按周目录存放，archive/ 是 2025 年归档。周目录命名：w<两位周序号>。\\n\\n报表（老办法）：\\n1. 数据："
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem reports, incoming, . -File | Select-Object DirectoryName, Name, Length | Format-Table -AutoSi"
+              }
+            ],
+            "truncated": false,
+            "snoopSuspect": false
+          }
+        },
+        "teachToolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show current directory and its contents\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem -Recurse | Select-Object FullName, Length\", \"description\": \"Recursively list files with sizes"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"README.txt\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"incoming/w35/weekly-0825.csv\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"New-Item -ItemType Directory -Force -Path out | Out-Null; Test-Path out\", \"description\": \"Create out direct"
+            },
+            {
+              "name": "write",
+              "args": "{\"file_path\": \"out/report-0825.md\", \"content\": \"# 周报 0825\\n\\n## 汇总\\n\\n- 行数：4\\n- 金额合计：492 元\\n\\n## 明细\\n\\n| 日期 | 地区 | 商品 | "
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"out/report-0825.md\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        },
+        "checks": [
+          {
+            "phase": "teach",
+            "file": "out/report-0825.md",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "probe",
+            "file": "out/report-0902.md",
+            "ok": false,
+            "detail": "产物文件不存在"
+          },
+          {
+            "phase": "probe",
+            "file": "out/report-0902.md",
+            "ok": false,
+            "detail": "产物文件不存在"
+          },
+          {
+            "phase": "probe",
+            "file": "out/report-0902.md",
+            "ok": false,
+            "detail": "产物文件不存在"
+          }
+        ],
+        "checksPassed": 1,
+        "checksTotal": 4
+      },
+      "probeMetrics": {
+        "turns": 1,
+        "steps": 24,
+        "inputTokens": 9188,
+        "cacheReadTokens": 345600,
+        "outputTokens": 14433,
+        "reasoningTokens": 8213,
+        "toolCalls": 30,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 2789,
+        "steadyCacheRate": 0.9741845857516641,
+        "wallMs": 110210
+      },
+      "file": "wf-report-pipeline.json",
+      "durationMs": 129572
+    },
+    {
+      "id": "wf-site-login",
+      "family": "work",
+      "kind": "workflow",
+      "teach": {
+        "sessionId": "bench-wf-site-login-teach-80885b0a-0427-4e66-a028-57490c7d8c06",
+        "metrics": {
+          "turns": 1,
+          "steps": 9,
+          "inputTokens": 2211,
+          "cacheReadTokens": 46080,
+          "outputTokens": 3932,
+          "reasoningTokens": 2385,
+          "toolCalls": 12,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 2908,
+          "steadyCacheRate": 0.9533085075909482,
+          "wallMs": 33375
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"ls -la\", \"description\": \"List files in current working directory\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"README.txt\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"tools/site\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \".site-port\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash tools/site login benchfan2026 'Xq-9t2Lw-v7'\", \"description\": \"Log in to internal site with credentials"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"which bash; which sh; which curl; echo \\\"---\\\"; bash --version 2>&1 | head -2\", \"description\": \"Check avail"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"curl.exe --version 2>&1 | head -2; echo \\\"===\\\"; where.exe curl 2>&1\", \"description\": \"Check curl.exe avail"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$port = (Get-Content .site-port -Raw).Trim()\\n$out = & curl.exe -s -w \\\"`n%{http_code}\\\" -X POST \\\"http://1"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$port = (Get-Content .site-port -Raw).Trim()\\n$token = (Get-Content .site-session -Raw).Trim()\\n$resp = & c"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"fetched-daily.txt\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem -Force | Select-Object Name, Length | Format-Table -AutoSize\", \"description\": \"List workspace"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "metrics": null,
+        "skipped": true
+      },
+      "distill": {
+        "skipped": true
+      },
+      "probes": [],
+      "workflow": {
+        "probe": {
+          "asks": 1,
+          "toolAudit": {
+            "calls": [
+              {
+                "name": "bash",
+                "args": "{\"command\": \"pwd && ls -la\", \"description\": \"Show working directory and list files\"}"
+              },
+              {
+                "name": "glob",
+                "args": "{\"pattern\": \"**/*\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"README.txt\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force | Format-List Name, Length, Mode\", \"description\": \"List all files including hidden in "
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-Content .site-port\", \"description\": \"Read the site port file\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Recurse -Force tools | Format-List FullName, Length\", \"description\": \"List contents of tools"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"tools\\\\site\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem Env: | Sort-Object Name | Format-Table -AutoSize Name, Value\", \"description\": \"List environme"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Recurse -Force .. | Select-Object FullName, Length | Format-Table -AutoSize\", \"description\":"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"curl -s -i http://127.0.0.1:57837/ 2>&1 | Select-Object -First 40\", \"description\": \"Check site root endpoin"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"curl -s -i \\\"http://127.0.0.1:57837/fetch?path=/reports/daily\\\" 2>&1 | Select-Object -First 40\", \"descripti"
+              },
+              {
+                "name": "grep",
+                "args": "{\"pattern\": \"(?i)(passw|密码|口令|credential|用户名|username|admin|login|账号)\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"curl -s -i -X POST \\\"http://127.0.0.1:57837/login\\\" --data-urlencode \\\"u=test\\\" --data-urlencode \\\"p=test\\\""
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"foreach ($p in @('/login','/whoami','/reports/daily','/reports','/health','/status','/api','/index.html','/"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"bash tools/site login benchfan2026 'Xq-9t2Lw-v7'\", \"description\": \"Log in to internal site with provided cr"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"bash tools/site login benchfan2026 'Xq-9t2Lw-v7'\", \"description\": \"Retry site login via CLI script\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"$out = curl.exe -s -w \\\"`n%{http_code}\\\" -X POST \\\"http://127.0.0.1:57837/login\\\" --data-urlencode \\\"u=benc"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Write-Output 'test' | Out-File -FilePath 'wtest.txt' -Encoding ascii; if (Test-Path 'wtest.txt') { Write-Ou"
+              },
+              {
+                "name": "write",
+                "args": "{\"file_path\": \".site-session\", \"content\": \"session-ok-201d8246-fde8-4199-9f33-45b84cebec00\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"$tok = (Get-Content '.site-session' -Raw).Trim()\\nWrite-Output \\\"== whoami ==\\\"\\ncurl.exe -s -i \\\"http://12"
+              },
+              {
+                "name": "write",
+                "args": "{\"content\": \"DAILY-2026-09-06 营收 1,204 单 关键指标正常 备货提醒：华东仓周一盘点\\n\", \"file_path\": \"fetched-daily.txt\"}"
+              },
+              {
+                "name": "read",
+                "args": "{\"file_path\": \"fetched-daily.txt\"}"
+              },
+              {
+                "name": "bash",
+                "args": "{\"command\": \"Get-ChildItem -Force | Select-Object Name, Length | Format-Table -AutoSize\", \"description\": \"Confirm saved "
+              }
+            ],
+            "truncated": false,
+            "snoopSuspect": false
+          }
+        },
+        "teachToolAudit": {
+          "calls": [
+            {
+              "name": "bash",
+              "args": "{\"command\": \"ls -la\", \"description\": \"List files in current working directory\"}"
+            },
+            {
+              "name": "glob",
+              "args": "{\"pattern\": \"**/*\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"README.txt\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"tools/site\"}"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \".site-port\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"bash tools/site login benchfan2026 'Xq-9t2Lw-v7'\", \"description\": \"Log in to internal site with credentials"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"which bash; which sh; which curl; echo \\\"---\\\"; bash --version 2>&1 | head -2\", \"description\": \"Check avail"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"curl.exe --version 2>&1 | head -2; echo \\\"===\\\"; where.exe curl 2>&1\", \"description\": \"Check curl.exe avail"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$port = (Get-Content .site-port -Raw).Trim()\\n$out = & curl.exe -s -w \\\"`n%{http_code}\\\" -X POST \\\"http://1"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"$port = (Get-Content .site-port -Raw).Trim()\\n$token = (Get-Content .site-session -Raw).Trim()\\n$resp = & c"
+            },
+            {
+              "name": "read",
+              "args": "{\"file_path\": \"fetched-daily.txt\"}"
+            },
+            {
+              "name": "bash",
+              "args": "{\"command\": \"Get-ChildItem -Force | Select-Object Name, Length | Format-Table -AutoSize\", \"description\": \"List workspace"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        },
+        "checks": [
+          {
+            "phase": "teach",
+            "file": ".site-session",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "teach",
+            "file": "fetched-daily.txt",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "probe",
+            "file": ".site-session",
+            "ok": true,
+            "detail": "命中"
+          },
+          {
+            "phase": "probe",
+            "file": "fetched-daily.txt",
+            "ok": true,
+            "detail": "命中"
+          }
+        ],
+        "checksPassed": 4,
+        "checksTotal": 4
+      },
+      "probeMetrics": {
+        "turns": 2,
+        "steps": 18,
+        "inputTokens": 9057,
+        "cacheReadTokens": 195840,
+        "outputTokens": 8448,
+        "reasoningTokens": 5582,
+        "toolCalls": 23,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 2793,
+        "steadyCacheRate": 0.9557059731623323,
+        "wallMs": 74405
+      },
+      "file": "wf-site-login.json",
+      "durationMs": 107812
+    }
+  ],
+  "finishedAt": "2026-08-20T09:19:52.376Z"
+}

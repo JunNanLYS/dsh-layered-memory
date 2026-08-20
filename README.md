@@ -122,26 +122,43 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
        alt="浅色主题下的同一设置页记忆浏览器概览：同款布局与信息，浅色卡片底与同套强调色，主题切换无需重载">
 </p>
 
-## 实测对比（DSH-MemBench：学习曲线 + 记忆探针）
+## 实测对比（DSH-MemBench：自动化基准）
 
-图文展示的是"长什么样"，这里回答"**开了到底有什么用**"。仓库内建一套可复现的真机对比基准（[`bench/`](./bench/)），两层证据：
+图文回答"长什么样"，这一节用**自动化基准**的实测数字回答"**开了到底有什么用**"（[`bench/`](./bench/)，一条命令可复现）。方法：同场景库、逐字相同输入，**A 组（记忆开）** 与 **B 组（记忆关）** 各跑 3 次取合并值；环境 DeepSeek 官方 `deepseek-v4-flash`、插件 0.8.0、Windows；题型设计借鉴 [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark)。
 
-- **学习曲线（效率层）**：同一工作流在**新会话**中执行两遍。记忆的价值不在第一遍——开不开都要试错；而在第二遍：开记忆的 Agent 召回上次上下文，不再询问登录信息、不再重走死路，直取已验证路径；关记忆的每次都从零试错，不长记性。
-- **记忆探针（质量层）**：类型化探题问卷考"记没记对"——信息抽取、跨会话多跳、时序、**知识更新**（中途改规矩，答旧规矩即失败）、**拒答**（没发生过的事，编造即失败）。题型设计借鉴 [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark) 并做了 agentic 适配。
+### 对话赛道（15 场景 × 6 题型 × 3 次 = 270 题/组）：答得准吗
 
-每个测试集按固定矩阵执行 6 次（A1→A2→A3→B1→B2→B3，每次全新会话）：
+<p align="center">
+  <img src="./assets/readme/bench-dialog.svg" width="100%"
+       alt="DSH-MemBench 对话赛道 A/B 对照条形图：A 组（记忆开）总准确率 92.6%（250/270），B 组（记忆关）17.8%（48/270）；分题型各 45 题——抽取 A 45/45 对 B 3/45、多跳 A 45/45 对 B 0/45、时序 A 43/45 对 B 0/45、知识更新 A 31/45 对 B 0/45、场景回忆 A 41/45 对 B 0/45、拒答两组均 45/45 且 0 编造">
+</p>
 
-| 执行 | 记忆 | 度量意义 |
-|---|---|---|
-| A1 / B1 | 开 / 关 | 首遍基线，两者应大致相当（公平性自检） |
-| **A2 vs B2** | 开 vs 关 | **效率核心对比**：第二遍执行的 token / 步骤 / 耗时 / 反问 / 失败尝试 |
-| **A3 vs B3** | 开 vs 关 | **质量核心对比**：5 道探题 × 3 测试集的准确率（含更新题专项、编造计数） |
+**召回双通道**（A 组）：被动注入召回率 **75.1%**（该题要点出现在召回注入中，169/225），其余多数由模型**主动调用记忆工具**查回——84 题主动查询、**60 题靠工具兜底答对**；端到端 92.6% 是两通道 + 模型利用的合成结果。记忆库跨场景全程累积下，探针召回注入混入其他场景记忆 144 次（已如实计数），总准确率仍稳在 92.6%——抗干扰能力经受住了膨胀记忆库的考验。
 
-三个测试集各押一种记忆类型——**凭据与流程**（GitHub 令牌认证 → 列仓库查 issue，纯 CLI 任务）、**用户偏好**（"按老规矩"整理下载目录，中途改命名规矩）、**可行路径**（pip 装包走镜像，看第二遍首条命令是否自带 `-i`）。效率六项指标 + 探针准确率手动录入 [`bench/results.md`](./bench/results.md)，逐步操作手册见 [`bench/runbook.md`](./bench/runbook.md)；记忆系统自身的蒸馏开销作为可选成本行如实计入（只报节省不报成本是耍赖）。
+### 工作流赛道（4 场景 × 3 次，真实工具沙箱）：做得对、做得省吗
 
-> **首批实测数据录制中，完成后在此发布**（含执行环境声明）。
+<p align="center">
+  <img src="./assets/readme/bench-workflow.svg" width="100%"
+       alt="DSH-MemBench 工作流赛道 A/B 对照图：任务完成度 A 组 24/33（72.7%）对 B 组 11/33（33.3%）；成本对比（B 组为满格基准）——步骤 125 对 186（B +49%）、工具调用 184 对 296（B +61%）、输入 token 1.30M 对 1.86M（B +43%）；向用户求助 A 0 次对 B 3 次；登录场景输入 token A 241k 对 B 453k（+88%）">
+</p>
 
-方法论要点与局限（与发布数字同源声明）：单人单机、每格单次执行、结果随模型与网络波动（非确定性）；固定执行顺序使练习效应对记忆效率收益为**保守方向**（探题为客观判分不受影响）；探题 gold 先记录后施测防事后拟合；剧本作者即插件作者，任务选取偏向记忆优势场景——欢迎按 [bench/playbook.md](./bench/playbook.md) 自行复现检验。
+**登录场景特写**（凭据只存在于记忆，站点为本地服务、令牌不可伪造）：A 组三次全部**一轮直取**完成（6/6，241k 输入）；B 组每次都要**反问用户要凭据**（3 次求助、双倍轮次）才完成 5/6，输入 453k——**+88%**。这正是记忆的核心价值之一：**省掉的不是任务难度，是无谓的往返与重复教学**。
+
+### 方法论与复现
+
+```bash
+node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --model deepseek-v4-flash
+node bench/harness/run.mjs --arm B --repeats 3 --provider deepseek-official --model deepseek-v4-flash   # 对话赛道
+node bench/harness/run.mjs --track workflow --arm A/B --repeats 3 ...                                  # 工作流赛道
+node bench/harness/report.mjs --latest [dialog|workflow]                                               # 汇总报告
+```
+
+- 判分：`contains-all` 程序判 + 判卷模型按要点判（答案原文与判分理由全部留痕 `result.json` 可人工复核）；工作流完成度为产物文件 + 关键内容程序化校验；
+- 指标全部来自供应商上报 usage（输入含缓存命中拆分）与会话事件折叠；**稳态缓存率**剔除每会话首请求（A 88.7% vs B 85.4%——记忆注入不伤缓存）；
+- 回归用途：改插件前后各跑一遍，`compare.mjs` 出对比表（环境头校验 + B 组对照组漂移告警）；
+- 局限（诚实声明）：单机 ×3 次合并、判卷模型与被测模型同源、作者自建场景库（倾向记忆优势场景，欢迎自行复现）；工具审计会标记越界访问（实测 Agent 偶发探测用户主目录，本基准场景答案不存于真实记忆库、数字不受影响）。
+
+完整报告与逐题数据：[`bench/baseline/`](./bench/baseline/)。
 
 ## 存储布局
 

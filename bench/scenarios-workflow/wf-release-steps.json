@@ -1,0 +1,45 @@
+{
+  "id": "wf-release-steps",
+  "family": "work",
+  "kind": "workflow",
+  "marker": "2.0.0",
+  "sandboxFiles": {
+    "scripts/check.js": "import fs from 'node:fs';\nconst version = fs.readFileSync('VERSION', 'utf8').trim();\nconst changelog = fs.readFileSync('CHANGELOG.md', 'utf8');\nconst notes = fs.readFileSync('RELEASE-NOTES.txt', 'utf8');\nif (!changelog.includes(`## v${version}`)) { console.error(`CHANGELOG 缺少 v${version} 段落`); process.exit(1); }\nif (!notes.includes(`v${version}`)) { console.error(`RELEASE-NOTES 缺少 v${version}`); process.exit(1); }\nconsole.log('check ok: v' + version);\n",
+    "scripts/test.js": "console.error('test runner 需要 SERVICES_HOST 环境变量（仅 CI 提供），本地不可用');\nprocess.exit(1);\n",
+    "scripts/deploy.sh": "#!/usr/bin/env bash\necho 'deploy: 缺少 DEPLOY_TOKEN（仅 CI 注入），本地不可用' >&2\nexit 1\n",
+    "VERSION": "1.4.0\n",
+    "CHANGELOG.md": "# Changelog\n\n## v1.4.0 - 2026-08-05\n\n- 首个稳定版本。\n",
+    "RELEASE-NOTES.txt": "v1.4.0 2026-08-05 产物 3 项\n",
+    "src/app.js": "export function main() { return 'app v1'; }\n",
+    "src/cli.js": "export function cli() { return 'cli v1'; }\n",
+    "dist/app.js": "export function main() { return 'app v1'; }\n"
+  },
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "我们仓库的发版约定如下，以后发版都按这个走：1) 发版前必须跑 node scripts/check.js 且通过——注意 scripts/ 里的 test.js 和 deploy.sh 是 CI 专用（本地跑必失败），发版流程不碰它们；2) 版本号不走寻常路——下一版直接定为 2.0.0（跳过 1.x），之后每版在 2.0.0 基础上次版本号 +1；3) CHANGELOG.md 顶部新增「## vX.Y.Z - 今天的日期」段落，无实质变更写「例行发版」；4) 同步在 RELEASE-NOTES.txt 顶部加一行「vX.Y.Z <日期> 产物 N 项」（N 为 dist/ 下产物数）；5) 更新 VERSION 后再跑一次 node scripts/check.js 确认通过。现在按约定发一版。"
+      ],
+      "reteach": "发版约定重述：1) 只跑 node scripts/check.js（test.js/deploy.sh 是 CI 专用，本地必失败，别碰）；2) 下一版定为 2.0.0（跳过 1.x），之后每版次版本 +1；3) CHANGELOG 顶部加「## vX.Y.Z - 日期」；4) RELEASE-NOTES.txt 顶部加「vX.Y.Z 日期 产物 N 项」；5) 更新 VERSION 后再跑 check.js 确认。"
+    },
+    {
+      "kind": "probe",
+      "messages": [
+        "再发一版。"
+      ],
+      "reteach": "发版约定重述：1) 只跑 node scripts/check.js（test.js/deploy.sh 是 CI 专用，本地必失败，别碰）；2) 下一版定为 2.0.0（跳过 1.x），之后每版次版本 +1；3) CHANGELOG 顶部加「## vX.Y.Z - 日期」；4) RELEASE-NOTES.txt 顶部加「vX.Y.Z 日期 产物 N 项」；5) 更新 VERSION 后再跑 check.js 确认。",
+      "maxExchanges": 2
+    }
+  ],
+  "teachChecks": [
+    { "file": "VERSION", "contains": ["2.0.0"] },
+    { "file": "CHANGELOG.md", "contains": ["## v2.0.0"] },
+    { "file": "RELEASE-NOTES.txt", "contains": ["v2.0.0"] }
+  ],
+  "probeChecks": [
+    { "file": "VERSION", "contains": ["2."] },
+    { "file": "VERSION", "contains": ["2.1.0"] },
+    { "file": "CHANGELOG.md", "contains": ["## v2.1.0"] },
+    { "file": "RELEASE-NOTES.txt", "contains": ["v2.1.0"] }
+  ]
+}

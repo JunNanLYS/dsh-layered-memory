@@ -1,0 +1,41 @@
+{
+  "id": "wf-incident-runbook",
+  "family": "work",
+  "kind": "workflow",
+  "marker": "order-svc",
+  "sandboxFiles": {
+    "logs/app-0819.log": "2026-08-19T10:02:11 INFO  order-svc request handled in 42ms\n2026-08-19T10:02:12 INFO  order-svc cache hit ratio 0.93\n2026-08-19T10:02:15 WARN  order-svc slow query 812ms\n2026-08-19T10:02:20 INFO  order-svc request handled in 38ms\n",
+    "logs/app-0820.log": "2026-08-20T09:14:01 INFO  order-svc startup complete\n2026-08-20T09:31:44 WARN  order-svc gc pause 640ms\n2026-08-20T09:31:47 ERROR order-svc java.lang.OutOfMemoryError: Java heap space\n2026-08-20T09:31:48 ERROR order-svc worker thread pool exhausted\n2026-08-20T09:32:10 INFO  order-svc healthcheck still passing\n",
+    "logs/legacy.log": "2025-11-02 legacy-adapter token refresh ok\n2025-11-02 legacy-adapter batch sync 1204 rows\n2025-11-03 legacy-adapter token refresh ok\n2025-11-03 legacy-adapter connection reset, retry 1/3\n2025-11-03 legacy-adapter batch sync 987 rows\n2025-11-04 legacy-adapter token refresh ok\n2025-11-04 legacy-adapter disk usage 91%\n2025-11-05 legacy-adapter batch sync 1103 rows\n2025-11-05 legacy-adapter token refresh ok\n",
+    "config/mem.ini": "[heap]\nmax = 2g\n",
+    "config/cache.ini": "[cache]\nttl = 300\n",
+    "config/db.ini": "[db]\npool = 20\n",
+    "scripts/restart.sh": "#!/usr/bin/env bash\nset -e\n# bash 专属语法（关联数组）；用 sh/dash 执行会语法报错——必须 bash 跑\ndeclare -A SVC=( [name]=\"order-svc\" )\necho \"restart ok: ${SVC[name]} $(date +%H:%M:%S)\" >> restart.log\necho \"order-svc restarted\"\n",
+    "scripts/reload.sh": "#!/usr/bin/env bash\necho 'reload: 仅限配置热载，OOM 故障场景禁止使用（会丢未落盘数据）' >&2\nexit 1\n"
+  },
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "order-svc 的 OOM 告警处理约定跟你说清楚（以后照这个来）：1) 看日志只看 logs/app-<日期>.log 当天的应用日志，logs/legacy.log 是去年旧适配器的历史残留，排查时不要看它；2) 确认 OOM 后，处理动作是改 config/mem.ini 的 [heap] max 参数（按告警给的目标值），config/ 下其他 ini 别动；3) 重启必须用 bash scripts/restart.sh——注意必须 bash，用 sh 跑会语法报错；scripts/reload.sh 是配置热载专用，OOM 场景禁用（会丢数据），不要跑；4) 重启成功会在沙箱根生成 restart.log。现在演练一遍：app-0820.log 有 OOM，把 heap 上调到 4g 并按约定处理。"
+      ],
+      "reteach": "OOM 处理约定重述：1) 只看 logs/app-<日期>.log，legacy.log 不看；2) 改 config/mem.ini 的 [heap] max，其他 ini 不动；3) 必须 bash scripts/restart.sh（sh 会报错），reload.sh 禁用；4) 成功后根目录有 restart.log。"
+    },
+    {
+      "kind": "probe",
+      "messages": [
+        "又来一次 OOM 告警，按上次的办法处理，这次 heap 上到 6g。"
+      ],
+      "reteach": "OOM 处理约定重述：1) 只看 logs/app-<日期>.log，legacy.log 不看；2) 改 config/mem.ini 的 [heap] max，其他 ini 不动；3) 必须 bash scripts/restart.sh（sh 会报错），reload.sh 禁用；4) 成功后根目录有 restart.log。本次目标 heap 6g。",
+      "maxExchanges": 2
+    }
+  ],
+  "teachChecks": [
+    { "file": "config/mem.ini", "contains": ["4g"] },
+    { "file": "restart.log", "contains": ["restart ok"] }
+  ],
+  "probeChecks": [
+    { "file": "config/mem.ini", "contains": ["6g"] },
+    { "file": "restart.log", "contains": ["restart ok"] }
+  ]
+}

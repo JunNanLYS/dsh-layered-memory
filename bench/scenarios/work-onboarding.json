@@ -1,0 +1,77 @@
+{
+  "id": "work-onboarding",
+  "family": "work",
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "给新人交代下仓库布局：monorepo 用 pnpm workspace，apps 下是三个应用（web/admin/worker），packages 下是共享库；构建用 Turborepo，本地一条 turbo dev 全起。",
+        "工具链约定：Node 版本钉 22.x 用 volta 管理；包管理器只用 pnpm，谁用 npm 装依赖 CI 直接红；提交前跑 turbo lint，husky 钩子会拦。"
+      ]
+    },
+    {
+      "kind": "change",
+      "messages": [
+        "工具链升级公告：构建从 Turborepo 迁移到 Nx 了，本地命令统一改用 nx run-many；Node 版本也升到 24.x 了，volta 配置已更新。"
+      ]
+    }
+  ],
+  "probes": [
+    {
+      "type": "extraction",
+      "q": "我们的 monorepo 里 apps 目录下有哪几个应用？",
+      "gold": [
+        "web",
+        "admin",
+        "worker"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "multihop",
+      "q": "现在的构建工具是什么？本地起全部应用该敲什么命令？",
+      "gold": [
+        "Nx",
+        "nx run-many"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "temporal",
+      "q": "Node 版本是怎么变化的？用什么工具管理？",
+      "gold": [
+        "22.x 升到 24.x",
+        "volta"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "update",
+      "q": "新人现在入职，本地构建应该用什么工具和命令？",
+      "gold": [
+        "Nx",
+        "nx run-many"
+      ],
+      "stale": [
+        "Turborepo",
+        "turbo dev"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "scene",
+      "q": "我最初交代的包管理器纪律是什么？违反了会怎样？",
+      "gold": [
+        "只用 pnpm",
+        "用 npm 会导致 CI 红"
+      ],
+      "judge": "llm"
+    },
+    {
+      "type": "abstention",
+      "q": "我之前说仓库要配 pre-commit 的密钥扫描，是谁负责来着？",
+      "judge": "abstain-llm"
+    }
+  ],
+  "marker": "volta"
+}

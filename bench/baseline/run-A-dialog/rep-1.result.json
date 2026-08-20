@@ -1,0 +1,3204 @@
+{
+  "version": 1,
+  "startedAt": "2026-08-20T07:35:33.752Z",
+  "arm": "A",
+  "environment": {
+    "provider": "deepseek-official",
+    "model": "deepseek-v4-flash",
+    "judgeProvider": "deepseek-official",
+    "judgeModel": "deepseek-v4-flash",
+    "pluginVersion": "0.8.0",
+    "scenarioFiles": [
+      "chat-entertainment.json",
+      "chat-family.json",
+      "chat-fitness.json",
+      "chat-food.json",
+      "chat-language.json",
+      "chat-personal-basic.json",
+      "chat-shopping.json",
+      "chat-travel.json",
+      "work-api.json",
+      "work-coding-style.json",
+      "work-deploy.json",
+      "work-meeting.json",
+      "work-onboarding.json",
+      "work-project-stack.json",
+      "work-team.json"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "chat-entertainment",
+      "family": "chat",
+      "teach": {
+        "sessionId": "bench-chat-entertainment-teach-8319bb32-c470-4f13-9e89-3a4b6d5f29b0",
+        "metrics": {
+          "turns": 2,
+          "steps": 2,
+          "inputTokens": 292,
+          "cacheReadTokens": 1792,
+          "outputTokens": 742,
+          "reasoningTokens": 653,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 997,
+          "steadyCacheRate": 0.8242870285188593,
+          "wallMs": 7254
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-chat-entertainment-change-a7b6e95a-a857-4df3-b015-e4c56b1bb116",
+        "metrics": {
+          "turns": 1,
+          "steps": 1,
+          "inputTokens": 188,
+          "cacheReadTokens": 896,
+          "outputTokens": 441,
+          "reasoningTokens": 378,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 1084,
+          "steadyCacheRate": null,
+          "wallMs": 4330
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 30045,
+        "recordLines": 6,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "我通勤常听的播客叫什么？",
+          "gold": [
+            "忽左忽右"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "你通勤常听的播客是《忽左忽右》。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 118,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "我现在在玩什么游戏？之前玩的那个打到几周目了？",
+          "gold": [
+            "文明 6",
+            "博德之门",
+            "三周目"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你现在在玩《文明 6》。之前玩的是《博德之门 3》，已经打到三周目（于 2026 年 8 月 20 日前后完成）。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 157,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "音乐口味上，我是先听华语独立乐队还是先听音乐节现场的？",
+          "gold": [
+            "先",
+            "独立乐队",
+            "后来音乐节"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "先听华语独立乐队（草东没有派对、万能青年旅店是你循环最多的），最近才被朋友带入音乐节、开始听现场向的乐队。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 159,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "update",
+          "q": "我现在的游戏和音乐听法跟最初比有什么变化？",
+          "gold": [
+            "改玩文明 6",
+            "开始听音乐节现场"
+          ],
+          "stale": [
+            "在玩博德之门 3 二周目"
+          ],
+          "judge": "llm",
+          "answer": "变化有两方面：音乐上，你最初以华语独立乐队为主（草东没有派对、万能青年旅店循环最多），现在被朋友带入音乐节，开始转向听现场向的乐队；游戏上，你从《博德之门 3》（打到三周目）切换到了《文明 6》。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 159,
+            "hit": false
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我最初说的追剧和电影偏好是什么？",
+          "gold": [
+            "悬疑刑侦",
+            "不看恐怖片",
+            "科幻剧情片可以"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你最初说的偏好是：追剧只看悬疑和刑侦题材、以国产剧为主（当时在看《尘封十三载》）；电影不碰恐怖片，科幻和剧情片都可以。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 155,
+            "hit": false
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说我抢到了草东演唱会的票，是几号的场来着？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我记忆里没有你抢到草东演唱会票的相关记录，日期我不清楚。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 192,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 8,
+        "inputTokens": 6990,
+        "cacheReadTokens": 29696,
+        "outputTokens": 1146,
+        "reasoningTokens": 728,
+        "toolCalls": 4,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 2555,
+        "steadyCacheRate": 0.8438076821657731,
+        "wallMs": 19174
+      },
+      "contamination": [],
+      "file": "chat-entertainment.json",
+      "durationMs": 61562
+    },
+    {
+      "id": "chat-family",
+      "family": "chat",
+      "teach": {
+        "sessionId": "bench-chat-family-teach-4a2b45a2-8dec-459b-ac33-c81d67d0a9f1",
+        "metrics": {
+          "turns": 2,
+          "steps": 3,
+          "inputTokens": 2345,
+          "cacheReadTokens": 6656,
+          "outputTokens": 489,
+          "reasoningTokens": 366,
+          "toolCalls": 1,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 2619,
+          "steadyCacheRate": 0.9225947978690066,
+          "wallMs": 6684
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"用户家庭情况 父母 姐姐\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-chat-family-change-ce444ff9-7823-4857-be52-75c1b2fe9b9d",
+        "metrics": {
+          "turns": 1,
+          "steps": 1,
+          "inputTokens": 1933,
+          "cacheReadTokens": 768,
+          "outputTokens": 302,
+          "reasoningTokens": 257,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 2701,
+          "steadyCacheRate": null,
+          "wallMs": 4530
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 15031,
+        "recordLines": 13,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "我姐姐的孩子现在上几年级？",
+          "gold": [
+            "二年级"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "你姐姐的孩子现在上小学二年级。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 452,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "我爸妈住哪个城市？爸爸退休前做什么工作？",
+          "gold": [
+            "襄阳",
+            "教师"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "你爸妈住在老家襄阳，爸爸退休前是教师（退休教师）。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 452,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "姐姐家老大的生日和老二的预产期分别在什么时候？",
+          "gold": [
+            "八月",
+            "三月"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "姐姐家老大（上小学二年级的孩子）的生日在暑假八月，老二的预产期在2027年3月。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 452,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "update",
+          "q": "我妈妈现在的职业状态是？",
+          "gold": [
+            "正式退休"
+          ],
+          "stale": [
+            "还在返聘",
+            "护士长在岗"
+          ],
+          "judge": "llm",
+          "answer": "你妈妈是社区医院护士长，目前仍在退休返聘中，将于2026年9月结束返聘、正式退休。",
+          "score": 0,
+          "reason": "判卷 FAIL",
+          "recall": {
+            "injected": true,
+            "chars": 452,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我第一次聊家里情况时，说了哪些重要日子？",
+          "gold": [
+            "结婚纪念日 5 月 20",
+            "爸爸生日 9 月",
+            "妈妈生日 3 月",
+            "孩子生日八月"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你说的家庭重要日子包括：父母结婚纪念日是5月20号，爸爸生日在9月初，妈妈生日在3月中，姐姐家孩子生日在暑假八月。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 496,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说我姐夫做什么工作的，是在哪家公司来着？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我记忆中并没有记录你姐夫的工作和公司信息，抱歉。如果你之前提过但没存下来，可以再告诉我一次。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": false,
+            "chars": 0,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 7,
+        "inputTokens": 3695,
+        "cacheReadTokens": 22272,
+        "outputTokens": 639,
+        "reasoningTokens": 409,
+        "toolCalls": 2,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 2904,
+        "steadyCacheRate": 0.9268525343623987,
+        "wallMs": 14438
+      },
+      "contamination": [],
+      "file": "chat-family.json",
+      "durationMs": 41755
+    },
+    {
+      "id": "chat-fitness",
+      "family": "chat",
+      "teach": {
+        "sessionId": "bench-chat-fitness-teach-52f2323c-5b70-4405-967c-4c86f06d93a7",
+        "metrics": {
+          "turns": 2,
+          "steps": 2,
+          "inputTokens": 2156,
+          "cacheReadTokens": 3840,
+          "outputTokens": 687,
+          "reasoningTokens": 542,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 2952,
+          "steadyCacheRate": 0.9671484888304862,
+          "wallMs": 8647
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-chat-fitness-change-9a6252d7-27df-4c2c-ad65-ab10409f2564",
+        "metrics": {
+          "turns": 1,
+          "steps": 1,
+          "inputTokens": 2241,
+          "cacheReadTokens": 768,
+          "outputTokens": 461,
+          "reasoningTokens": 412,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 3009,
+          "steadyCacheRate": null,
+          "wallMs": 4590
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 20037,
+        "recordLines": 19,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "我家里有哪些健身器械？",
+          "gold": [
+            "哑铃",
+            "弹力带"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "你家里只有一对可调哑铃和弹力带。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 470,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "我现在的训练目标和体重计划是什么？膝盖伤对动作有什么限制？",
+          "gold": [
+            "先减脂到 65 公斤再增肌",
+            "半月板",
+            "深蹲半程"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你的目标已从增肌（68→75kg）调整为先减脂到65公斤再增肌，且所有训练重量下调了20%。膝盖方面，你左膝盖半月板二级损伤，深蹲只能做半程。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 588,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "我是一开始就每周练五天吗？",
+          "gold": [
+            "不是",
+            "四天"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "不是。你最初是每周四天（周一胸、周二背、周四腿、周五肩），后来才调整为每周五练，新增了周六的手臂训练。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 588,
+            "hit": true
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "update",
+          "q": "我现在的训练重量要求和每周训练天数是？",
+          "gold": [
+            "下调百分之二十",
+            "每周五练"
+          ],
+          "stale": [
+            "每周四练"
+          ],
+          "judge": "llm",
+          "answer": "你现在的训练重量是全部下调20%，每周训练五天（周一胸、周二背、周四腿、周五肩、周六手臂）。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 470,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我最初的训练安排是哪几天、各练什么部位？",
+          "gold": [
+            "周一胸",
+            "周二背",
+            "周四腿",
+            "周五肩"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你最初的安排是每周四天：周一练胸、周二练背、周四练腿、周五练肩，使用的是家里的一对可调哑铃和弹力带。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 470,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说我报了游泳课补充有氧，是哪个游泳馆来着？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我不记得你提过游泳课或具体游泳馆的信息，记忆中只有健身（哑铃和弹力带）方面的内容。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": false,
+            "chars": 0,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 8,
+        "inputTokens": 5298,
+        "cacheReadTokens": 32896,
+        "outputTokens": 748,
+        "reasoningTokens": 408,
+        "toolCalls": 3,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 3013,
+        "steadyCacheRate": 0.9132202040874335,
+        "wallMs": 16926
+      },
+      "contamination": [],
+      "file": "chat-fitness.json",
+      "durationMs": 51454
+    },
+    {
+      "id": "chat-food",
+      "family": "chat",
+      "teach": {
+        "sessionId": "bench-chat-food-teach-7ebb7e56-c42a-4fe7-8241-53a662ab7091",
+        "metrics": {
+          "turns": 2,
+          "steps": 2,
+          "inputTokens": 2526,
+          "cacheReadTokens": 3712,
+          "outputTokens": 632,
+          "reasoningTokens": 536,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 2890,
+          "steadyCacheRate": 0.8410991636798089,
+          "wallMs": 7753
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-chat-food-change-845079fc-03a3-4f1c-967e-8d3a67ff8daa",
+        "metrics": {
+          "turns": 1,
+          "steps": 2,
+          "inputTokens": 2604,
+          "cacheReadTokens": 4224,
+          "outputTokens": 392,
+          "reasoningTokens": 254,
+          "toolCalls": 2,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 3178,
+          "steadyCacheRate": 0.9117808219178082,
+          "wallMs": 5775
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"饮食偏好 辣度 乳糖 内脏 蛋白粉\"}"
+            },
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"用户饮食 不吃 忌口 食物偏好\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 25041,
+        "recordLines": 24,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "我喝茶只喝哪种茶？",
+          "gold": [
+            "茉莉花茶"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "茉莉花茶——你不喝咖啡因饮料，茶只接受茉莉花茶。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 297,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "我早餐喝什么？现在的乳制品补充方案是什么？",
+          "gold": [
+            "豆浆",
+            "乳清蛋白粉"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "早餐喝豆浆（不碰咖啡因饮料）。乳制品补充方案是：因乳糖不耐受不喝纯牛奶，改喝乳清蛋白粉——这是健身教练建议补充蛋白质后开始的，且你喝乳清蛋白粉没有乳糖问题。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 280,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "我是从一开始就能吃中辣，还是后来才升级的？",
+          "gold": [
+            "后来",
+            "升级",
+            "之前微辣"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你是后来升级的——之前只能到微辣，后来才升级到中辣没问题。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 393,
+            "hit": true
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "update",
+          "q": "我现在能接受的辣度是多少？还有什么坚决不吃的？",
+          "gold": [
+            "中辣",
+            "不吃内脏"
+          ],
+          "stale": [
+            "只到微辣",
+            "微辣"
+          ],
+          "judge": "llm",
+          "answer": "你现在中辣没问题。坚决不吃的是内脏类食物，还有鸡爪、鸭脖这类也不碰。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 218,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我最初跟你说的聚餐偏好都有哪些？",
+          "gold": [
+            "火锅清汤锅底",
+            "不吃内脏",
+            "鸡爪鸭脖不碰",
+            "乳糖不耐受"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "最初你告诉我的聚餐偏好是：能吃辣但只到微辣，火锅爱吃清汤锅底；不吃内脏类的东西，鸡爪、鸭脖这类也不碰；乳糖不耐受，不喝纯牛奶。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": false,
+            "chars": 0,
+            "hit": false
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "abstention",
+          "q": "我上次说我对花生过敏，严重到什么程度来着？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我这边没有找到关于你花生过敏的任何记录——你可能没跟我说过这件事，或者这条信息没有被记住。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 192,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 8,
+        "inputTokens": 5180,
+        "cacheReadTokens": 33280,
+        "outputTokens": 879,
+        "reasoningTokens": 510,
+        "toolCalls": 4,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 3359,
+        "steadyCacheRate": 0.9262414176234295,
+        "wallMs": 21868
+      },
+      "contamination": [
+        {
+          "marker": "尘封十三载",
+          "from": "chat-entertainment"
+        }
+      ],
+      "file": "chat-food.json",
+      "durationMs": 61828
+    },
+    {
+      "id": "chat-language",
+      "family": "chat",
+      "teach": {
+        "sessionId": "bench-chat-language-teach-d3dbd6d4-02e8-49df-b16c-0ced50b12ee1",
+        "metrics": {
+          "turns": 2,
+          "steps": 3,
+          "inputTokens": 4354,
+          "cacheReadTokens": 9984,
+          "outputTokens": 683,
+          "reasoningTokens": 429,
+          "toolCalls": 2,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 3710,
+          "steadyCacheRate": 0.8550997365449755,
+          "wallMs": 9088
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"日语学习 大家的日语 N2 目标\"}"
+            },
+            {
+              "name": "conversation_search",
+              "args": "{\"query\": \"日语 N2 大家的日语 学习计划\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-chat-language-change-a86ff0d0-7964-418f-92a3-91c6a28d2648",
+        "metrics": {
+          "turns": 1,
+          "steps": 1,
+          "inputTokens": 2940,
+          "cacheReadTokens": 768,
+          "outputTokens": 657,
+          "reasoningTokens": 591,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 3708,
+          "steadyCacheRate": null,
+          "wallMs": 5689
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 15018,
+        "recordLines": 30,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "我背单词用什么工具？",
+          "gold": [
+            "Anki"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "你用 **Anki** 背日语单词，每天通勤时背 30 分钟。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 210,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "我的日语教材是什么？现在学到第几课？",
+          "gold": [
+            "大家的日语",
+            "24 课"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你用《大家的日语》教材，目前推进到第 24 课。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 297,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "我最初计划什么时候考 N2？现在改成什么时候？",
+          "gold": [
+            "明年 7 月",
+            "今年 12 月"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "最初计划是明年 7 月考 N2，现在提前到了今年 12 月。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 984,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "update",
+          "q": "我现在每天的学习安排是什么？",
+          "gold": [
+            "背单词 30 分钟",
+            "影子跟读 40 分钟"
+          ],
+          "stale": [
+            "没有听力练习"
+          ],
+          "judge": "llm",
+          "answer": "你每天通勤时用 Anki 背日语单词 30 分钟，另外因听力薄弱，每天新增了 40 分钟影子跟读练习。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 297,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我最初说自己的日语弱点有哪些？",
+          "gold": [
+            "听力差",
+            "口语没练过或会话空白"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你最初提到的日语弱点是：听力差（看不懂生肉动漫）、口语从未练习过、会话能力空白；相对而言语法条理清楚、五十音图掌握熟练。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 302,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说我报了日语角，每周三晚上活动对吧？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我记忆中没有你报名日语角或每周三活动的记录。你的日语学习中只提到用 Anki 背单词和新增影子跟读练习，没有提到日语角。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 816,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 8,
+        "inputTokens": 6703,
+        "cacheReadTokens": 32256,
+        "outputTokens": 772,
+        "reasoningTokens": 467,
+        "toolCalls": 3,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 3348,
+        "steadyCacheRate": 0.8806267726264356,
+        "wallMs": 16451
+      },
+      "contamination": [
+        {
+          "marker": "襄阳",
+          "from": "chat-family"
+        },
+        {
+          "marker": "可调哑铃",
+          "from": "chat-fitness"
+        }
+      ],
+      "file": "chat-language.json",
+      "durationMs": 47229
+    },
+    {
+      "id": "chat-personal-basic",
+      "family": "chat",
+      "teach": {
+        "sessionId": "bench-chat-personal-basic-teach-fb04ab78-aeef-4f95-8cb3-1b50c9cff751",
+        "metrics": {
+          "turns": 2,
+          "steps": 2,
+          "inputTokens": 3547,
+          "cacheReadTokens": 4480,
+          "outputTokens": 387,
+          "reasoningTokens": 274,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 3793,
+          "steadyCacheRate": 0.8767123287671232,
+          "wallMs": 4612
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-chat-personal-basic-change-1ecc59ac-418b-4717-8bb4-6ea48237d740",
+        "metrics": {
+          "turns": 1,
+          "steps": 1,
+          "inputTokens": 2861,
+          "cacheReadTokens": 896,
+          "outputTokens": 393,
+          "reasoningTokens": 308,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 3757,
+          "steadyCacheRate": null,
+          "wallMs": 4606
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 25024,
+        "recordLines": 39,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "我的新工作是做什么方向的？",
+          "gold": [
+            "金融风控"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "你的新工作是金融风控分析方向，新公司在上海，计划下个月（2026年9月）搬去浦东。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 604,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "我现在在哪个城市工作、新公司通勤要多久？",
+          "gold": [
+            "上海",
+            "十五分钟"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你在上海浦东工作，新公司离家很近，步行约十五分钟到公司。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 393,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "我跳槽之前在哪个城市工作？",
+          "gold": [
+            "杭州"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "我不记得你跳槽之前在哪个城市工作了，记忆里只记录了新公司在上海浦东的信息。",
+          "score": 0,
+          "reason": "gold 关键词未全命中",
+          "recall": {
+            "injected": true,
+            "chars": 677,
+            "hit": false
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "update",
+          "q": "我现在每天怎么上班？",
+          "gold": [
+            "走路上班",
+            "十五分钟左右"
+          ],
+          "stale": [
+            "地铁",
+            "四号线"
+          ],
+          "judge": "llm",
+          "answer": "你现在步行上班，新公司离家很近，大约步行十五分钟到公司。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 215,
+            "hit": false
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "还记得我第一次介绍自己时说了哪些生活习惯吗？",
+          "gold": [
+            "七点半起床或周末自然醒",
+            "地铁四号线通勤（旧）",
+            "小米手机或 MacBook Air",
+            "Steam 策略类游戏"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你第一次自我介绍时说：你叫陈默，在杭州一家电商公司做数据分析师，住在滨江区，工作日七点半起床，周末喜欢睡到自然醒。",
+          "score": 0,
+          "reason": "判卷 FAIL",
+          "recall": {
+            "injected": false,
+            "chars": 0,
+            "hit": false
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说我周末在上吉他课，是每周几来着？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我记忆中并没有你提过吉他课的信息，搜索也没有找到相关记录，所以我不确定。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 627,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 9,
+        "inputTokens": 7090,
+        "cacheReadTokens": 42112,
+        "outputTokens": 992,
+        "reasoningTokens": 589,
+        "toolCalls": 6,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 3607,
+        "steadyCacheRate": 0.9067660927733304,
+        "wallMs": 15750
+      },
+      "contamination": [
+        {
+          "marker": "可调哑铃",
+          "from": "chat-fitness"
+        },
+        {
+          "marker": "大家的日语",
+          "from": "chat-language"
+        }
+      ],
+      "file": "chat-personal-basic.json",
+      "durationMs": 50984
+    },
+    {
+      "id": "chat-shopping",
+      "family": "chat",
+      "teach": {
+        "sessionId": "bench-chat-shopping-teach-af384048-77fb-4adc-8a39-365cb19822c9",
+        "metrics": {
+          "turns": 2,
+          "steps": 3,
+          "inputTokens": 3404,
+          "cacheReadTokens": 8320,
+          "outputTokens": 809,
+          "reasoningTokens": 626,
+          "toolCalls": 2,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 3548,
+          "steadyCacheRate": 0.923679060665362,
+          "wallMs": 8069
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"购物习惯 购买渠道 快递地址\"}"
+            },
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"数码产品 官方渠道 二手\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-chat-shopping-change-a8e37577-84bd-4cd2-bb55-b5e24ace1663",
+        "metrics": {
+          "turns": 1,
+          "steps": 1,
+          "inputTokens": 2972,
+          "cacheReadTokens": 768,
+          "outputTokens": 359,
+          "reasoningTokens": 297,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 3740,
+          "steadyCacheRate": null,
+          "wallMs": 3691
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 25016,
+        "recordLines": 46,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "我裤子和鞋的尺码是多少？",
+          "gold": [
+            "31",
+            "42"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "你的裤子是 31 码，鞋是 42 码。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 199,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "我现在的上衣尺码是多少？这个变化跟什么原因有关？",
+          "gold": [
+            "XL",
+            "健身增肌"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你的上衣现在是 XL 码；这个变化是因为健身增肌，由原来的 L 码改为了 XL 码。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 199,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "我买数码产品的渠道观念是怎么变化的？",
+          "gold": [
+            "原来只买官方全新",
+            "后来接受官翻"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你原本坚持只在官方渠道购买全新产品、不碰二手商品，现在开始接受官翻机，新增了 Apple 官翻作为购买渠道。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 214,
+            "hit": false
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "update",
+          "q": "我现在买数码产品接受哪些渠道？",
+          "gold": [
+            "官方渠道",
+            "官翻"
+          ],
+          "stale": [
+            "二手不碰指个人二手也仍不接受",
+            "只买全新"
+          ],
+          "judge": "llm",
+          "answer": "你现在接受的渠道是官方渠道购买（不碰二手），并且新增了 Apple 官翻渠道。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 269,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我最初说的面料和品牌偏好是什么？",
+          "gold": [
+            "优衣库",
+            "无印良品",
+            "纯棉或莫代尔"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你最初的偏好是：衣服以优衣库和无印良品为主，不追品牌，但对面料敏感，只穿纯棉或莫代尔面料。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 410,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说我双十一抢了台 Switch OLED，什么颜色来着？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我没有找到你提过双十一抢到 Switch OLED 颜色的相关记录。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": false,
+            "chars": 0,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 8,
+        "inputTokens": 4201,
+        "cacheReadTokens": 29568,
+        "outputTokens": 812,
+        "reasoningTokens": 522,
+        "toolCalls": 3,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 3597,
+        "steadyCacheRate": 0.9545273763754475,
+        "wallMs": 16188
+      },
+      "contamination": [
+        {
+          "marker": "陈默",
+          "from": "chat-personal-basic"
+        },
+        {
+          "marker": "大家的日语",
+          "from": "chat-language"
+        }
+      ],
+      "file": "chat-shopping.json",
+      "durationMs": 53809
+    },
+    {
+      "id": "chat-travel",
+      "family": "chat",
+      "teach": {
+        "sessionId": "bench-chat-travel-teach-1834d8cc-675e-4a1f-9ce0-363cceba1958",
+        "metrics": {
+          "turns": 2,
+          "steps": 3,
+          "inputTokens": 4148,
+          "cacheReadTokens": 10368,
+          "outputTokens": 782,
+          "reasoningTokens": 605,
+          "toolCalls": 2,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4041,
+          "steadyCacheRate": 0.9042482100238664,
+          "wallMs": 8784
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "conversation_search",
+              "args": "{\"query\": \"十一 成都 旅行 计划\"}"
+            },
+            {
+              "name": "conversation_search",
+              "args": "{\"query\": \"阿凯 室友\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-chat-travel-change-9f0faea6-2a25-4511-8e94-b0f76795588d",
+        "metrics": {
+          "turns": 1,
+          "steps": 2,
+          "inputTokens": 4677,
+          "cacheReadTokens": 5120,
+          "outputTokens": 449,
+          "reasoningTokens": 304,
+          "toolCalls": 2,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 3992,
+          "steadyCacheRate": 0.7276485788113695,
+          "wallMs": 4746
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "conversation_search",
+              "args": "{\"query\": \"阿凯 表弟 旅行计划\"}"
+            },
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"阿凯 表弟 出行计划 日期\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 20035,
+        "recordLines": 53,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "我们的旅行住宿订在成都哪个区域附近？",
+          "gold": [
+            "春熙路"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "我们的住宿订在成都的**春熙路附近**。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 307,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "现在这趟旅行几个人去、分别是谁？",
+          "gold": [
+            "两个人",
+            "表弟"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "现在这趟旅行是**两个人**：你和表弟。原同行者阿凯临时有事无法参加，所以改由你和表弟两人出行。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 239,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "行程改期前后，出发日期分别是哪天？",
+          "gold": [
+            "10 月 1 号",
+            "9 月 28 号"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "行程改期前是 **10 月 1 日出发、10 月 5 日返回**；改期后提前到 **9 月 28 日出发、10 月 2 日返回**，其余安排（住宿春熙路附近、人均预算三千）保持不变。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 853,
+            "hit": true
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "update",
+          "q": "现在同行的人和原计划比有什么变化？",
+          "gold": [
+            "阿凯去不了",
+            "我和表弟去"
+          ],
+          "stale": [
+            "阿凯和他女朋友同行"
+          ],
+          "judge": "llm",
+          "answer": "原来计划是和大学室友阿凯（及其女友）一起出行，现在改为你和表弟两人，阿凯因临时有事无法参加。",
+          "score": 0,
+          "reason": "判卷 FAIL",
+          "recall": {
+            "injected": true,
+            "chars": 848,
+            "hit": false
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我们最初的行程偏好是什么类型的游客、想去哪两个博物馆？",
+          "gold": [
+            "博物馆型",
+            "三星堆",
+            "成都博物馆"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你们是**博物馆型游客**，计划参观的两个博物馆是**三星堆**和**成都博物馆**。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 489,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说订了成都的大熊猫基地门票，订的几号场来着？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我记忆里没有你订成都大熊猫基地门票的相关记录，日期我不清楚。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 304,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 8,
+        "inputTokens": 7228,
+        "cacheReadTokens": 39040,
+        "outputTokens": 982,
+        "reasoningTokens": 611,
+        "toolCalls": 4,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 3704,
+        "steadyCacheRate": 0.8991636124424396,
+        "wallMs": 17256
+      },
+      "contamination": [
+        {
+          "marker": "陈默",
+          "from": "chat-personal-basic"
+        },
+        {
+          "marker": "襄阳",
+          "from": "chat-family"
+        },
+        {
+          "marker": "可调哑铃",
+          "from": "chat-fitness"
+        },
+        {
+          "marker": "大家的日语",
+          "from": "chat-language"
+        }
+      ],
+      "file": "chat-travel.json",
+      "durationMs": 52143
+    },
+    {
+      "id": "work-api",
+      "family": "work",
+      "teach": {
+        "sessionId": "bench-work-api-teach-7ea9919a-860f-4864-8ced-3d4433a364b1",
+        "metrics": {
+          "turns": 2,
+          "steps": 3,
+          "inputTokens": 6735,
+          "cacheReadTokens": 9088,
+          "outputTokens": 745,
+          "reasoningTokens": 432,
+          "toolCalls": 2,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 3765,
+          "steadyCacheRate": 0.6899983413501409,
+          "wallMs": 7263
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"API 接口规范 REST 鉴权 Bearer Token 错误响应\"}"
+            },
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"项目开发 后端接口 代码规范\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-work-api-change-de3ed3a6-7499-4e8b-9edc-1e2d87423d62",
+        "metrics": {
+          "turns": 1,
+          "steps": 2,
+          "inputTokens": 4088,
+          "cacheReadTokens": 4992,
+          "outputTokens": 555,
+          "reasoningTokens": 320,
+          "toolCalls": 2,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 3978,
+          "steadyCacheRate": 0.8279106232849863,
+          "wallMs": 4921
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"分页规范 cursor 游标分页 page size 接口\"}"
+            },
+            {
+              "name": "conversation_search",
+              "args": "{\"query\": \"分页 cursor 游标 接口规范 迁移\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 15030,
+        "recordLines": 59,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "我们错误响应的 code 字段是什么格式？",
+          "gold": [
+            "五位数字符串"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "根据团队 API 约定，错误响应的 `code` 字段是**五位数字符串**（五位数字），配合 `message` 和 `data` 组成统一信封结构。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 322,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "新接口的分页参数用什么？存量老接口的分页还能用吗？",
+          "gold": [
+            "cursor/limit",
+            "保留但标记废弃"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "新接口一律使用游标分页，参数为 `cursor`/`limit`；存量老接口仍保留 `page`/`size` 可用，但已标记为废弃（deprecated）。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 727,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "分页方式上，是先有的 page/size 还是先有的游标分页？",
+          "gold": [
+            "先 page/size",
+            "后改游标"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "先有 `page`/`size`，它是存量老接口的旧规范；游标分页（`cursor`/`limit`）是后来迁移引入的新规范，新接口一律改用游标分页，老接口保留 `page`/`size` 但标记为废弃。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 508,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "update",
+          "q": "现在新写的接口应该用什么分页方式？",
+          "gold": [
+            "游标分页",
+            "cursor/limit"
+          ],
+          "stale": [
+            "用 page/size"
+          ],
+          "judge": "llm",
+          "answer": "新写的接口统一使用游标分页 `cursor`/`limit`，不再使用 `page`/`size`。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 601,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我最初说的接口约定里，时间字段和鉴权分别怎么定的？",
+          "gold": [
+            "ISO 8601 带时区",
+            "Bearer Token"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "最初约定里：时间字段全部使用 ISO 8601 带时区格式，不使用时间戳；鉴权全部使用 Bearer Token。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 568,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说接口网关限流定的是每秒一百次，对吧？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我记忆里没有关于接口网关限流的具体配置，包括\"每秒一百次\"这个数字——我们记录的约定只涉及 REST 路径、错误信封、Bearer 鉴权、ISO 8601 时间和分页迁移，没有提过限流阈值。如果之前定过这个值，可以再告诉我一次让我记下来。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 615,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 7,
+        "inputTokens": 5977,
+        "cacheReadTokens": 29056,
+        "outputTokens": 839,
+        "reasoningTokens": 469,
+        "toolCalls": 2,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 3767,
+        "steadyCacheRate": 0.9047527665835092,
+        "wallMs": 16414
+      },
+      "contamination": [
+        {
+          "marker": "大家的日语",
+          "from": "chat-language"
+        },
+        {
+          "marker": "陈默",
+          "from": "chat-personal-basic"
+        }
+      ],
+      "file": "work-api.json",
+      "durationMs": 44926
+    },
+    {
+      "id": "work-coding-style",
+      "family": "work",
+      "teach": {
+        "sessionId": "bench-work-coding-style-teach-ff873e08-9eec-41a7-a767-6d4e43b0047f",
+        "metrics": {
+          "turns": 2,
+          "steps": 3,
+          "inputTokens": 4863,
+          "cacheReadTokens": 10752,
+          "outputTokens": 777,
+          "reasoningTokens": 598,
+          "toolCalls": 2,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4102,
+          "steadyCacheRate": 0.8671936072266134,
+          "wallMs": 7684
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"代码规范 TypeScript 命名 注释 偏好\"}"
+            },
+            {
+              "name": "conversation_search",
+              "args": "{\"query\": \"TypeScript 严格模式 camelCase kebab-case 注释\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-work-coding-style-change-62585682-f9ba-4ea6-86ab-d594d03e577d",
+        "metrics": {
+          "turns": 1,
+          "steps": 2,
+          "inputTokens": 4281,
+          "cacheReadTokens": 5760,
+          "outputTokens": 948,
+          "reasoningTokens": 792,
+          "toolCalls": 1,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4266,
+          "steadyCacheRate": 0.8422510822510823,
+          "wallMs": 7810
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_read_scene",
+              "args": "{\"path\": \"内部API接口约定规范.md\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 15034,
+        "recordLines": 63,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "我的 commit message 用什么规范？",
+          "gold": [
+            "约定式提交"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "你的 commit message 规范是：使用约定式提交（Conventional Commits），描述用中文；一个提交只做一件事；禁止生成式注释。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 891,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "现在的文件命名规范是什么？为什么改？公共 API 的注释要求是？",
+          "gold": [
+            "camelCase",
+            "跟新同事习惯对齐",
+            "JSDoc"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "文件名规范是 camelCase（已从 kebab-case 调整，为与新同事习惯对齐）。公共 API 的注释要求是：补充 JSDoc 描述签名与用途，同时仍需说明原因，不再只写为什么。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 915,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "TypeScript 严格模式是我一直的要求还是后来加的？",
+          "gold": [
+            "一直",
+            "最初就要求"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "TypeScript 严格模式是你最初记录代码规范时（2026-08-20）就一并提出的要求，后来调整的只有文件命名（kebab-case→camelCase）和注释规则（公共 API 补 JSDoc）两项，严格模式这一条从未变动过。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 985,
+            "hit": true
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "update",
+          "q": "我现在的文件命名和注释规范分别是什么？",
+          "gold": [
+            "camelCase",
+            "公共 API 补 JSDoc"
+          ],
+          "stale": [
+            "kebab-case"
+          ],
+          "judge": "llm",
+          "answer": "文件命名用 camelCase（从 kebab-case 调整而来，与新同事习惯对齐）；注释规范是公共 API 需补充 JSDoc 描述签名与用途，同时仍要说明原因，不再只写\"为什么\"。",
+          "score": 0,
+          "reason": "判卷 FAIL",
+          "recall": {
+            "injected": true,
+            "chars": 866,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我最初说的提交规范有几条？分别是什么？",
+          "gold": [
+            "约定式提交中文描述",
+            "一个提交一件事",
+            "不要生成式注释"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "最初说的提交规范是 3 条：①commit message 使用约定式提交并用中文描述；②一个提交只做一件事；③禁止生成式注释（代码审查发现直接打回）。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 1007,
+            "hit": false
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说团队定了每周五下午代码重构日，从哪个月开始来着？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我记忆里没有\"每周五下午代码重构日\"这条信息，搜索原始对话和结构化记忆也没有找到，可能是没有记录过或发生在更早的对话中。你能否补充一下具体是从哪个月开始的？",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 973,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 8,
+        "inputTokens": 12860,
+        "cacheReadTokens": 49920,
+        "outputTokens": 1091,
+        "reasoningTokens": 617,
+        "toolCalls": 4,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 4070,
+        "steadyCacheRate": 0.8350195878044626,
+        "wallMs": 17248
+      },
+      "contamination": [
+        {
+          "marker": "大家的日语",
+          "from": "chat-language"
+        },
+        {
+          "marker": "陈默",
+          "from": "chat-personal-basic"
+        },
+        {
+          "marker": "游标分页",
+          "from": "work-api"
+        },
+        {
+          "marker": "春熙路",
+          "from": "chat-travel"
+        },
+        {
+          "marker": "可调哑铃",
+          "from": "chat-fitness"
+        }
+      ],
+      "file": "work-coding-style.json",
+      "durationMs": 48726
+    },
+    {
+      "id": "work-deploy",
+      "family": "work",
+      "teach": {
+        "sessionId": "bench-work-deploy-teach-165ca1fc-2077-4588-b0f6-113aed77cff1",
+        "metrics": {
+          "turns": 2,
+          "steps": 3,
+          "inputTokens": 4874,
+          "cacheReadTokens": 10624,
+          "outputTokens": 769,
+          "reasoningTokens": 514,
+          "toolCalls": 2,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4102,
+          "steadyCacheRate": 0.8536328536328537,
+          "wallMs": 7015
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"部署环境 测试 预发 生产 连接池 跳板机\"}"
+            },
+            {
+              "name": "conversation_search",
+              "args": "{\"query\": \"部署环境 数据库连接池 时钟 跳板机\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-work-deploy-change-ce4e8f51-8c0f-492a-ab26-f7eea23f3637",
+        "metrics": {
+          "turns": 1,
+          "steps": 1,
+          "inputTokens": 3261,
+          "cacheReadTokens": 896,
+          "outputTokens": 260,
+          "reasoningTokens": 211,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4157,
+          "steadyCacheRate": null,
+          "wallMs": 3145
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 25051,
+        "recordLines": 72,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "测试环境的数据库连接池上限是多少？",
+          "gold": [
+            "20"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "测试环境的数据库连接池上限是 20，超过就会挂掉。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 395,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "现在访问生产环境用什么方式？日志保留多久、更早的日志怎么查？",
+          "gold": [
+            "prod-gw 或权限网关",
+            "30 天",
+            "冷备份"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "生产环境只能通过跳板机访问，SSH 别名用新的 `prod-gw`（旧的 `prod-jump` 已停用）。应用日志统一打到 ELK，索引保留 30 天；更早的历史日志需要找运维从冷备份捞取。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 783,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "SSH 别名是什么时候从旧名换掉的？旧名是什么？",
+          "gold": [
+            "上个月",
+            "prod-jump"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "旧名是 `prod-jump`。更换发生在\"上个月\"（用户于 2026-08-20 告知，即约 2026 年 7 月）上线新权限网关时，具体日期没有记录。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 847,
+            "hit": true
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "update",
+          "q": "现在查 20 天前的应用日志，还能从 ELK 直接查到吗？",
+          "gold": [
+            "可以",
+            "30 天保留期内"
+          ],
+          "stale": [
+            "7 天保留不够",
+            "要找运维冷备份"
+          ],
+          "judge": "llm",
+          "answer": "可以。ELK 索引保留期是 30 天，20 天前仍在保留期内，可以直接从 ELK 查到。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 684,
+            "hit": false
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我最初说的预发环境那个坑是什么？",
+          "gold": [
+            "时钟慢两分钟",
+            "定时任务调试受影响"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "预发环境的时钟比北京时间慢两分钟，调试定时任务时需要留意时间偏差。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 660,
+            "hit": false
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说测试环境的 Redis 密码统一改过一次，改成什么来着？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我记忆中没有任何关于测试环境 Redis 密码统一改动的记录，无法告诉您改成什么了。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 493,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 8,
+        "inputTokens": 10888,
+        "cacheReadTokens": 41728,
+        "outputTokens": 920,
+        "reasoningTokens": 537,
+        "toolCalls": 4,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 3856,
+        "steadyCacheRate": 0.8374077112387203,
+        "wallMs": 15055
+      },
+      "contamination": [
+        {
+          "marker": "陈默",
+          "from": "chat-personal-basic"
+        },
+        {
+          "marker": "大家的日语",
+          "from": "chat-language"
+        },
+        {
+          "marker": "游标分页",
+          "from": "work-api"
+        },
+        {
+          "marker": "可调哑铃",
+          "from": "chat-fitness"
+        },
+        {
+          "marker": "约定式提交",
+          "from": "work-coding-style"
+        }
+      ],
+      "file": "work-deploy.json",
+      "durationMs": 51368
+    },
+    {
+      "id": "work-meeting",
+      "family": "work",
+      "teach": {
+        "sessionId": "bench-work-meeting-teach-81f74a28-fae3-42dd-9483-1ed3a3fa66ea",
+        "metrics": {
+          "turns": 2,
+          "steps": 3,
+          "inputTokens": 4988,
+          "cacheReadTokens": 10880,
+          "outputTokens": 726,
+          "reasoningTokens": 539,
+          "toolCalls": 2,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4359,
+          "steadyCacheRate": 0.8674950039099835,
+          "wallMs": 6280
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"例会 周会 技术分享会 会议安排\"}"
+            },
+            {
+              "name": "conversation_search",
+              "args": "{\"query\": \"例会安排 周会 技术分享 需求会\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-work-meeting-change-47e061da-cc76-46e8-ac12-e4376641fbf0",
+        "metrics": {
+          "turns": 1,
+          "steps": 2,
+          "inputTokens": 3885,
+          "cacheReadTokens": 5504,
+          "outputTokens": 407,
+          "reasoningTokens": 303,
+          "toolCalls": 1,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4417,
+          "steadyCacheRate": 0.9267900241351569,
+          "wallMs": 4152
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"会议安排 周会 技术分享会 需求会 时间\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 25045,
+        "recordLines": 79,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "需求会是谁主持的？",
+          "gold": [
+            "Lily"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "需求会由 Lily 主持，时间是每周三下午四点。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 297,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "现在周会是什么时间？为什么改到这个时间？",
+          "gold": [
+            "周一晚上七点",
+            "分布式团队"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "周会现在是每周一晚上七点，原为上午十点，调整为适配新的分布式团队。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 878,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "技术分享会的频率经历了什么变化？",
+          "gold": [
+            "每周一次",
+            "改成双周"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "技术分享会由原来的每周一次调整为双周一次（原为每周五下午三点）。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 882,
+            "hit": false
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "update",
+          "q": "我现在每周要参加的固定会议有哪些、分别在什么时间？",
+          "gold": [
+            "周一晚七点周会",
+            "周三下午四点需求会"
+          ],
+          "stale": [
+            "周一上午十点"
+          ],
+          "judge": "llm",
+          "answer": "你每周固定的会议有：\n- 周一晚上七点：组内周会（过进度和风险）\n- 周三下午四点：与产品对需求（Lily 主持）\n- 技术分享会为双周一次（自愿参加，但每人每月至少讲一次）",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 878,
+            "hit": false
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我最初说的个人会议习惯有哪些？",
+          "gold": [
+            "周会前填周报",
+            "需求会前看原型",
+            "不接受无议程临时会"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你最初的会议习惯是：周会前要把周报填进共享文档；需求会前必须看过原型；不接受没有议程的临时会议，除非线上告警。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 643,
+            "hit": false
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说我在技术分享会讲过 Rust 入门，反响很好对吧？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我不记得你讲过 Rust 入门技术分享这件事，记忆中并没有相关信息。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 669,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 7,
+        "inputTokens": 6765,
+        "cacheReadTokens": 32000,
+        "outputTokens": 718,
+        "reasoningTokens": 458,
+        "toolCalls": 2,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 3983,
+        "steadyCacheRate": 0.8979357138749928,
+        "wallMs": 13189
+      },
+      "contamination": [
+        {
+          "marker": "游标分页",
+          "from": "work-api"
+        },
+        {
+          "marker": "可调哑铃",
+          "from": "chat-fitness"
+        },
+        {
+          "marker": "陈默",
+          "from": "chat-personal-basic"
+        },
+        {
+          "marker": "春熙路",
+          "from": "chat-travel"
+        },
+        {
+          "marker": "大家的日语",
+          "from": "chat-language"
+        }
+      ],
+      "file": "work-meeting.json",
+      "durationMs": 49419
+    },
+    {
+      "id": "work-onboarding",
+      "family": "work",
+      "teach": {
+        "sessionId": "bench-work-onboarding-teach-7cbdfbf8-9fbe-468e-afeb-6613f09b1e47",
+        "metrics": {
+          "turns": 2,
+          "steps": 5,
+          "inputTokens": 4991,
+          "cacheReadTokens": 20480,
+          "outputTokens": 1347,
+          "reasoningTokens": 1015,
+          "toolCalls": 4,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4282,
+          "steadyCacheRate": 0.9302940204823258,
+          "wallMs": 12531
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"仓库 monorepo pnpm workspace Turborepo apps web admin worker packages\"}"
+            },
+            {
+              "name": "conversation_search",
+              "args": "{\"query\": \"仓库布局 monorepo pnpm workspace turbo dev\"}"
+            },
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"项目结构 代码仓库 前端应用 worker 共享库\"}"
+            },
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"Node volta pnpm npm CI turbo lint husky 工具链约定\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-work-onboarding-change-b651808a-1deb-4186-bc99-b22e3e850ada",
+        "metrics": {
+          "turns": 1,
+          "steps": 1,
+          "inputTokens": 3440,
+          "cacheReadTokens": 896,
+          "outputTokens": 481,
+          "reasoningTokens": 410,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4336,
+          "steadyCacheRate": null,
+          "wallMs": 4306
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 25039,
+        "recordLines": 83,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "我们的 monorepo 里 apps 目录下有哪几个应用？",
+          "gold": [
+            "web",
+            "admin",
+            "worker"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "apps 目录下有三个应用：**web**、**admin** 和 **worker**。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 785,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "现在的构建工具是什么？本地起全部应用该敲什么命令？",
+          "gold": [
+            "Nx",
+            "nx run-many"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "当前构建工具已从 Turborepo 迁移到 **Nx**；本地起全部应用统一用 **`nx run-many`** 命令（已不再使用 `turbo dev`），并且提交前 lint 也相应改为 `nx lint`。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 1278,
+            "hit": true
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "temporal",
+          "q": "Node 版本是怎么变化的？用什么工具管理？",
+          "gold": [
+            "22.x 升到 24.x",
+            "volta"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "Node 版本从原先钉的 **22.x** 升级到了 **24.x**，全程都用 **volta** 管理，升级时 volta 配置也已同步更新。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 951,
+            "hit": true
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "update",
+          "q": "新人现在入职，本地构建应该用什么工具和命令？",
+          "gold": [
+            "Nx",
+            "nx run-many"
+          ],
+          "stale": [
+            "Turborepo",
+            "turbo dev"
+          ],
+          "judge": "llm",
+          "answer": "本地构建用 **Nx**，命令是 `nx run-many`（如 `nx run-many --target=dev` 或对应 target 一键起全部应用），不要再使用旧的 `turbo dev`。",
+          "score": 0,
+          "reason": "判卷 FAIL",
+          "recall": {
+            "injected": true,
+            "chars": 1063,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我最初交代的包管理器纪律是什么？违反了会怎样？",
+          "gold": [
+            "只用 pnpm",
+            "用 npm 会导致 CI 红"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "最初交代的纪律是：包管理器只允许用 **pnpm**；如果谁用 npm 安装依赖，CI 会直接失败。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 772,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说仓库要配 pre-commit 的密钥扫描，是谁负责来着？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我没有找到关于 pre-commit 密钥扫描由谁负责的记录，记忆里没有这部分信息。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 662,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 11,
+        "inputTokens": 12771,
+        "cacheReadTokens": 97152,
+        "outputTokens": 1974,
+        "reasoningTokens": 1421,
+        "toolCalls": 7,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 4260,
+        "steadyCacheRate": 0.9121830725987337,
+        "wallMs": 24940
+      },
+      "contamination": [
+        {
+          "marker": "陈默",
+          "from": "chat-personal-basic"
+        },
+        {
+          "marker": "prod-jump",
+          "from": "work-deploy"
+        },
+        {
+          "marker": "春熙路",
+          "from": "chat-travel"
+        },
+        {
+          "marker": "游标分页",
+          "from": "work-api"
+        },
+        {
+          "marker": "大家的日语",
+          "from": "chat-language"
+        },
+        {
+          "marker": "约定式提交",
+          "from": "work-coding-style"
+        }
+      ],
+      "file": "work-onboarding.json",
+      "durationMs": 67497
+    },
+    {
+      "id": "work-project-stack",
+      "family": "work",
+      "teach": {
+        "sessionId": "bench-work-project-stack-teach-5fdc257c-3fcb-4792-a963-8a8eedf296d8",
+        "metrics": {
+          "turns": 2,
+          "steps": 2,
+          "inputTokens": 4222,
+          "cacheReadTokens": 4992,
+          "outputTokens": 685,
+          "reasoningTokens": 569,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4296,
+          "steadyCacheRate": 0.8588857259048394,
+          "wallMs": 6189
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-work-project-stack-change-966892fb-be22-43f9-af8a-2d7d730f35e8",
+        "metrics": {
+          "turns": 1,
+          "steps": 1,
+          "inputTokens": 3608,
+          "cacheReadTokens": 768,
+          "outputTokens": 412,
+          "reasoningTokens": 358,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4376,
+          "steadyCacheRate": null,
+          "wallMs": 3514
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 30059,
+        "recordLines": 90,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "星图项目的数据库用的什么？",
+          "gold": [
+            "PostgreSQL"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "星图项目用的是 PostgreSQL 16 作为数据库。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 803,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "星图现在用什么做缓存层？为什么换？报告导出现在是什么方案？",
+          "gold": [
+            "KeyDB",
+            "集群模块兼容性",
+            "临时签名直链"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "缓存层用的是 KeyDB，替换掉 Redis 是因为集群模块兼容性问题；报告导出已改为临时签名直链方案，取代了原来的异步队列实现，更简单。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 873,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "temporal",
+          "q": "报告导出方案是先有的异步队列还是先有的签名直链？",
+          "gold": [
+            "先异步队列",
+            "后改签名直链"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "先有的是异步队列方案，后来才改为临时签名直链。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 1032,
+            "hit": false
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "update",
+          "q": "星图现在的缓存组件是什么？",
+          "gold": [
+            "KeyDB"
+          ],
+          "stale": [
+            "Redis"
+          ],
+          "judge": "contains-all",
+          "answer": "星图现在的缓存组件是 KeyDB（替代了 Redis）。",
+          "score": 0,
+          "reason": "命中已作废的旧信息（更新失败）",
+          "recall": {
+            "injected": true,
+            "chars": 580,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "星图最初的两个关键架构决策是什么？",
+          "gold": [
+            "选品数据事件溯源",
+            "报告导出异步队列"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "星图最初的两个关键架构决策是：① 选品数据采用事件溯源（Event Sourcing）而非 CRUD 架构，方便数据回放；② 报告导出通过异步队列实现（后来才改为临时签名直链方案）。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 956,
+            "hit": false
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说星图要接 Shopify 的开放 API，密钥找谁申请来着？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我没有找到关于 Shopify 开放 API 密钥找谁申请的记录，记忆里没有这部分信息。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 1291,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 9,
+        "inputTokens": 8238,
+        "cacheReadTokens": 50944,
+        "outputTokens": 1091,
+        "reasoningTokens": 779,
+        "toolCalls": 3,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 4271,
+        "steadyCacheRate": 0.9114385095882428,
+        "wallMs": 14946
+      },
+      "contamination": [
+        {
+          "marker": "陈默",
+          "from": "chat-personal-basic"
+        },
+        {
+          "marker": "约定式提交",
+          "from": "work-coding-style"
+        },
+        {
+          "marker": "volta",
+          "from": "work-onboarding"
+        },
+        {
+          "marker": "大家的日语",
+          "from": "chat-language"
+        },
+        {
+          "marker": "春熙路",
+          "from": "chat-travel"
+        },
+        {
+          "marker": "游标分页",
+          "from": "work-api"
+        }
+      ],
+      "file": "work-project-stack.json",
+      "durationMs": 56760
+    },
+    {
+      "id": "work-team",
+      "family": "work",
+      "teach": {
+        "sessionId": "bench-work-team-teach-9aac459b-1924-4558-a5fc-b03718919cc7",
+        "metrics": {
+          "turns": 2,
+          "steps": 2,
+          "inputTokens": 4163,
+          "cacheReadTokens": 5248,
+          "outputTokens": 661,
+          "reasoningTokens": 512,
+          "toolCalls": 0,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4393,
+          "steadyCacheRate": 0.867277799920287,
+          "wallMs": 6899
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "change": {
+        "sessionId": "bench-work-team-change-6d040215-dd32-461f-84a8-79201216177a",
+        "metrics": {
+          "turns": 1,
+          "steps": 3,
+          "inputTokens": 6479,
+          "cacheReadTokens": 11520,
+          "outputTokens": 1270,
+          "reasoningTokens": 1029,
+          "toolCalls": 4,
+          "toolErrors": 0,
+          "turnErrors": [],
+          "firstRequestMiss": 4398,
+          "steadyCacheRate": 0.7811190353650467,
+          "wallMs": 10975
+        },
+        "asks": 0,
+        "toolAudit": {
+          "calls": [
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"上线窗口 部署时间 变更\"}"
+            },
+            {
+              "name": "memory_search",
+              "args": "{\"query\": \"团队人员 组长 老周 Sam 组织变动\"}"
+            },
+            {
+              "name": "conversation_search",
+              "args": "{\"query\": \"上线窗口 发布 上线时间\"}"
+            },
+            {
+              "name": "conversation_search",
+              "args": "{\"query\": \"老周 组长 团队\"}"
+            }
+          ],
+          "truncated": false,
+          "snoopSuspect": false
+        }
+      },
+      "distill": {
+        "waitedMs": 15018,
+        "recordLines": 96,
+        "timedOut": false
+      },
+      "probes": [
+        {
+          "type": "extraction",
+          "q": "我们团队的产品对接人是谁？",
+          "gold": [
+            "Lily"
+          ],
+          "stale": null,
+          "judge": "contains-all",
+          "answer": "产品对接人是 Lily，她每周三下午四点主持团队与产品的需求对需求会。",
+          "score": 1,
+          "reason": "gold 全中",
+          "recall": {
+            "injected": true,
+            "chars": 712,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "multihop",
+          "q": "现在的组长是谁？他是什么时候接任的？",
+          "gold": [
+            "Sam",
+            "下个月或老周调走后接任"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "目前的组长还是老周（负责整体排期）；Sam 是空降接任者，将于下个月（老周调去新事业部时）正式接任组长，具体日期未提及。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 430,
+            "hit": true
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "temporal",
+          "q": "上线窗口调整前是哪两天下午？",
+          "gold": [
+            "周二",
+            "周四"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "调整前上线窗口是每周二和周四下午。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 894,
+            "hit": true
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "update",
+          "q": "现在每周的上线窗口是什么时候？",
+          "gold": [
+            "周一三五上午"
+          ],
+          "stale": [
+            "周二周四下午"
+          ],
+          "judge": "llm",
+          "answer": "现在的上线窗口是每周一、三、五的上午。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 930,
+            "hit": false
+          },
+          "usedMemoryTool": false
+        },
+        {
+          "type": "scene",
+          "q": "我最初说的协作约定有哪几条？",
+          "gold": [
+            "需求评审三方到场",
+            "上线窗口原定周二周四",
+            "线上问题轮值"
+          ],
+          "stale": null,
+          "judge": "llm",
+          "answer": "你最初说的协作约定有三条：①需求评审必须产品、后端、测试三方到场；②上线窗口是每周二和周四下午；③线上问题第一响应人轮值，当时这周是你。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 1007,
+            "hit": false
+          },
+          "usedMemoryTool": true
+        },
+        {
+          "type": "abstention",
+          "q": "我之前说阿 May 考了 PMP 证书，是几月拿到的来着？",
+          "gold": null,
+          "stale": null,
+          "judge": "abstain-llm",
+          "answer": "我记忆中并没有阿 May 考取 PMP 证书的记录——目前关于她的信息只有她负责测试工作。",
+          "score": 1,
+          "reason": "判卷 PASS",
+          "recall": {
+            "injected": true,
+            "chars": 337,
+            "hit": null
+          },
+          "usedMemoryTool": true
+        }
+      ],
+      "probeMetrics": {
+        "turns": 6,
+        "steps": 9,
+        "inputTokens": 11434,
+        "cacheReadTokens": 59520,
+        "outputTokens": 1643,
+        "reasoningTokens": 1225,
+        "toolCalls": 6,
+        "toolErrors": 0,
+        "turnErrors": [],
+        "firstRequestMiss": 4411,
+        "steadyCacheRate": 0.8829178125422659,
+        "wallMs": 21115
+      },
+      "contamination": [
+        {
+          "marker": "陈默",
+          "from": "chat-personal-basic"
+        },
+        {
+          "marker": "官翻",
+          "from": "chat-shopping"
+        },
+        {
+          "marker": "约定式提交",
+          "from": "work-coding-style"
+        },
+        {
+          "marker": "Lily",
+          "from": "work-meeting"
+        },
+        {
+          "marker": "星图",
+          "from": "work-project-stack"
+        },
+        {
+          "marker": "襄阳",
+          "from": "chat-family"
+        },
+        {
+          "marker": "prod-jump",
+          "from": "work-deploy"
+        },
+        {
+          "marker": "volta",
+          "from": "work-onboarding"
+        },
+        {
+          "marker": "可调哑铃",
+          "from": "chat-fitness"
+        },
+        {
+          "marker": "大家的日语",
+          "from": "chat-language"
+        },
+        {
+          "marker": "游标分页",
+          "from": "work-api"
+        }
+      ],
+      "file": "work-team.json",
+      "durationMs": 55085
+    }
+  ],
+  "finishedAt": "2026-08-20T07:48:48.318Z"
+}

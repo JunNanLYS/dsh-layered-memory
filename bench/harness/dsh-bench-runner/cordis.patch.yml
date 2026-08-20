@@ -1,0 +1,11 @@
+# dsh-bench-runner bundle patch：自动化基准驱动器，叠在 dsh-base 上。
+# 只装入专用 bench profile（dsh plugin --profile bench add 本目录），绝不进 npm 发布包。
+# 全部旋钮来自 DSH_BENCH_* 环境变量，patch 行本身无需 config。
+
+# 基准运行期不要模块热重载（保持运行确定性）。
+- id: hmr
+  disabled: true
+
+- insert:
+    - id: bench-runner
+      name: 'dsh-bench-runner'

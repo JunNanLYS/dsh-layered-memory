@@ -10,3 +10,12 @@ docs/spec-*.md
 *.tsbuildinfo
 .DS_Store
 Thumbs.db
+
+# 安全检查
+.mimosa/
+
+# DSH-MemBench 运行产物（正式基线留档 bench/baseline/ 除外）
+bench/results/
+
+# git worktree 隔离工作区
+.worktree/

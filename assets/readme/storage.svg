@@ -4,112 +4,112 @@
   <title id="storageTitle">存储布局与检索</title>
   <desc id="storageDesc">双写架构：JSONL 按天追加只增不改（事实源），memory.db 为主检索引擎。文件形态含 conversations、records、scenes、persona、state、pending、session-modes、embedding-source、models、runtime、日志与重建归档；检索三策略 keyword/embedding/hybrid（RRF k=60 融合）；嵌入源三态 off/remote/local（生效 = 部署上限 AND 运行时选择）；降级链保证永不阻塞宿主，唯一检索缝为 L1Store.search()。</desc>
 
-  <rect width="1200" height="800" rx="26" fill="#0B0E14"/>
+  <rect width="1200" height="800" rx="26" fill="#0D1526"/>
 
   <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
 
     <!-- ── 双写架构 ── -->
-    <rect x="64" y="56" width="1072" height="56" rx="14" fill="#11161F" stroke="#232A38" stroke-width="1.5"/>
-    <text x="600" y="91" text-anchor="middle" font-size="20" fill="#F2F3F5">双写架构：JSONL 按天追加、只增不改（备份 / 恢复事实源）· memory.db 主检索引擎（去重合并只动检索库）</text>
+    <rect x="64" y="56" width="1072" height="56" rx="14" fill="#15223A" stroke="#263A5C" stroke-width="1.5"/>
+    <text x="600" y="91" text-anchor="middle" font-size="20" fill="#EFF3FA">双写架构：JSONL 按天追加、只增不改（备份 / 恢复事实源）· memory.db 主检索引擎（去重合并只动检索库）</text>
 
     <!-- ── 左：文件形态 ── -->
     <g id="files">
-      <rect x="64" y="140" width="560" height="610" rx="16" fill="#0D1119" stroke="#232A38" stroke-width="1.5"/>
+      <rect x="64" y="140" width="560" height="610" rx="16" fill="#101B30" stroke="#263A5C" stroke-width="1.5"/>
       <text x="92" y="176" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
-            font-size="18" fill="#2DD4BF">文件形态 · ~/.dsh/memory/</text>
+            font-size="18" fill="#FFD15D">文件形态 · ~/.dsh/memory/</text>
 
       <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18">
-        <text x="92" y="210" fill="#F2F3F5">memory.db</text>
-        <text x="352" y="210" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">SQLite 检索库 · FTS5+向量</text>
+        <text x="92" y="210" fill="#EFF3FA">memory.db</text>
+        <text x="352" y="210" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">SQLite 检索库 · FTS5+向量</text>
 
-        <text x="92" y="252" fill="#F2F3F5">conversations/*.jsonl</text>
-        <text x="352" y="252" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">L0 事实源 · 只增不改</text>
+        <text x="92" y="252" fill="#EFF3FA">conversations/*.jsonl</text>
+        <text x="352" y="252" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">L0 事实源 · 只增不改</text>
 
-        <text x="92" y="294" fill="#F2F3F5">records/*.jsonl</text>
-        <text x="352" y="294" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">L1 事实源 · 含 family</text>
+        <text x="92" y="294" fill="#EFF3FA">records/*.jsonl</text>
+        <text x="352" y="294" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">L1 事实源 · 含 family</text>
 
-        <text x="92" y="336" fill="#F2F3F5">scenes/&lt;family&gt;/*.md</text>
-        <text x="352" y="336" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">L2 场景块 · 按族</text>
+        <text x="92" y="336" fill="#EFF3FA">scenes/&lt;family&gt;/*.md</text>
+        <text x="352" y="336" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">L2 场景块 · 按族</text>
 
-        <text x="92" y="378" fill="#F2F3F5">persona-&lt;family&gt;.md</text>
-        <text x="352" y="378" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">L3 画像 · 每族一份</text>
+        <text x="92" y="378" fill="#EFF3FA">persona-&lt;family&gt;.md</text>
+        <text x="352" y="378" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">L3 画像 · 每族一份</text>
 
-        <text x="92" y="420" fill="#F2F3F5">state.json</text>
-        <text x="352" y="420" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">checkpoint · v2 分族</text>
+        <text x="92" y="420" fill="#EFF3FA">state.json</text>
+        <text x="352" y="420" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">checkpoint · v2 分族</text>
 
-        <text x="92" y="462" fill="#F2F3F5">pending.json</text>
-        <text x="352" y="462" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">未蒸馏缓冲 · 重启恢复</text>
+        <text x="92" y="462" fill="#EFF3FA">pending.json</text>
+        <text x="352" y="462" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">未蒸馏缓冲 · 重启恢复</text>
 
-        <text x="92" y="504" fill="#F2F3F5">session-modes.json</text>
-        <text x="352" y="504" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">会话档位 · 90 天清理</text>
+        <text x="92" y="504" fill="#EFF3FA">session-modes.json</text>
+        <text x="352" y="504" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">会话档位 · 90 天清理</text>
 
-        <text x="92" y="546" fill="#F2F3F5">embedding-source.json</text>
-        <text x="352" y="546" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">嵌入源三态 · 运行时切换</text>
+        <text x="92" y="546" fill="#EFF3FA">embedding-source.json</text>
+        <text x="352" y="546" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">嵌入源三态 · 运行时切换</text>
 
-        <text x="92" y="588" fill="#F2F3F5">models/&lt;id&gt;/</text>
-        <text x="352" y="588" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">本地嵌入模型 · sha256 校验</text>
+        <text x="92" y="588" fill="#EFF3FA">models/&lt;id&gt;/</text>
+        <text x="352" y="588" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">本地嵌入模型 · sha256 校验</text>
 
-        <text x="92" y="630" fill="#F2F3F5">runtime/</text>
-        <text x="352" y="630" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">推理运行时 · 按需安装</text>
+        <text x="92" y="630" fill="#EFF3FA">runtime/</text>
+        <text x="352" y="630" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">推理运行时 · 按需安装</text>
 
-        <text x="92" y="672" fill="#F2F3F5">*.bak.&lt;ts&gt;/</text>
-        <text x="352" y="672" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">重建归档（改名保留）</text>
+        <text x="92" y="672" fill="#EFF3FA">*.bak.&lt;ts&gt;/</text>
+        <text x="352" y="672" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">重建归档（改名保留）</text>
 
-        <text x="92" y="714" fill="#F2F3F5">memory.log</text>
-        <text x="352" y="714" fill="#8B93A7" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">诊断日志 · 2MB 轮转</text>
+        <text x="92" y="714" fill="#EFF3FA">memory.log</text>
+        <text x="352" y="714" fill="#8296B3" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">诊断日志 · 2MB 轮转</text>
       </g>
     </g>
 
     <!-- ── 右上：检索三策略 ── -->
     <g id="retrieval">
-      <rect x="656" y="140" width="480" height="210" rx="16" fill="#0D1119" stroke="#232A38" stroke-width="1.5"/>
+      <rect x="656" y="140" width="480" height="210" rx="16" fill="#101B30" stroke="#263A5C" stroke-width="1.5"/>
       <text x="684" y="174" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
-            font-size="18" fill="#F5A623">检索三策略 · recall.strategy</text>
+            font-size="18" fill="#7FA6E3">检索三策略 · recall.strategy</text>
 
-      <text x="684" y="210" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#F2F3F5">keyword</text>
-      <text x="800" y="210" font-size="18" fill="#8B93A7">FTS5 BM25</text>
+      <text x="684" y="210" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#EFF3FA">keyword</text>
+      <text x="800" y="210" font-size="18" fill="#8296B3">FTS5 BM25</text>
 
-      <text x="684" y="244" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#F2F3F5">embedding</text>
-      <text x="800" y="244" font-size="18" fill="#8B93A7">vec0 余弦 KNN</text>
+      <text x="684" y="244" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#EFF3FA">embedding</text>
+      <text x="800" y="244" font-size="18" fill="#8296B3">vec0 余弦 KNN</text>
 
-      <text x="684" y="278" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#F2F3F5">hybrid</text>
-      <rect x="798" y="262" width="48" height="24" rx="12" fill="#2DD4BF"/>
-      <text x="822" y="279" text-anchor="middle" font-size="15" font-weight="700" fill="#0B0E14">默认</text>
-      <text x="860" y="278" font-size="18" fill="#8B93A7">双路并行 + RRF k=60</text>
+      <text x="684" y="278" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#EFF3FA">hybrid</text>
+      <rect x="798" y="262" width="48" height="24" rx="12" fill="#FFD15D"/>
+      <text x="822" y="279" text-anchor="middle" font-size="15" font-weight="700" fill="#0D1526">默认</text>
+      <text x="860" y="278" font-size="18" fill="#8296B3">双路并行 + RRF k=60</text>
 
-      <text x="684" y="322" font-size="18" fill="#6B7484">conversation_search（L0）同款融合</text>
+      <text x="684" y="322" font-size="18" fill="#6E82A3">conversation_search（L0）同款融合</text>
     </g>
 
     <!-- ── 右中：嵌入源三态 ── -->
     <g id="embedding-source">
-      <rect x="656" y="370" width="480" height="184" rx="16" fill="#0D1119" stroke="#232A38" stroke-width="1.5"/>
+      <rect x="656" y="370" width="480" height="184" rx="16" fill="#101B30" stroke="#263A5C" stroke-width="1.5"/>
       <text x="684" y="404" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
             font-size="18" fill="#93A8FF">嵌入源三态 · 运行时切换</text>
 
-      <text x="684" y="438" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#F2F3F5">off</text>
-      <text x="800" y="438" font-size="18" fill="#8B93A7">纯 FTS（默认）</text>
+      <text x="684" y="438" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#EFF3FA">off</text>
+      <text x="800" y="438" font-size="18" fill="#8296B3">纯 FTS（默认）</text>
 
-      <text x="684" y="471" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#F2F3F5">remote</text>
-      <text x="800" y="471" font-size="18" fill="#8B93A7">OpenAI 兼容 /embeddings</text>
+      <text x="684" y="471" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#EFF3FA">remote</text>
+      <text x="800" y="471" font-size="18" fill="#8296B3">OpenAI 兼容 /embeddings</text>
 
-      <text x="684" y="504" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#F2F3F5">local</text>
-      <text x="800" y="504" font-size="18" fill="#8B93A7">内置目录 · CPU 推理</text>
+      <text x="684" y="504" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#EFF3FA">local</text>
+      <text x="800" y="504" font-size="18" fill="#8296B3">内置目录 · CPU 推理</text>
 
-      <text x="684" y="536" font-size="16" fill="#6B7484">生效 = 部署上限 AND 运行时选择 · 本地模型免 API Key</text>
+      <text x="684" y="536" font-size="16" fill="#6E82A3">生效 = 部署上限 AND 运行时选择 · 本地模型免 API Key</text>
     </g>
 
     <!-- ── 右下：降级链 ── -->
     <g id="degradation">
-      <rect x="656" y="574" width="480" height="176" rx="16" fill="#0D1119" stroke="#232A38" stroke-width="1.5"/>
+      <rect x="656" y="574" width="480" height="176" rx="16" fill="#101B30" stroke="#263A5C" stroke-width="1.5"/>
       <text x="684" y="608" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
-            font-size="18" fill="#8B93A7">降级链 · 永不阻塞宿主</text>
+            font-size="18" fill="#8296B3">降级链 · 永不阻塞宿主</text>
 
-      <text x="684" y="642" font-size="18" fill="#C9CFDB">sqlite-vec 加载失败 → 纯 FTS</text>
-      <text x="684" y="675" font-size="18" fill="#C9CFDB">embedding 调用失败 → 该次降级 FTS</text>
-      <text x="684" y="708" font-size="18" fill="#C9CFDB">初始化失败 → 记忆停用 · dsh 照常启动</text>
+      <text x="684" y="642" font-size="18" fill="#C2CDDE">sqlite-vec 加载失败 → 纯 FTS</text>
+      <text x="684" y="675" font-size="18" fill="#C2CDDE">embedding 调用失败 → 该次降级 FTS</text>
+      <text x="684" y="708" font-size="18" fill="#C2CDDE">初始化失败 → 记忆停用 · dsh 照常启动</text>
 
       <text x="684" y="740" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
-            font-size="18" fill="#2DD4BF">唯一检索缝：L1Store.search()</text>
+            font-size="18" fill="#FFD15D">唯一检索缝：L1Store.search()</text>
     </g>
   </g>
 </svg>

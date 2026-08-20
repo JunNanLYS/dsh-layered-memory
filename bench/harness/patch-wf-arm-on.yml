@@ -1,0 +1,66 @@
+# 工作流赛道 A 组（记忆开 + 工具沙箱）：bash/fs/fs-search 开启，其余工具保持禁用；
+# 权限自定义 bench-sandbox（写限定工作目录、免审批）；A 组记忆数据目录指向运行专属目录。
+- id: dsh-memory
+  config:
+    dataDir: !!js (() => { const v = process.env.DSH_BENCH_DATA_DIR; if (!v) throw new Error('A 组运行必须设置 DSH_BENCH_DATA_DIR'); return v; })()
+    extract:
+      minMessages: 1
+      idleSeconds: 30
+    llm:
+      provider: deepseek-official
+      model: deepseek-v4-flash
+      reasoningEffort: "off"
+
+- id: permission
+  config:
+    presets:
+      bench-sandbox:
+        sandbox: workspace-write
+        approval: never
+        name: bench-sandbox
+        description: Bench workflow sandbox - write confined to cwd, no approval prompts.
+    defaultPreset: bench-sandbox
+
+# 仍然禁用的工具面（网页/子代理/技能/待办等与工作流场景无关，保持确定性）
+# 注意：dsh-base 在 win32 默认禁 bash 启 pwsh；本基准沙箱脚本均为 bash 语法，
+# 这里强制启用 tool-bash（依赖本机 Git Bash）并保持 pwsh 禁用——否则 Windows 上无 shell 可用。
+- id: tool-bash
+  disabled: false
+- id: tool-pwsh
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+- id: tool-subagent-list-agents
+  disabled: true
+- id: tool-subagent-report
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: tool-ralph
+  disabled: true
+- id: tool-str-replace-editor
+  disabled: true
+- id: tool-web
+  disabled: true
+
+- id: system-prompt
+  config:
+    persona: >-
+      You are a diligent engineer working inside a benchmark sandbox directory.
+      Complete the user's tasks with your tools, staying strictly inside the
+      current working directory; never explore outside it (especially any
+      user home or memory directories). Follow the user's established
+      conventions whenever you know them; otherwise ask. Report what you did
+      briefly when done.
