@@ -167,7 +167,7 @@ async function handleEndpoint(endpoint, payload, deps) {
                 settings: s ?? {
                     enabled: true, capture: true, distill: true, recall: true,
                     reasoningEffort: '', distillProvider: '', distillModel: '',
-                    distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
+                    distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, distillMaxInputChars: 0,
                 },
                 // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
                 ceilings: { capture: cfg.capture.enabled, distill: cfg.extract.enabled, recall: cfg.recall.enabled },
@@ -187,6 +187,12 @@ async function handleEndpoint(endpoint, payload, deps) {
                         l2: budgets.l2 > 0 ? budgets.l2 : LAYER_DEFAULT_BUDGETS.l2,
                         l3: budgets.l3 > 0 ? budgets.l3 : LAYER_DEFAULT_BUDGETS.l3,
                     },
+                },
+                // 输入预算（字符）：current 是运行时覆盖（0 = 跟随配置），fallback 是静态配置值
+                inputBudget: {
+                    current: s?.distillMaxInputChars ?? 0,
+                    fallback: cfg.llm.maxInputChars,
+                    effective: s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : cfg.llm.maxInputChars,
                 },
             };
         }
@@ -228,6 +234,14 @@ async function handleEndpoint(endpoint, payload, deps) {
                     budgets[key] = n;
                 }
                 clean.distillBudgets = budgets;
+            }
+            // 输入预算（字符）：0 = 跟随静态配置；正值须落在静态 schema 同款范围（1000~100 万）
+            if (patch.distillMaxInputChars !== undefined) {
+                const n = Number(patch.distillMaxInputChars);
+                if (!Number.isInteger(n) || n < 0 || n > 1_000_000 || (n > 0 && n < 1000)) {
+                    throw new Error('distillMaxInputChars 须为 0 或 1000~1000000 的整数（0 = 跟随配置）');
+                }
+                clean.distillMaxInputChars = n;
             }
             if (Object.keys(clean).length === 0)
                 throw new Error('开关更新载荷为空');

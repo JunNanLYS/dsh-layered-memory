@@ -636,6 +636,21 @@ async function main(): Promise<void> {
       assert(badBudget2, 'settings-set 拒绝非整数预算');
       await call('dsh-memory/settings-set', { distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 } });
 
+      // 输入预算：settings-get 返回 inputBudget；set 校验（0 或 1000~100 万）并写透
+      const ib0 = await call('dsh-memory/settings-get') as never as { inputBudget: { current: number; fallback: number; effective: number } };
+      assert(ib0.inputBudget.current === 0 && ib0.inputBudget.effective === ib0.inputBudget.fallback, 'settings-get 输入预算：初始无覆盖，effective=fallback');
+      const is = await call('dsh-memory/settings-set', { distillMaxInputChars: 300000 }) as never as { settings: { distillMaxInputChars: number } };
+      assert(is.settings.distillMaxInputChars === 300000, 'settings-set 写入输入预算');
+      const ib1 = await call('dsh-memory/settings-get') as never as { inputBudget: { current: number; effective: number } };
+      assert(ib1.inputBudget.current === 300000 && ib1.inputBudget.effective === 300000, 'settings-get 输入预算覆盖后生效');
+      let badIn1 = false;
+      try { await call('dsh-memory/settings-set', { distillMaxInputChars: 500 }); } catch { badIn1 = true; }
+      assert(badIn1, 'settings-set 拒绝低于 1000 的正输入预算（与静态 schema 同款下限）');
+      let badIn2 = false;
+      try { await call('dsh-memory/settings-set', { distillMaxInputChars: -1 }); } catch { badIn2 = true; }
+      assert(badIn2, 'settings-set 拒绝负输入预算');
+      await call('dsh-memory/settings-set', { distillMaxInputChars: 0 });
+
       const lr = await call('dsh-memory/list-records', { limit: 10, offset: 0 }) as never as { items: Array<{ id: string; content: string; type: string }>; total: number; hasMore: boolean; scenes: string[] };
       assert(lr.total === 1 && lr.items[0].id === 'rpc-r1' && lr.items[0].type === 'instruction', 'list-records 默认浏览');
       assert(Array.isArray(lr.scenes) && lr.scenes[0] === '偏好设定', 'list-records 附带场景 facet');
@@ -1707,6 +1722,14 @@ async function main(): Promise<void> {
     assert(resolveLayerTokens({ llm: { reasoningEffort: 'off', budgets: { extract: 0 } } }, 'extract') === 16_000, '覆盖为 0 回退内置默认');
     assert(resolveLayerTokens({ llm: { reasoningEffort: 'high', budgets: { l2: 64000 } } }, 'l2') === 256_000, '思考档 high 对覆盖值照常 ×4');
     assert(resolveLayerTokens({ llm: { reasoningEffort: '' } }, 'dedup') === 8_000 && resolveLayerTokens({ llm: { reasoningEffort: '' } }, 'l3') === 16_000, '其余层默认（去重 8k / L3 16k）');
+
+    // h. 输入预算覆盖：>0 注入 cfg.llm.maxInputChars（L1 分块/callLLM 截断/rebuild 估算全链消费）
+    const h1 = effectiveCfg(mkCfg('', ''), mkLive({ distillMaxInputChars: 300_000 }));
+    assert(h1.llm.maxInputChars === 300_000, '输入预算覆盖注入 maxInputChars');
+    const h2 = effectiveCfg(cfgC, mkLive({ distillMaxInputChars: 0 }));
+    assert(h2 === cfgC, '输入预算 0 返回原引用（跟随静态配置）');
+    const h3 = effectiveCfg(mkCfg('', ''), mkLive({ distillMaxInputChars: 300_000, distillBudgets: { extract: 8000, dedup: 0, l2: 0, l3: 0 } }));
+    assert(h3.llm.maxInputChars === 300_000 && h3.llm.budgets?.extract === 8000, '输入与输出预算覆盖同轮生效');
   }
 
   console.log('== 17. connection 波动后 RPC 重挂（M11） ==');

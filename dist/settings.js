@@ -10,6 +10,7 @@ const ALWAYS_ON = {
     distillProvider: '',
     distillModel: '',
     distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
+    distillMaxInputChars: 0,
 };
 /**
  * 进程内 scope 复用（fiber 重启重挂）。
@@ -44,6 +45,7 @@ export function liveSettingsSchema() {
             l2: budget(),
             l3: budget(),
         }).default({ extract: 0, dedup: 0, l2: 0, l3: 0 }),
+        distillMaxInputChars: Schema.number().min(0).max(1_000_000).default(0),
     });
 }
 export function registerLiveSettings(ctx, logger) {
@@ -64,11 +66,12 @@ export function registerLiveSettings(ctx, logger) {
             const budgetNote = (b.extract || b.dedup || b.l2 || b.l3)
                 ? `，输出预算=抽取 ${b.extract || '默认'}/去重 ${b.dedup || '默认'}/L2 ${b.l2 || '默认'}/L3 ${b.l3 || '默认'}`
                 : '';
+            const inputNote = current.distillMaxInputChars > 0 ? `，输入预算=${current.distillMaxInputChars}` : '';
             logger.info(`[memory] 记忆模式开关更新：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}` +
                 `，蒸馏思考=${current.reasoningEffort || '跟随配置'}（此前 总=${prev.enabled}）` +
                 (current.distillProvider && current.distillModel
                     ? `，蒸馏模型=${current.distillProvider}/${current.distillModel}`
-                    : '') + budgetNote);
+                    : '') + budgetNote + inputNote);
         });
         return {
             supported: true,
@@ -170,5 +173,6 @@ function resolveSettings(value) {
             l2: num(rawBudgets.l2),
             l3: num(rawBudgets.l3),
         },
+        distillMaxInputChars: num(v.distillMaxInputChars),
     };
 }

@@ -1640,11 +1640,12 @@ window.__ModuleLoader__.load({
       );
     }
 
-    // ── 蒸馏输出预算（分层 token 上限）──
+    // ── 蒸馏预算（分层输出 token 上限 + 输入字符上限）──
     // 数据源：settings-get 的 budgets（current 运行时覆盖 0=跟随默认 / defaults
-    // 内置默认 / effective 实际生效）。写入走 settings-set 的 distillBudgets 四键
-    // （成对提交）；输入空或 0 = 跟随内置默认。思考档 high/max 的 ×4 放大在生效
-    // 值之上自动应用（提示文案注明）。
+    // 内置默认 / effective 实际生效）与 inputBudget（current 0=跟随配置 /
+    // fallback 静态配置值 / effective）。输出四键经 settings-set 的
+    // distillBudgets 成对提交；输入走 distillMaxInputChars 单键提交。
+    // 思考档 high/max 的 ×4 放大只作用于输出预算（提示文案注明）。
     function BudgetInputs(props) {
       var rpc = props.rpc;
       var disabled = !!props.disabled;
@@ -1657,7 +1658,7 @@ window.__ModuleLoader__.load({
         ["l2", "L2 场景"],
         ["l3", "L3 画像"],
       ];
-      // 输入草稿（string|null）：击峰只改本地，blur/回车才提交
+      // 输入草稿（string|null）：击键只改本地，blur/回车才提交（input 键 = 输入预算）
       var draftState = react.useState(null);
       var draft = draftState[0];
       var setDraft = draftState[1];
@@ -1666,39 +1667,39 @@ window.__ModuleLoader__.load({
       var cur = data.budgets.current || {};
       var def = data.budgets.defaults || {};
       var eff = data.budgets.effective || {};
+      var ib = data.inputBudget || {};
+      var curIn = ib.current || 0;
+      var effIn = ib.effective || ib.fallback || 0;
 
       var shown = function (key) {
         if (draft && draft[key] !== undefined) return draft[key];
-        return cur[key] > 0 ? String(cur[key]) : "";
+        var c = key === "input" ? curIn : cur[key];
+        return c > 0 ? String(c) : "";
       };
 
-      var commit = function () {
+      /** 通用提交：patchKey 为 settings-set 载荷键名；pick 从草稿取值并校验。 */
+      var commitPart = function (keys, buildPayload, applyView) {
         if (!draft) return;
-        var next = {};
-        for (var i = 0; i < layers.length; i++) {
-          var key = layers[i][0];
+        var values = {};
+        for (var i = 0; i < keys.length; i++) {
+          var key = keys[i];
           var raw = (draft[key] !== undefined ? draft[key] : shown(key)).trim();
           var n = raw === "" ? 0 : Number(raw);
-          if (!Number.isInteger(n) || n < 0 || n > 1000000) {
-            onError("预算须为 0~1000000 的整数（留空或 0 = 跟随默认）");
+          var max = key === "input" ? 1000000 : 1000000;
+          var min = key === "input" ? (raw === "" ? 0 : 1000) : 0;
+          if (!Number.isInteger(n) || n < min || n > max) {
+            onError(key === "input"
+              ? "输入预算须为 0 或 1000~1000000 的整数（留空或 0 = 跟随配置）"
+              : "输出预算须为 0~1000000 的整数（留空或 0 = 跟随默认）");
             setDraft(null);
             return;
           }
-          next[key] = n;
+          values[key] = n;
         }
         setDraft(null);
-        // 乐观更新：同步 settings.distillBudgets 与 budgets.current/effective 视图字段
         var prev = data;
-        var effNext = {};
-        for (var j = 0; j < layers.length; j++) {
-          var k = layers[j][0];
-          effNext[k] = next[k] > 0 ? next[k] : (def[k] || 0);
-        }
-        setData(Object.assign({}, prev, {
-          settings: Object.assign({}, prev.settings, { distillBudgets: next }),
-          budgets: Object.assign({}, prev.budgets, { current: next, effective: effNext }),
-        }));
-        rpc("dsh-memory/settings-set", { distillBudgets: next })
+        setData(applyView(prev, values));
+        rpc("dsh-memory/settings-set", buildPayload(values))
           .then(function (r) {
             if (!r || !r.ok) {
               setData(prev);
@@ -1713,50 +1714,109 @@ window.__ModuleLoader__.load({
           });
       };
 
-      var changed = false;
-      if (draft) {
-        for (var c = 0; c < layers.length; c++) {
-          var ck = layers[c][0];
-          var want = (draft[ck] !== undefined ? draft[ck] : "").trim();
-          var was = cur[ck] > 0 ? String(cur[ck]) : "";
-          if (want !== was) { changed = true; break; }
+      /** 输出四键成对提交（distillBudgets）。 */
+      var commitOutputs = function () {
+        commitPart(
+          ["extract", "dedup", "l2", "l3"],
+          function (v) { return { distillBudgets: v }; },
+          function (prev, v) {
+            var effNext = {};
+            for (var j = 0; j < layers.length; j++) {
+              var k = layers[j][0];
+              effNext[k] = v[k] > 0 ? v[k] : (def[k] || 0);
+            }
+            return Object.assign({}, prev, {
+              settings: Object.assign({}, prev.settings, { distillBudgets: v }),
+              budgets: Object.assign({}, prev.budgets, { current: v, effective: effNext }),
+            });
+          },
+        );
+      };
+
+      /** 输入预算单键提交（distillMaxInputChars）。 */
+      var commitInput = function () {
+        commitPart(
+          ["input"],
+          function (v) { return { distillMaxInputChars: v.input }; },
+          function (prev, v) {
+            return Object.assign({}, prev, {
+              settings: Object.assign({}, prev.settings, { distillMaxInputChars: v.input }),
+              inputBudget: Object.assign({}, prev.inputBudget || {}, {
+                current: v.input,
+                effective: v.input > 0 ? v.input : (ib.fallback || 0),
+              }),
+            });
+          },
+        );
+      };
+
+      /** 某组键是否有未提交改动（触发 blur/Enter 提交）。 */
+      var dirty = function (keys) {
+        if (!draft) return false;
+        for (var i = 0; i < keys.length; i++) {
+          var key = keys[i];
+          var want = (draft[key] !== undefined ? draft[key] : "").trim();
+          var was = key === "input"
+            ? (curIn > 0 ? String(curIn) : "")
+            : (cur[key] > 0 ? String(cur[key]) : "");
+          if (want !== was) return true;
         }
-      }
+        return false;
+      };
+      var outKeys = ["extract", "dedup", "l2", "l3"];
+
+      var inputBox = function (key, label, title, width, placeholder, onCommit) {
+        return react.createElement(NInput, {
+          key: key,
+          type: "number",
+          min: 0,
+          max: 1000000,
+          style: { width: width },
+          title: title,
+          placeholder: String(placeholder || ""),
+          value: shown(key),
+          disabled: disabled,
+          onChange: function (e) {
+            var v = e.target.value;
+            var d = Object.assign({}, draft || {});
+            d[key] = v;
+            setDraft(d);
+          },
+          onBlur: function () { if (dirty([key])) onCommit(); },
+          onKeyDown: function (e) { if (e.key === "Enter" && dirty([key])) onCommit(); },
+        });
+      };
 
       return react.createElement(
-        "div", { style: S.switchRow },
+        "div", null,
         react.createElement(
-          "div", { style: Object.assign({}, S.flexRow, { gap: 6 }) },
-          layers.map(function (l) {
-            return react.createElement(NInput, {
-              key: l[0],
-              type: "number",
-              min: 0,
-              max: 1000000,
-              style: { width: 92 },
-              title: l[1] + " 输出预算（token，留空 = 默认 " + (def[l[0]] || "?") + "）",
-              placeholder: String(def[l[0]] || ""),
-              value: shown(l[0]),
-              disabled: disabled,
-              onChange: function (e) {
-                var v = e.target.value;
-                var d = Object.assign({}, draft || {});
-                d[l[0]] = v;
-                setDraft(d);
-              },
-              onBlur: function () { if (changed) commit(); },
-              onKeyDown: function (e) { if (e.key === "Enter" && changed) commit(); },
-            });
-          }),
-        ),
-        react.createElement("div", null,
-          react.createElement("div", { style: S.switchLabel }, "输出预算"),
+          "div", { style: S.switchRow },
           react.createElement(
-            "div", { style: S.switchDesc },
-            "各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 " +
-              layers.map(function (l) { return eff[l[0]] || "?"; }).join(" / ") +
-              "）；思考档 high/max 时实际限额自动 ×4",
-          )),
+            "div", { style: Object.assign({}, S.flexRow, { gap: 6 }) },
+            layers.map(function (l) {
+              return inputBox(l[0], l[1], l[1] + " 输出预算（token，留空 = 默认 " + (def[l[0]] || "?") + "）", 92, def[l[0]], commitOutputs);
+            }),
+          ),
+          react.createElement("div", null,
+            react.createElement("div", { style: S.switchLabel }, "输出预算"),
+            react.createElement(
+              "div", { style: S.switchDesc },
+              "各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 " +
+                layers.map(function (l) { return eff[l[0]] || "?"; }).join(" / ") +
+                "）；思考档 high/max 时实际限额自动 ×4",
+            )),
+        ),
+        react.createElement(
+          "div", { style: S.switchRow },
+          inputBox("input", "输入", "单次蒸馏输入字符上限（≈token，中文 1 字≈1 token；留空 = 跟随配置 " + (ib.fallback || "?") + "）", 120, ib.fallback, commitInput),
+          react.createElement("div", null,
+            react.createElement("div", { style: S.switchLabel }, "输入预算"),
+            react.createElement(
+              "div", { style: S.switchDesc },
+              "单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；" +
+                "留空或 0 = 跟随配置（当前生效 " + (effIn || "?") + "，来自 llm.maxInputChars）",
+            )),
+        ),
       );
     }
 

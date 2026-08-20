@@ -99,15 +99,18 @@ off = `--dsh-mem-track`；旋钮 `left .15s` inline 过渡（reduced-motion 压�
 - **失效提示**：已存覆盖的供应商/模型不在列表（用户在宿主侧删掉）时注入
   "（已不在列表）"选项并红字提示蒸馏调用可能失败（danger 色，12px）。
 
-### 蒸馏输出预算（BudgetInputs，蒸馏参数组）
+### 蒸馏预算（BudgetInputs，蒸馏参数组）
 
-四个数字输入（`NInput` type=number，宽 92px）：抽取 / 去重 / L2 场景 / L3 画像，
-单位 token。数据源 `settings-get` 的 `budgets`（`current` 运行时覆盖，0 = 跟随默认；
-`defaults` 内置默认 16k/8k/32k/16k，作 placeholder；`effective` 实际生效，描述行展示）。
-写入走 `settings-set` 的 `distillBudgets` 四键成对提交；击键只入本地草稿，blur/回车
-才提交（`Number.isInteger` 0~1000000 校验，空 = 0 = 跟随默认）；乐观更新同步
-`settings.distillBudgets` 与 `budgets.current/effective` 视图字段，失败回滚。
-描述行注明思考档 high/max 的 ×4 放大在生效值之上自动应用。
+两行：**输出预算**（四个数字输入，宽 92px：抽取 / 去重 / L2 场景 / L3 画像，单位
+token）与**输入预算**（单个输入，宽 120px，单位字符 ≈token）。数据源
+`settings-get` 的 `budgets`（`current` 运行时覆盖，0 = 跟随默认；`defaults`
+内置默认 16k/8k/32k/16k，作 placeholder；`effective` 实际生效，描述行展示）与
+`inputBudget`（`current` 0 = 跟随配置；`fallback` 静态配置 `llm.maxInputChars`；
+`effective` 实际生效）。写入：输出四键走 `settings-set` 的 `distillBudgets` 成对
+提交；输入走 `distillMaxInputChars` 单键（0 或 1000~100 万，与静态 schema 同款
+下限）。击键只入本地草稿，blur/回车才提交（焦点切换先 blur 旧框，逐框触发各自
+提交）；乐观更新同步 `settings.*` 与对应视图字段，失败回滚。输出预算描述行注明
+思考档 high/max 的 ×4 放大只作用于输出预算。
 
 ## 重建面板（RebuildPanel）
 

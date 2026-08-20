@@ -40,7 +40,8 @@ export function effectiveCfg(cfg, live) {
             ...(b.l3 > 0 ? { l3: b.l3 } : {}),
         }
         : null;
-    if (!eff && !override && !budgets)
+    const maxInput = s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : null;
+    if (!eff && !override && !budgets && !maxInput)
         return cfg;
     return {
         ...cfg,
@@ -49,6 +50,7 @@ export function effectiveCfg(cfg, live) {
             ...(eff ? { reasoningEffort: eff } : {}),
             ...(override ?? {}),
             ...(budgets ? { budgets } : {}),
+            ...(maxInput ? { maxInputChars: maxInput } : {}),
         },
     };
 }

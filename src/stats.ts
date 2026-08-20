@@ -271,7 +271,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         settings: s ?? {
           enabled: true, capture: true, distill: true, recall: true,
           reasoningEffort: '', distillProvider: '', distillModel: '',
-          distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
+          distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, distillMaxInputChars: 0,
         },
         // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
         ceilings: { capture: cfg.capture.enabled, distill: cfg.extract.enabled, recall: cfg.recall.enabled },
@@ -292,13 +292,19 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
             l3: budgets.l3 > 0 ? budgets.l3 : LAYER_DEFAULT_BUDGETS.l3,
           },
         },
+        // 输入预算（字符）：current 是运行时覆盖（0 = 跟随配置），fallback 是静态配置值
+        inputBudget: {
+          current: s?.distillMaxInputChars ?? 0,
+          fallback: cfg.llm.maxInputChars,
+          effective: s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : cfg.llm.maxInputChars,
+        },
       };
     }
 
     case 'dsh-memory/settings-set': {
       if (!live) throw new Error('开关通道未初始化');
       const patch = (payload ?? {}) as Record<string, unknown>;
-      const clean: Record<string, boolean | string | { extract: number; dedup: number; l2: number; l3: number }> = {};
+      const clean: Record<string, boolean | string | number | { extract: number; dedup: number; l2: number; l3: number }> = {};
       for (const key of ['enabled', 'capture', 'distill', 'recall'] as const) {
         if (typeof patch[key] === 'boolean') clean[key] = patch[key] as boolean;
       }
@@ -330,6 +336,14 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
           budgets[key] = n;
         }
         clean.distillBudgets = budgets as { extract: number; dedup: number; l2: number; l3: number };
+      }
+      // 输入预算（字符）：0 = 跟随静态配置；正值须落在静态 schema 同款范围（1000~100 万）
+      if (patch.distillMaxInputChars !== undefined) {
+        const n = Number(patch.distillMaxInputChars);
+        if (!Number.isInteger(n) || n < 0 || n > 1_000_000 || (n > 0 && n < 1000)) {
+          throw new Error('distillMaxInputChars 须为 0 或 1000~1000000 的整数（0 = 跟随配置）');
+        }
+        clean.distillMaxInputChars = n;
       }
       if (Object.keys(clean).length === 0) throw new Error('开关更新载荷为空');
       await live.update(clean);

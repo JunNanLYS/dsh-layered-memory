@@ -96,7 +96,8 @@ export function effectiveCfg(cfg: MemoryConfig, live?: LiveSettingsHandle): Memo
           ...(b.l3 > 0 ? { l3: b.l3 } : {}),
         }
       : null;
-  if (!eff && !override && !budgets) return cfg;
+  const maxInput = s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : null;
+  if (!eff && !override && !budgets && !maxInput) return cfg;
   return {
     ...cfg,
     llm: {
@@ -104,6 +105,7 @@ export function effectiveCfg(cfg: MemoryConfig, live?: LiveSettingsHandle): Memo
       ...(eff ? { reasoningEffort: eff } : {}),
       ...(override ?? {}),
       ...(budgets ? { budgets } : {}),
+      ...(maxInput ? { maxInputChars: maxInput } : {}),
     },
   };
 }

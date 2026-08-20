@@ -30,6 +30,9 @@ export interface MemoryLiveSettings {
     /** 分层输出预算运行时覆盖（token）：extract/dedup/l2/l3 四层，0 = 跟随内置默认；
      *  思考档 high/max 的 ×4 放大在覆盖值之上照常生效。 */
     distillBudgets: DistillBudgets;
+    /** 输入预算运行时覆盖（字符，≈token）：单次蒸馏调用的输入上限，L1 按此分块、
+     *  超限截断；0 = 跟随静态配置 llm.maxInputChars。 */
+    distillMaxInputChars: number;
 }
 export interface LiveSettingsHandle {
     /** settings 服务是否可用（不可用时 UI 侧隐藏开关面板） */
