@@ -18,7 +18,7 @@ import type {} from '@deepseek-ai/dsh-llm';
 import type {} from '@deepseek-ai/dsh-agent-default-model';
 import { resolveDataDir, type MemoryConfig } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
-import { resolveModelRoute } from './llm.js';
+import { LAYER_DEFAULT_BUDGETS, resolveModelRoute } from './llm.js';
 import type { RebuildController } from './pipeline/rebuild.js';
 import type { LiveSettingsHandle } from './settings.js';
 import type { L0Store } from './store/l0.js';
@@ -265,11 +265,13 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
 
     case 'dsh-memory/settings-get': {
       const s = live?.get();
+      const budgets = s?.distillBudgets ?? { extract: 0, dedup: 0, l2: 0, l3: 0 };
       return {
         supported: live?.supported ?? false,
         settings: s ?? {
           enabled: true, capture: true, distill: true, recall: true,
           reasoningEffort: '', distillProvider: '', distillModel: '',
+          distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
         },
         // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
         ceilings: { capture: cfg.capture.enabled, distill: cfg.extract.enabled, recall: cfg.recall.enabled },
@@ -279,13 +281,24 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
           effective: s?.reasoningEffort || cfg.llm.reasoningEffort,
           fallback: cfg.llm.reasoningEffort,
         },
+        // 分层输出预算：current 是运行时覆盖（0 = 跟随默认），defaults 是内置默认（UI 占位/提示用）
+        budgets: {
+          current: budgets,
+          defaults: { ...LAYER_DEFAULT_BUDGETS },
+          effective: {
+            extract: budgets.extract > 0 ? budgets.extract : LAYER_DEFAULT_BUDGETS.extract,
+            dedup: budgets.dedup > 0 ? budgets.dedup : LAYER_DEFAULT_BUDGETS.dedup,
+            l2: budgets.l2 > 0 ? budgets.l2 : LAYER_DEFAULT_BUDGETS.l2,
+            l3: budgets.l3 > 0 ? budgets.l3 : LAYER_DEFAULT_BUDGETS.l3,
+          },
+        },
       };
     }
 
     case 'dsh-memory/settings-set': {
       if (!live) throw new Error('开关通道未初始化');
       const patch = (payload ?? {}) as Record<string, unknown>;
-      const clean: Record<string, boolean | string> = {};
+      const clean: Record<string, boolean | string | { extract: number; dedup: number; l2: number; l3: number }> = {};
       for (const key of ['enabled', 'capture', 'distill', 'recall'] as const) {
         if (typeof patch[key] === 'boolean') clean[key] = patch[key] as boolean;
       }
@@ -304,6 +317,19 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
           if (v.length > 200) throw new Error(`${key} 过长（≤200 字符）`);
           clean[key] = v;
         }
+      }
+      // 分层输出预算：四键一起校验，非负整数 ≤ 100 万；0 = 跟随内置默认
+      if (patch.distillBudgets !== undefined) {
+        const raw = (patch.distillBudgets ?? {}) as Record<string, unknown>;
+        const budgets: Record<string, number> = {};
+        for (const key of ['extract', 'dedup', 'l2', 'l3'] as const) {
+          const n = Number(raw[key] ?? 0);
+          if (!Number.isInteger(n) || n < 0 || n > 1_000_000) {
+            throw new Error(`distillBudgets.${key} 须为 0~1000000 的整数（0 = 跟随默认）`);
+          }
+          budgets[key] = n;
+        }
+        clean.distillBudgets = budgets as { extract: number; dedup: number; l2: number; l3: number };
       }
       if (Object.keys(clean).length === 0) throw new Error('开关更新载荷为空');
       await live.update(clean);

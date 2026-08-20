@@ -11,7 +11,7 @@ import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveDataDir } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
-import { resolveModelRoute } from './llm.js';
+import { LAYER_DEFAULT_BUDGETS, resolveModelRoute } from './llm.js';
 import { errDetail } from './util/filelog.js';
 const require = createRequire(import.meta.url);
 export const PLUGIN_VERSION = require('../package.json').version;
@@ -161,11 +161,13 @@ async function handleEndpoint(endpoint, payload, deps) {
         }
         case 'dsh-memory/settings-get': {
             const s = live?.get();
+            const budgets = s?.distillBudgets ?? { extract: 0, dedup: 0, l2: 0, l3: 0 };
             return {
                 supported: live?.supported ?? false,
                 settings: s ?? {
                     enabled: true, capture: true, distill: true, recall: true,
                     reasoningEffort: '', distillProvider: '', distillModel: '',
+                    distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
                 },
                 // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
                 ceilings: { capture: cfg.capture.enabled, distill: cfg.extract.enabled, recall: cfg.recall.enabled },
@@ -174,6 +176,17 @@ async function handleEndpoint(endpoint, payload, deps) {
                     current: s?.reasoningEffort ?? '',
                     effective: s?.reasoningEffort || cfg.llm.reasoningEffort,
                     fallback: cfg.llm.reasoningEffort,
+                },
+                // 分层输出预算：current 是运行时覆盖（0 = 跟随默认），defaults 是内置默认（UI 占位/提示用）
+                budgets: {
+                    current: budgets,
+                    defaults: { ...LAYER_DEFAULT_BUDGETS },
+                    effective: {
+                        extract: budgets.extract > 0 ? budgets.extract : LAYER_DEFAULT_BUDGETS.extract,
+                        dedup: budgets.dedup > 0 ? budgets.dedup : LAYER_DEFAULT_BUDGETS.dedup,
+                        l2: budgets.l2 > 0 ? budgets.l2 : LAYER_DEFAULT_BUDGETS.l2,
+                        l3: budgets.l3 > 0 ? budgets.l3 : LAYER_DEFAULT_BUDGETS.l3,
+                    },
                 },
             };
         }
@@ -202,6 +215,19 @@ async function handleEndpoint(endpoint, payload, deps) {
                         throw new Error(`${key} 过长（≤200 字符）`);
                     clean[key] = v;
                 }
+            }
+            // 分层输出预算：四键一起校验，非负整数 ≤ 100 万；0 = 跟随内置默认
+            if (patch.distillBudgets !== undefined) {
+                const raw = (patch.distillBudgets ?? {});
+                const budgets = {};
+                for (const key of ['extract', 'dedup', 'l2', 'l3']) {
+                    const n = Number(raw[key] ?? 0);
+                    if (!Number.isInteger(n) || n < 0 || n > 1_000_000) {
+                        throw new Error(`distillBudgets.${key} 须为 0~1000000 的整数（0 = 跟随默认）`);
+                    }
+                    budgets[key] = n;
+                }
+                clean.distillBudgets = budgets;
             }
             if (Object.keys(clean).length === 0)
                 throw new Error('开关更新载荷为空');

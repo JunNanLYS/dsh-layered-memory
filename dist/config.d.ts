@@ -95,6 +95,14 @@ export interface MemoryConfig {
         maxInputChars: number;
         /** 单次蒸馏调用超时（ms）。 */
         timeoutMs: number;
+        /** 分层输出预算运行时覆盖（设置页 distillBudgets 经 effectiveCfg 注入；
+         *  0/缺省 = 用内置默认。不属于静态 schema——预算无部署上限语义，只有运行时偏好）。 */
+        budgets?: Partial<{
+            extract: number;
+            dedup: number;
+            l2: number;
+            l3: number;
+        }>;
     };
     /** 是否注册模型可调用的记忆工具。 */
     tools: boolean;

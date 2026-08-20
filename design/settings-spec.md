@@ -55,6 +55,18 @@ disabled 统一 `opacity 0.45 + not-allowed`。
 
 全部 14 组（7 类 × 2 主题）在各自 tint 底上 ≥4.5:1（4.99~5.99）。
 
+## 开关面板分组（概览 Tab）
+
+面板（`.dsh-mem-*` 令牌卡片）内按 `S.panelLabel`（12px/600/text-3）分两组，
+与页面级"记忆概况 / 运行状态"标签同款样式：
+
+| 组 | 内容 |
+|---|---|
+| 记忆模式 | 总开关 + 捕获/蒸馏/召回三分项（SwitchRow×4） |
+| 蒸馏参数 | 蒸馏思考（Segmented）、蒸馏模型（LlmModelRow）、输出预算（BudgetInputs） |
+
+语义检索（EmbeddingSection）与重建（RebuildPanel）是面板外的独立区块，各自带标题。
+
 ## 开关（Switch，自绘）
 
 轨道 999 胶囊：on = `--dsh-mem-accent-fill` 实底 + 白色旋钮（`--dsh-mem-thumb`），
@@ -86,6 +98,16 @@ off = `--dsh-mem-track`；旋钮 `left .15s` inline 过渡（reduced-motion 压�
 - **降级手输**：适配器 `listModels` 返回空列表时模型下拉换成 `NInput`（回车提交）；
 - **失效提示**：已存覆盖的供应商/模型不在列表（用户在宿主侧删掉）时注入
   "（已不在列表）"选项并红字提示蒸馏调用可能失败（danger 色，12px）。
+
+### 蒸馏输出预算（BudgetInputs，蒸馏参数组）
+
+四个数字输入（`NInput` type=number，宽 92px）：抽取 / 去重 / L2 场景 / L3 画像，
+单位 token。数据源 `settings-get` 的 `budgets`（`current` 运行时覆盖，0 = 跟随默认；
+`defaults` 内置默认 16k/8k/32k/16k，作 placeholder；`effective` 实际生效，描述行展示）。
+写入走 `settings-set` 的 `distillBudgets` 四键成对提交；击键只入本地草稿，blur/回车
+才提交（`Number.isInteger` 0~1000000 校验，空 = 0 = 跟随默认）；乐观更新同步
+`settings.distillBudgets` 与 `budgets.current/effective` 视图字段，失败回滚。
+描述行注明思考档 high/max 的 ×4 放大在生效值之上自动应用。
 
 ## 重建面板（RebuildPanel）
 

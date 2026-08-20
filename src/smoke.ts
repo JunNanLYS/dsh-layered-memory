@@ -12,7 +12,6 @@ import type { MemoryConfig } from './config.js';
 import { memorySchema } from './config.js';
 import { EmbedHelper, NoopEmbeddingService, type EmbeddingService } from './store/embedding.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_TRUNCATION_SUFFIX, truncateRecallLine } from './util/recall-budget.js';
-import { layerMaxTokens } from './llm.js';
 import { Bm25Index } from './store/bm25.js';
 import { ModelDownloadQueue, resolveProxyUrl } from './store/download-queue.js';
 import {
@@ -33,6 +32,7 @@ import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
 import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts } from './store/search-utils.js';
 import { liveSettingsSchema, registerLiveSettings, type LiveSettingsHandle, type MemoryLiveSettings } from './settings.js';
+import { layerMaxTokens, resolveLayerTokens } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { registerMemoryRpc } from './stats.js';
 import { registerMemoryTools } from './tools/index.js';
@@ -503,7 +503,11 @@ async function main(): Promise<void> {
       await personaS.chat.write('# Team Operating Doctrine\n\n- Nann 喜欢简洁回复\n');
 
       // fake live 开关句柄
-      let liveVal = { enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '', distillProvider: '', distillModel: '' };
+      let liveVal = {
+        enabled: true, capture: true, distill: true, recall: true,
+        reasoningEffort: '', distillProvider: '', distillModel: '',
+        distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
+      };
       const live = {
         supported: true,
         get: () => liveVal,
@@ -610,6 +614,27 @@ async function main(): Promise<void> {
       let badLen = false;
       try { await call('dsh-memory/settings-set', { distillModel: 'x'.repeat(201) }); } catch { badLen = true; }
       assert(badLen, 'settings-set 拒绝超长模型 id');
+
+      // 分层输出预算：settings-get 返回 current/defaults/effective；set 校验并写透
+      const bg0 = await call('dsh-memory/settings-get') as never as { budgets: { current: Record<string, number>; defaults: Record<string, number>; effective: Record<string, number> } };
+      assert(
+        bg0.budgets.current.extract === 0 && bg0.budgets.defaults.extract === 16000 && bg0.budgets.effective.l2 === 32000,
+        'settings-get 预算：初始无覆盖（0），defaults/effective 为内置默认',
+      );
+      const bs = await call('dsh-memory/settings-set', { distillBudgets: { extract: 8000, dedup: 0, l2: 64000, l3: 4000 } }) as never as { settings: { distillBudgets: Record<string, number> } };
+      assert(bs.settings.distillBudgets.extract === 8000, 'settings-set 写入分层预算');
+      const bg1 = await call('dsh-memory/settings-get') as never as { budgets: { current: Record<string, number>; effective: Record<string, number> } };
+      assert(
+        bg1.budgets.current.extract === 8000 && bg1.budgets.effective.extract === 8000 && bg1.budgets.effective.dedup === 8000,
+        'settings-get 预算覆盖后：覆盖层用覆盖值，零值层回退默认',
+      );
+      let badBudget = false;
+      try { await call('dsh-memory/settings-set', { distillBudgets: { extract: -1, dedup: 0, l2: 0, l3: 0 } }); } catch { badBudget = true; }
+      assert(badBudget, 'settings-set 拒绝负预算');
+      let badBudget2 = false;
+      try { await call('dsh-memory/settings-set', { distillBudgets: { extract: 1.5, dedup: 0, l2: 0, l3: 0 } }); } catch { badBudget2 = true; }
+      assert(badBudget2, 'settings-set 拒绝非整数预算');
+      await call('dsh-memory/settings-set', { distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 } });
 
       const lr = await call('dsh-memory/list-records', { limit: 10, offset: 0 }) as never as { items: Array<{ id: string; content: string; type: string }>; total: number; hasMore: boolean; scenes: string[] };
       assert(lr.total === 1 && lr.items[0].id === 'rpc-r1' && lr.items[0].type === 'instruction', 'list-records 默认浏览');
@@ -1636,10 +1661,12 @@ async function main(): Promise<void> {
   {
     const mkLive = (over: Partial<MemoryLiveSettings>): LiveSettingsHandle => ({
       supported: true,
+      // Partial spread 会让必需字段类型变 optional，显式断言收窄（运行时字段齐全）
       get: () => ({
         enabled: true, capture: true, distill: true, recall: true,
-        reasoningEffort: '', distillProvider: '', distillModel: '', ...over,
-      }),
+        reasoningEffort: '', distillProvider: '', distillModel: '',
+        distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, ...over,
+      } as MemoryLiveSettings),
       update: async () => {},
     });
     const mkCfg = (provider: string, model: string) =>
@@ -1667,6 +1694,19 @@ async function main(): Promise<void> {
     const e = effectiveCfg(mkCfg('', ''), mkLive({ reasoningEffort: 'high', distillProvider: 'p1', distillModel: 'm1' }));
     assert(e.llm.reasoningEffort === 'high' && e.llm.provider === 'p1' && e.llm.model === 'm1', '思考档位与模型覆盖同轮生效');
     assert(e.family === 'auto', '浅拷贝保留 llm 外的 cfg 键');
+
+    // f. 分层输出预算覆盖：非零注入 cfg.llm.budgets，零/缺省不注入
+    const f1 = effectiveCfg(cfgC, mkLive({ distillBudgets: { extract: 8000, dedup: 0, l2: 64000, l3: 0 } }));
+    assert(f1.llm.budgets?.extract === 8000 && f1.llm.budgets?.l2 === 64000, '非零预算注入 budgets');
+    assert(!('dedup' in (f1.llm.budgets ?? {})) && !('l3' in (f1.llm.budgets ?? {})), '零值预算键不注入（跟随内置默认）');
+    const f2 = effectiveCfg(cfgC, mkLive({ distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 } }));
+    assert(f2 === cfgC, '全零预算返回原引用');
+    // g. resolveLayerTokens：覆盖优先 → 内置默认 → 思考档 ×4 在生效值之上
+    assert(resolveLayerTokens({ llm: { reasoningEffort: 'off' } }, 'extract') === 16_000, '无覆盖用内置默认（抽取 16k）');
+    assert(resolveLayerTokens({ llm: { reasoningEffort: 'off', budgets: { extract: 8000 } } }, 'extract') === 8000, '运行时覆盖优先');
+    assert(resolveLayerTokens({ llm: { reasoningEffort: 'off', budgets: { extract: 0 } } }, 'extract') === 16_000, '覆盖为 0 回退内置默认');
+    assert(resolveLayerTokens({ llm: { reasoningEffort: 'high', budgets: { l2: 64000 } } }, 'l2') === 256_000, '思考档 high 对覆盖值照常 ×4');
+    assert(resolveLayerTokens({ llm: { reasoningEffort: '' } }, 'dedup') === 8_000 && resolveLayerTokens({ llm: { reasoningEffort: '' } }, 'l3') === 16_000, '其余层默认（去重 8k / L3 16k）');
   }
 
   console.log('== 17. connection 波动后 RPC 重挂（M11） ==');

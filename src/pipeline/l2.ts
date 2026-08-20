@@ -4,7 +4,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { MemoryConfig } from '../config.js';
-import { callLLM, layerMaxTokens, LAYER_MAX_TOKENS_L2, parseJsonLogged } from '../llm.js';
+import { callLLM, parseJsonLogged, resolveLayerTokens } from '../llm.js';
 import { buildScenePrompt, formatSceneSummaries } from '../prompts/scene.js';
 import { Bm25Index } from '../store/bm25.js';
 import type { SceneStore } from '../store/scenes.js';
@@ -61,7 +61,7 @@ export async function runSceneConsolidation(
   const raw = await callLLM(ctx, cfg, {
     system: systemPrompt,
     user: userPrompt,
-    maxTokens: layerMaxTokens(LAYER_MAX_TOKENS_L2, cfg.llm.reasoningEffort),
+    maxTokens: resolveLayerTokens(cfg, 'l2'),
     logger,
   });
 

@@ -8,10 +8,14 @@ import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-settings';
 import Schema from '@deepseek-ai/schemastery';
 import { settingsNamespace, type SettingsScope } from '@deepseek-ai/dsh-settings';
+import type { DistillBudgetLayer } from './llm.js';
 import type { MemoryLogger } from './types.js';
 
 /** 蒸馏思考档位可选项：'' = 跟随静态 config（部署默认）。 */
 export type EffortChoice = '' | 'off' | 'high' | 'max';
+
+/** 分层输出预算（与 llm.ts 的 DistillBudgetLayer 同键；0 = 跟随内置默认）。 */
+export type DistillBudgets = Record<DistillBudgetLayer, number>;
 
 export interface MemoryLiveSettings {
   /** 总开关：关 = 捕获/蒸馏/召回注入全停（数据保留） */
@@ -29,6 +33,9 @@ export interface MemoryLiveSettings {
   distillProvider: string;
   /** 蒸馏模型运行时覆盖（模型 id）：'' = 跟随静态 config/默认选择。 */
   distillModel: string;
+  /** 分层输出预算运行时覆盖（token）：extract/dedup/l2/l3 四层，0 = 跟随内置默认；
+   *  思考档 high/max 的 ×4 放大在覆盖值之上照常生效。 */
+  distillBudgets: DistillBudgets;
 }
 
 export interface LiveSettingsHandle {
@@ -49,6 +56,7 @@ const ALWAYS_ON: MemoryLiveSettings = {
   reasoningEffort: '',
   distillProvider: '',
   distillModel: '',
+  distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
 };
 
 /**
@@ -70,6 +78,7 @@ let cachedUnwatch: (() => void) | undefined;
 let cachedSvc: unknown;
 
 export function liveSettingsSchema(): Schema<MemoryLiveSettings> {
+  const budget = () => Schema.number().min(0).max(1_000_000).default(0);
   return Schema.object({
     enabled: Schema.boolean().default(true),
     capture: Schema.boolean().default(true),
@@ -78,6 +87,12 @@ export function liveSettingsSchema(): Schema<MemoryLiveSettings> {
     reasoningEffort: Schema.union(['', 'off', 'high', 'max']).default(''),
     distillProvider: Schema.string().default(''),
     distillModel: Schema.string().default(''),
+    distillBudgets: Schema.object({
+      extract: budget(),
+      dedup: budget(),
+      l2: budget(),
+      l3: budget(),
+    }).default({ extract: 0, dedup: 0, l2: 0, l3: 0 }),
   });
 }
 
@@ -96,12 +111,16 @@ export function registerLiveSettings(ctx: Context, logger: MemoryLogger): LiveSe
     cachedUnwatch = scope.watch((next) => {
       const prev = current;
       current = resolveSettings(next);
+      const b = current.distillBudgets;
+      const budgetNote = (b.extract || b.dedup || b.l2 || b.l3)
+        ? `，输出预算=抽取 ${b.extract || '默认'}/去重 ${b.dedup || '默认'}/L2 ${b.l2 || '默认'}/L3 ${b.l3 || '默认'}`
+        : '';
       logger.info(
         `[memory] 记忆模式开关更新：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}` +
           `，蒸馏思考=${current.reasoningEffort || '跟随配置'}（此前 总=${prev.enabled}）` +
           (current.distillProvider && current.distillModel
             ? `，蒸馏模型=${current.distillProvider}/${current.distillModel}`
-            : ''),
+            : '') + budgetNote,
       );
     });
     return {
@@ -189,6 +208,8 @@ function resolveSettings(value: unknown): MemoryLiveSettings {
   if (!value || typeof value !== 'object') return { ...ALWAYS_ON };
   const v = value as Partial<MemoryLiveSettings>;
   const efforts = ['', 'off', 'high', 'max'] as const;
+  const num = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
+  const rawBudgets = (v.distillBudgets ?? {}) as Partial<DistillBudgets>;
   return {
     enabled: v.enabled !== false,
     capture: v.capture !== false,
@@ -200,5 +221,11 @@ function resolveSettings(value: unknown): MemoryLiveSettings {
         : '',
     distillProvider: typeof v.distillProvider === 'string' ? v.distillProvider : '',
     distillModel: typeof v.distillModel === 'string' ? v.distillModel : '',
+    distillBudgets: {
+      extract: num(rawBudgets.extract),
+      dedup: num(rawBudgets.dedup),
+      l2: num(rawBudgets.l2),
+      l3: num(rawBudgets.l3),
+    },
   };
 }

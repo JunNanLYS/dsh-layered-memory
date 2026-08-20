@@ -3,7 +3,7 @@
  * 移植 MemoryCore 的 l1 runner 语义（抽取 prompt → batch 冲突检测 → apply）。
  */
 import { randomBytes } from 'node:crypto';
-import { callLLM, layerMaxTokens, LAYER_MAX_TOKENS_DEDUP, LAYER_MAX_TOKENS_EXTRACT, parseJsonLogged } from '../llm.js';
+import { callLLM, parseJsonLogged, resolveLayerTokens } from '../llm.js';
 import { formatExtractionPrompt, getExtractMemoriesSystemPrompt } from '../prompts/l1-extraction.js';
 import { formatBatchConflictPrompt, getConflictDetectionSystemPrompt } from '../prompts/l1-dedup.js';
 import { familyForType } from '../types.js';
@@ -63,7 +63,7 @@ export async function runExtraction(ctx, cfg, store, states, pending, background
         const raw = await callLLM(ctx, cfg, {
             system: getExtractMemoriesSystemPrompt(mode),
             user: userPrompt,
-            maxTokens: layerMaxTokens(LAYER_MAX_TOKENS_EXTRACT, cfg.llm.reasoningEffort),
+            maxTokens: resolveLayerTokens(cfg, 'extract'),
             logger,
         });
         const scenes = parseJsonLogged(raw, 'L1 抽取', logger);
@@ -101,7 +101,7 @@ export async function runExtraction(ctx, cfg, store, states, pending, background
     const dedupRaw = await callLLM(ctx, cfg, {
         system: getConflictDetectionSystemPrompt(mode),
         user: dedupPrompt,
-        maxTokens: layerMaxTokens(LAYER_MAX_TOKENS_DEDUP, cfg.llm.reasoningEffort),
+        maxTokens: resolveLayerTokens(cfg, 'dedup'),
         logger,
     });
     const decisions = parseJsonLogged(dedupRaw, 'L1 去重判定', logger);

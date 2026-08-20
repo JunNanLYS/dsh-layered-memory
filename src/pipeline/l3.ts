@@ -4,7 +4,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { MemoryConfig } from '../config.js';
-import { callLLM, layerMaxTokens, LAYER_MAX_TOKENS_L3 } from '../llm.js';
+import { callLLM, resolveLayerTokens } from '../llm.js';
 import { buildPersonaPrompt } from '../prompts/persona.js';
 import type { PersonaStore } from '../store/persona.js';
 import type { SceneStore } from '../store/scenes.js';
@@ -76,7 +76,7 @@ export async function runPersona(
   const raw = await callLLM(ctx, cfg, {
     system: systemPrompt,
     user: userPrompt,
-    maxTokens: layerMaxTokens(LAYER_MAX_TOKENS_L3, cfg.llm.reasoningEffort),
+    maxTokens: resolveLayerTokens(cfg, 'l3'),
     logger,
   });
   const body = unwrapFence(raw);

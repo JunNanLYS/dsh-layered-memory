@@ -9,6 +9,7 @@ const ALWAYS_ON = {
     reasoningEffort: '',
     distillProvider: '',
     distillModel: '',
+    distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
 };
 /**
  * 进程内 scope 复用（fiber 重启重挂）。
@@ -28,6 +29,7 @@ let cachedScope;
 let cachedUnwatch;
 let cachedSvc;
 export function liveSettingsSchema() {
+    const budget = () => Schema.number().min(0).max(1_000_000).default(0);
     return Schema.object({
         enabled: Schema.boolean().default(true),
         capture: Schema.boolean().default(true),
@@ -36,6 +38,12 @@ export function liveSettingsSchema() {
         reasoningEffort: Schema.union(['', 'off', 'high', 'max']).default(''),
         distillProvider: Schema.string().default(''),
         distillModel: Schema.string().default(''),
+        distillBudgets: Schema.object({
+            extract: budget(),
+            dedup: budget(),
+            l2: budget(),
+            l3: budget(),
+        }).default({ extract: 0, dedup: 0, l2: 0, l3: 0 }),
     });
 }
 export function registerLiveSettings(ctx, logger) {
@@ -52,11 +60,15 @@ export function registerLiveSettings(ctx, logger) {
         cachedUnwatch = scope.watch((next) => {
             const prev = current;
             current = resolveSettings(next);
+            const b = current.distillBudgets;
+            const budgetNote = (b.extract || b.dedup || b.l2 || b.l3)
+                ? `，输出预算=抽取 ${b.extract || '默认'}/去重 ${b.dedup || '默认'}/L2 ${b.l2 || '默认'}/L3 ${b.l3 || '默认'}`
+                : '';
             logger.info(`[memory] 记忆模式开关更新：总=${current.enabled} 捕获=${current.capture} 蒸馏=${current.distill} 召回=${current.recall}` +
                 `，蒸馏思考=${current.reasoningEffort || '跟随配置'}（此前 总=${prev.enabled}）` +
                 (current.distillProvider && current.distillModel
                     ? `，蒸馏模型=${current.distillProvider}/${current.distillModel}`
-                    : ''));
+                    : '') + budgetNote);
         });
         return {
             supported: true,
@@ -140,6 +152,8 @@ function resolveSettings(value) {
         return { ...ALWAYS_ON };
     const v = value;
     const efforts = ['', 'off', 'high', 'max'];
+    const num = (x) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
+    const rawBudgets = (v.distillBudgets ?? {});
     return {
         enabled: v.enabled !== false,
         capture: v.capture !== false,
@@ -150,5 +164,11 @@ function resolveSettings(value) {
             : '',
         distillProvider: typeof v.distillProvider === 'string' ? v.distillProvider : '',
         distillModel: typeof v.distillModel === 'string' ? v.distillModel : '',
+        distillBudgets: {
+            extract: num(rawBudgets.extract),
+            dedup: num(rawBudgets.dedup),
+            l2: num(rawBudgets.l2),
+            l3: num(rawBudgets.l3),
+        },
     };
 }

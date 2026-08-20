@@ -5,9 +5,12 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import Schema from '@deepseek-ai/schemastery';
+import type { DistillBudgetLayer } from './llm.js';
 import type { MemoryLogger } from './types.js';
 /** 蒸馏思考档位可选项：'' = 跟随静态 config（部署默认）。 */
 export type EffortChoice = '' | 'off' | 'high' | 'max';
+/** 分层输出预算（与 llm.ts 的 DistillBudgetLayer 同键；0 = 跟随内置默认）。 */
+export type DistillBudgets = Record<DistillBudgetLayer, number>;
 export interface MemoryLiveSettings {
     /** 总开关：关 = 捕获/蒸馏/召回注入全停（数据保留） */
     enabled: boolean;
@@ -24,6 +27,9 @@ export interface MemoryLiveSettings {
     distillProvider: string;
     /** 蒸馏模型运行时覆盖（模型 id）：'' = 跟随静态 config/默认选择。 */
     distillModel: string;
+    /** 分层输出预算运行时覆盖（token）：extract/dedup/l2/l3 四层，0 = 跟随内置默认；
+     *  思考档 high/max 的 ×4 放大在覆盖值之上照常生效。 */
+    distillBudgets: DistillBudgets;
 }
 export interface LiveSettingsHandle {
     /** settings 服务是否可用（不可用时 UI 侧隐藏开关面板） */
