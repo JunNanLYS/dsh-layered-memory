@@ -3,7 +3,9 @@
 本文件记录 dsh-layered-memory（0.5.0 前名为 dsh-memory-plugin）的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布]（Unreleased）
+## [0.8.2] — 2026-08-20
+
+宿主依赖跟进 dsh 0.1.0-rc.8。
 
 - **宿主依赖钉死升级 0.1.0-rc.6 → 0.1.0-rc.8**：rc.8 实测**零 API 漂移**（类型编译/冒烟/
   真机启动全过）。注意 peer 要求随之变为 dsh ≥ 0.1.0-rc.8；rc.8 起 dsh 本体改为
