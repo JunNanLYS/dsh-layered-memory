@@ -30,6 +30,27 @@ export const LAYER_MAX_TOKENS_L2 = 32_000;
 /** L3 画像（完整 persona 文档）。 */
 export const LAYER_MAX_TOKENS_L3 = 16_000;
 
+/** 分层输出预算键（运行时设置 / UI 与内置默认共用同一套键名）。 */
+export type DistillBudgetLayer = 'extract' | 'dedup' | 'l2' | 'l3';
+
+/** 各层内置默认预算（设置页"0 = 跟随默认"的默认值来源）。 */
+export const LAYER_DEFAULT_BUDGETS: Record<DistillBudgetLayer, number> = {
+  extract: LAYER_MAX_TOKENS_EXTRACT,
+  dedup: LAYER_MAX_TOKENS_DEDUP,
+  l2: LAYER_MAX_TOKENS_L2,
+  l3: LAYER_MAX_TOKENS_L3,
+};
+
+/**
+ * 解析某蒸馏层的生效输出预算：运行时覆盖（cfg.llm.budgets，由 effectiveCfg 从
+ * 设置页 distillBudgets 注入，0/缺省 = 跟随）→ 内置默认 → 思考档放大
+ * （high/max ×4，reasoning 计入输出预算的历史事故防线）。
+ */
+export function resolveLayerTokens(cfg: { llm: { reasoningEffort: string; budgets?: Partial<Record<DistillBudgetLayer, number>> } }, layer: DistillBudgetLayer): number {
+  const override = cfg.llm.budgets?.[layer];
+  return layerMaxTokens(override && override > 0 ? override : LAYER_DEFAULT_BUDGETS[layer], cfg.llm.reasoningEffort);
+}
+
 /**
  * 思考档预算放大：reasoning 计入输出预算（v4-flash 事故：high 思考可吃光全部
  * 预算致正文 0 字符）——effort 为 high/max 时分层预算 ×4。

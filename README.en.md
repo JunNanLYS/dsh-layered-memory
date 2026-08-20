@@ -153,9 +153,9 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
   name: dsh-layered-memory
   config:                    # keys replace whole lines (no deep merge); write out all keys you want to keep
     family: auto             # default mode for new sessions: auto | chat | work
-    llm:                     # distillation model route (falls back to the current default model if empty)
-      provider: ''
-      model: ''
+    llm:                     # static distillation route (both fields set = deployment pin,
+      provider: ''           # which outranks the settings-page selection; when empty the route
+      model: ''              # follows the settings-page "distillation model" picker or the default model)
 ```
 
 | Field | Default | Description |
@@ -194,11 +194,12 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `embedding.timeoutMs` | `10000` | Per-call embedding timeout (ms) |
 | `embedding.allowLocalModels` | `true` | Allow the local embedding tier (deployment ceiling; when off, no model downloads and no local tier in settings) |
 | `embedding.mirror` | `https://hf-mirror.com` | Download mirror root for local models (can be changed back to `https://huggingface.co`) |
-| `llm.provider/model` | empty | Distillation model override (defaults to current selection) |
-| `llm.maxTokens` | `65536` | Fallback output cap for non-layered calls. Each distillation stage has its own budget (extraction 16k / dedup 8k / L2 32k / L3 16k; auto ×4 when reasoning effort is high/max, so thinking can't starve the text budget) |
+| `embedding.proxy` | `''` | Three-state download proxy: `''` (default) = auto-detect proxy env vars (`HTTPS_PROXY`/`ALL_PROXY` etc., honoring `NO_PROXY`); `none` = disable, always direct; any other value = proxy URL (e.g. `http://127.0.0.1:7890`). Direct connections to the mirror are intermittently unreachable on some networks (connect timeouts and poisoned bytes have both been observed) — keep the default auto-detection on machines with a proxy |
+| `llm.provider/model` | empty | Static distillation route (deployment pin): when **both** fields are set the route is locked, outranking the settings-page selection and the default model (deployments can force distillation onto a specific route); when empty the route follows "settings-page selection → default model". At runtime, switch among **configured providers** (including custom ones added in dsh Settings → Models) via the "distillation model" picker in Settings → Memory → Overview — effective immediately, no restart needed |
+| `llm.maxTokens` | `65536` | Fallback output cap for non-layered calls. Each distillation stage has its own budget (extraction 16k / dedup 8k / L2 32k / L3 16k; auto ×4 when reasoning effort is high/max, so thinking can't starve the text budget); the per-layer budgets are runtime-adjustable in Settings → Memory → Overview → distillation parameters (empty/0 = built-in defaults) |
 | `llm.reasoningEffort` | `off` | Distillation reasoning-effort tier (deployment default): `off` / `high` / `max`; empty string = don't send (follow model default). Distillation is structured extraction, so thinking is off by default — a reasoning model (e.g. v4-flash) at its default `high` tier can consume the entire output budget on thinking, leaving 0 chars of text; set to empty string for models that don't recognize the effort parameter. Switchable at runtime in Settings → Memory → Overview ("follow config" falls back to this value) |
 | `llm.temperature` | `0.3` | Distillation temperature |
-| `llm.maxInputChars` | `700000` | Input character budget per distillation call (over-budget L1 inputs are chunked automatically) |
+| `llm.maxInputChars` | `700000` | Input character budget per distillation call (over-budget L1 inputs are chunked automatically); runtime-adjustable in Settings → distillation parameters → input budget (empty/0 = follow this value) |
 | `llm.timeoutMs` | `120000` | Per-call distillation timeout (ms) |
 | `tools` | `true` | Whether to register model-callable memory tools |
 
@@ -231,8 +232,12 @@ machine). The local catalog is a built-in allowlist (each model pinned to a revi
 with per-file sha256; arbitrary repos cannot be downloaded).
 
 - **Download**: one click on the model card (default mirror `hf-mirror.com`, resumable
-  downloads + sha256 integrity checks); stored under `models/<id>/` in the data
-  directory, deletable from the settings page at any time;
+  downloads + sha256 integrity checks; a proxy is used when direct access is
+  unreachable — proxy env vars like `HTTPS_PROXY`/`ALL_PROXY` are auto-detected by
+  default, see `embedding.proxy`). Per-file failures auto-retry with a rotated cache
+  key (`?dshmem-retry=N`, sidestepping occasionally bad CDN cache objects); hash
+  mismatches restart from zero, network errors resume from the checkpoint; stored
+  under `models/<id>/` in the data directory, deletable from the settings page at any time;
 - **On-demand runtime**: the inference runtime (transformers.js, ~100–200MB) is
   installed only on first switch to the local tier, into `runtime/` in the data
   directory — never in the plugin's dependency tree or install directory;

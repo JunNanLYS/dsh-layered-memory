@@ -47,6 +47,7 @@ import { registerMemoryTools } from './tools/index.js';
 import type { MemoryLogger } from './types.js';
 import { errDetail, withFileLog } from './util/filelog.js';
 import { resolveModelRoute } from './llm.js';
+import { effectiveCfg } from './pipeline/runner.js';
 
 export const name = 'dsh-memory-plugin';
 
@@ -104,7 +105,11 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
   // ── 嵌入源三态（D4：远程/本地/关闭）——状态文件优先于静态配置 ──
   const sourceStore = new EmbeddingSourceStore(dataDir, logger);
   const installer = new RuntimeInstaller(dataDir, PINNED_TRANSFORMERS_VERSION, { logger });
-  const downloader = new ModelDownloadQueue(dataDir, { mirror: config.embedding.mirror, logger });
+  const downloader = new ModelDownloadQueue(dataDir, {
+    mirror: config.embedding.mirror,
+    logger,
+    proxy: config.embedding.proxy,
+  });
   const makeLocalService = makeLocalServiceFactory(installer, downloader, logger);
   let initial: InitialEmbedding = { svc: new NoopEmbeddingService(), dims: 0 };
   /** 管理器引用：启动重嵌链/backfill 闭包在运行期解引用（声明早于创建避免 TDZ）。 */
@@ -185,9 +190,10 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
   logger.info(
     `[memory] 数据目录: ${dataDir}（v${PLUGIN_VERSION}，默认档=${config.family}，检索: FTS=${caps.ftsSearch} 向量=${caps.vectorSearch}${storageOk ? '' : '，存储不可用已停用捕获/蒸馏'}）`,
   );
-  // 蒸馏模型路由：启动期解析一次并记录（路由错误是最难事后排查的问题之一）
+  // 蒸馏模型路由：启动期解析一次并记录（路由错误是最难事后排查的问题之一）；
+  // 用运行时调参视图解析——用户已用 UI 覆盖蒸馏模型时，日志反映实际路由
   try {
-    const route = await resolveModelRoute(ctx, config);
+    const route = await resolveModelRoute(ctx, effectiveCfg(config, live));
     logger.info(`[memory] 蒸馏模型路由: ${route.provider}/${route.model}`);
   } catch (err) {
     logger.warn(`[memory] 蒸馏模型路由解析失败: ${errDetail(err)}`);
@@ -348,6 +354,7 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
     disposed = true;
     runner.stop();
     embedManager?.dispose();
+    downloader.dispose();
     return (async () => {
       await flushL0?.();
       db.close();

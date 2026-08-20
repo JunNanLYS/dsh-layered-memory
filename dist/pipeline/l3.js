@@ -1,4 +1,4 @@
-import { callLLM, layerMaxTokens, LAYER_MAX_TOKENS_L3 } from '../llm.js';
+import { callLLM, resolveLayerTokens } from '../llm.js';
 import { buildPersonaPrompt } from '../prompts/persona.js';
 export async function runPersona(ctx, cfg, scenes, persona, state, logger, family) {
     if (!cfg.l3.enabled)
@@ -51,7 +51,7 @@ export async function runPersona(ctx, cfg, scenes, persona, state, logger, famil
     const raw = await callLLM(ctx, cfg, {
         system: systemPrompt,
         user: userPrompt,
-        maxTokens: layerMaxTokens(LAYER_MAX_TOKENS_L3, cfg.llm.reasoningEffort),
+        maxTokens: resolveLayerTokens(cfg, 'l3'),
         logger,
     });
     const body = unwrapFence(raw);

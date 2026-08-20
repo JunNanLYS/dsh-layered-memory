@@ -55,6 +55,18 @@ disabled 统一 `opacity 0.45 + not-allowed`。
 
 全部 14 组（7 类 × 2 主题）在各自 tint 底上 ≥4.5:1（4.99~5.99）。
 
+## 开关面板分组（概览 Tab）
+
+面板（`.dsh-mem-*` 令牌卡片）内按 `S.panelLabel`（12px/600/text-3）分两组，
+与页面级"记忆概况 / 运行状态"标签同款样式：
+
+| 组 | 内容 |
+|---|---|
+| 记忆模式 | 总开关 + 捕获/蒸馏/召回三分项（SwitchRow×4） |
+| 蒸馏参数 | 蒸馏思考（Segmented）、蒸馏模型（LlmModelRow）、输出预算（BudgetInputs） |
+
+语义检索（EmbeddingSection）与重建（RebuildPanel）是面板外的独立区块，各自带标题。
+
 ## 开关（Switch，自绘）
 
 轨道 999 胶囊：on = `--dsh-mem-accent-fill` 实底 + 白色旋钮（`--dsh-mem-thumb`），
@@ -68,6 +80,37 @@ off = `--dsh-mem-track`；旋钮 `left .15s` inline 过渡（reduced-motion 压�
 写入同样走 `settings-set`（`reasoningEffort` 键）。乐观更新必须**同时**写
 `settings.reasoningEffort` 与视图字段 `effort.current/effective`——选择器只读后者，
 漏掉会在下一个 5s 轮询前弹回旧值（已修过的不同步点）。
+
+### 蒸馏模型选择器（LlmModelRow，供应商/模型两级下拉）
+
+位于思考选择器之后，同属开关面板（记忆模式关闭时随面板禁用）。数据源
+`dsh-memory/llm-providers`（5s 轮询：`providers` 供应商目录 / `default` 默认选择 /
+`current` 运行时覆盖 / `effective` 实际生效路由 / `pinned` 部署 pin 位）与
+`dsh-memory/llm-models`（选供应商后按需拉取）。要点：
+
+- 两级 `.dsh-mem-select`：供应商下拉（首项"跟随默认（当前默认路由）"）→ 模型
+  下拉（首项"跟随默认"）；选供应商先入**本地草稿**（不打设置），选定模型时
+  `distillProvider`/`distillModel` 成对提交（单字段不算覆盖，effectiveCfg 语义）；
+- 供应商"跟随默认"一次提交双空串清掉覆盖；乐观更新写 `info.current`，失败回滚
+  （草稿一并恢复）；
+- **部署 pin**（`pinned=true`，cordis.patch.yml 的 `llm.provider`+`llm.model` 双字段
+  齐）：选择器不出场，改为静态文本"已由部署配置固定：provider / model"；
+- **降级手输**：适配器 `listModels` 返回空列表时模型下拉换成 `NInput`（回车提交）；
+- **失效提示**：已存覆盖的供应商/模型不在列表（用户在宿主侧删掉）时注入
+  "（已不在列表）"选项并红字提示蒸馏调用可能失败（danger 色，12px）。
+
+### 蒸馏预算（BudgetInputs，蒸馏参数组）
+
+两行：**输出预算**（四个数字输入，宽 92px：抽取 / 去重 / L2 场景 / L3 画像，单位
+token）与**输入预算**（单个输入，宽 120px，单位字符 ≈token）。数据源
+`settings-get` 的 `budgets`（`current` 运行时覆盖，0 = 跟随默认；`defaults`
+内置默认 16k/8k/32k/16k，作 placeholder；`effective` 实际生效，描述行展示）与
+`inputBudget`（`current` 0 = 跟随配置；`fallback` 静态配置 `llm.maxInputChars`；
+`effective` 实际生效）。写入：输出四键走 `settings-set` 的 `distillBudgets` 成对
+提交；输入走 `distillMaxInputChars` 单键（0 或 1000~100 万，与静态 schema 同款
+下限）。击键只入本地草稿，blur/回车才提交（焦点切换先 blur 旧框，逐框触发各自
+提交）；乐观更新同步 `settings.*` 与对应视图字段，失败回滚。输出预算描述行注明
+思考档 high/max 的 ×4 放大只作用于输出预算。
 
 ## 重建面板（RebuildPanel）
 

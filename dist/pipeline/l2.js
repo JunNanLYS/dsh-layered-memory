@@ -1,4 +1,4 @@
-import { callLLM, layerMaxTokens, LAYER_MAX_TOKENS_L2, parseJsonLogged } from '../llm.js';
+import { callLLM, parseJsonLogged, resolveLayerTokens } from '../llm.js';
 import { buildScenePrompt, formatSceneSummaries } from '../prompts/scene.js';
 import { Bm25Index } from '../store/bm25.js';
 const REQUEST_RE = /\[PERSONA_UPDATE_REQUEST\]\s*reason:\s*([\s\S]*?)\[\/PERSONA_UPDATE_REQUEST\]/;
@@ -30,7 +30,7 @@ export async function runSceneConsolidation(ctx, cfg, scenes, newMemories, logge
     const raw = await callLLM(ctx, cfg, {
         system: systemPrompt,
         user: userPrompt,
-        maxTokens: layerMaxTokens(LAYER_MAX_TOKENS_L2, cfg.llm.reasoningEffort),
+        maxTokens: resolveLayerTokens(cfg, 'l2'),
         logger,
     });
     // ── 解析：先取 PERSONA_UPDATE_REQUEST 标记，再解析操作数组 ──
