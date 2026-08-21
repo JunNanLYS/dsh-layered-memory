@@ -28,7 +28,7 @@ export declare const LAYER_DEFAULT_BUDGETS: Record<DistillBudgetLayer, number>;
 /**
  * 解析某蒸馏层的生效输出预算：运行时覆盖（cfg.llm.budgets，由 effectiveCfg 从
  * 设置页 distillBudgets 注入，0/缺省 = 跟随）→ 内置默认 → 思考档放大
- * （high/max ×4，reasoning 计入输出预算的历史事故防线）。
+ * （high/xhigh/max ×4，reasoning 计入输出预算的历史事故防线）。
  */
 export declare function resolveLayerTokens(cfg: {
     llm: {
@@ -37,8 +37,14 @@ export declare function resolveLayerTokens(cfg: {
     };
 }, layer: DistillBudgetLayer): number;
 /**
+ * 高思考档集合（输出预算 ×4 的档位）：阶段侧 layerMaxTokens 与 callLLM 的
+ * 自动档防线共用同一张表——此前两处字面量表分叉（防线漏 xhigh），显式 xhigh
+ * 配置被双重放大 ×16。勿再在别处抄写该列表。
+ */
+export declare const HIGH_EFFORT_TIERS: readonly ["high", "xhigh", "max"];
+/**
  * 思考档预算放大：reasoning 计入输出预算（v4-flash 事故：high 思考可吃光全部
- * 预算致正文 0 字符）——effort 为 high/max 时分层预算 ×4。
+ * 预算致正文 0 字符）——effort 为 high/xhigh/max 时分层预算 ×4。
  */
 export declare function layerMaxTokens(base: number, reasoningEffort: string): number;
 /** 解析蒸馏用的 provider/model：配置优先，其次当前默认选择。 */

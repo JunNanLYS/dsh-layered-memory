@@ -44,7 +44,7 @@ export const LAYER_DEFAULT_BUDGETS: Record<DistillBudgetLayer, number> = {
 /**
  * 解析某蒸馏层的生效输出预算：运行时覆盖（cfg.llm.budgets，由 effectiveCfg 从
  * 设置页 distillBudgets 注入，0/缺省 = 跟随）→ 内置默认 → 思考档放大
- * （high/max ×4，reasoning 计入输出预算的历史事故防线）。
+ * （high/xhigh/max ×4，reasoning 计入输出预算的历史事故防线）。
  */
 export function resolveLayerTokens(cfg: { llm: { reasoningEffort: string; budgets?: Partial<Record<DistillBudgetLayer, number>> } }, layer: DistillBudgetLayer): number {
   const override = cfg.llm.budgets?.[layer];
@@ -52,11 +52,18 @@ export function resolveLayerTokens(cfg: { llm: { reasoningEffort: string; budget
 }
 
 /**
+ * 高思考档集合（输出预算 ×4 的档位）：阶段侧 layerMaxTokens 与 callLLM 的
+ * 自动档防线共用同一张表——此前两处字面量表分叉（防线漏 xhigh），显式 xhigh
+ * 配置被双重放大 ×16。勿再在别处抄写该列表。
+ */
+export const HIGH_EFFORT_TIERS = ['high', 'xhigh', 'max'] as const;
+
+/**
  * 思考档预算放大：reasoning 计入输出预算（v4-flash 事故：high 思考可吃光全部
- * 预算致正文 0 字符）——effort 为 high/max 时分层预算 ×4。
+ * 预算致正文 0 字符）——effort 为 high/xhigh/max 时分层预算 ×4。
  */
 export function layerMaxTokens(base: number, reasoningEffort: string): number {
-  return reasoningEffort === 'high' || reasoningEffort === 'xhigh' || reasoningEffort === 'max' ? base * 4 : base;
+  return (HIGH_EFFORT_TIERS as readonly string[]).includes(reasoningEffort) ? base * 4 : base;
 }
 
 /** 解析蒸馏用的 provider/model：配置优先，其次当前默认选择。 */
@@ -206,11 +213,13 @@ export async function callLLM(ctx: Context, cfg: MemoryConfig, opts: LlmCallOpti
       ? `${opts.user.slice(0, cfg.llm.maxInputChars)}\n\n[输入超出 ${cfg.llm.maxInputChars} 字符预算，已截断]`
       : opts.user;
 
-  // 输出预算 ×4 防线跟随【实际发送】的档位：阶段侧按原始配置放大（high/max），
-  // 这里补自动档（'' → 模型默认/high）解析出高档时欠放大的缺口
+  // 输出预算 ×4 防线跟随【实际发送】的档位：阶段侧已按原始配置的高档位
+  // （HIGH_EFFORT_TIERS）放大过，这里只补自动档（'' → 模型默认/高档）解析出
+  // 高档时的欠放大缺口——两侧共用一张表，配置本身就是高档时不再放大（防 ×16 双乘）
   const baseMaxTokens = opts.maxTokens ?? cfg.llm.maxTokens;
+  const highTiers = HIGH_EFFORT_TIERS as readonly string[];
   const maxTokens =
-    ['high', 'xhigh', 'max'].includes(effort.effort) && !['high', 'max'].includes(cfg.llm.reasoningEffort)
+    highTiers.includes(effort.effort) && !highTiers.includes(cfg.llm.reasoningEffort)
       ? layerMaxTokens(baseMaxTokens, 'high')
       : baseMaxTokens;
 

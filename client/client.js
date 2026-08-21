@@ -2044,7 +2044,7 @@ window.__ModuleLoader__.load({
               "div", { style: S.switchDesc },
               "各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 " +
                 layers.map(function (l) { return eff[l[0]] || "?"; }).join(" / ") +
-                "）；思考档 high/max 时实际限额自动 ×4",
+                "）；思考档 high/xhigh/max 时实际限额自动 ×4",
             )),
         ),
         react.createElement(
