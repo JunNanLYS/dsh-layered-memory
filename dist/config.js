@@ -5,6 +5,13 @@
  */
 import Schema from '@deepseek-ai/schemastery';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
+/**
+ * 蒸馏思考档位全词汇表（唯一事实源）：'' = 自动（模型默认档 → high），
+ * 其余为各适配器通用档位词汇表（deepseek 认 'off'，OpenAI 系是 'none'）。
+ * schema（config/settings）、运行时解析（settings.resolveSettings）与 RPC
+ * 写入门（stats.settings-set）共用，勿在别处再抄字面量表。
+ */
+export const EFFORT_CHOICES = ['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 export const memorySchema = Schema.object({
     dataDir: Schema.string().default(''),
     family: Schema.union(['auto', 'chat', 'work']).default('auto'),
@@ -64,7 +71,7 @@ export const memorySchema = Schema.object({
         // 蒸馏思考档位：'' = 自动（按模型能力解析：模型默认档 → high，见 llm.ts decideSendableEffort）；
         // 显式值仅在该模型声明支持时发送（跨供应商 effort 词汇表不同：deepseek 认 'off'，
         // openai 系是 'none'，未声明档位的模型不传）。旧默认 'off' 在非 deepseek 模型上必炸（400/本地拒绝）
-        reasoningEffort: Schema.union(['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).default(''),
+        reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
         temperature: Schema.number().min(0).max(2).default(0.3),
         // 模型上下文 1M token，日常压到 ~700k 使用（中文按 1 字≈1 token 保守折算）
         maxInputChars: Schema.number().min(1000).max(1_000_000).default(700_000),

@@ -5,6 +5,13 @@
  */
 import Schema from '@deepseek-ai/schemastery';
 import type { ExtractMode } from './types.js';
+/**
+ * 蒸馏思考档位全词汇表（唯一事实源）：'' = 自动（模型默认档 → high），
+ * 其余为各适配器通用档位词汇表（deepseek 认 'off'，OpenAI 系是 'none'）。
+ * schema（config/settings）、运行时解析（settings.resolveSettings）与 RPC
+ * 写入门（stats.settings-set）共用，勿在别处再抄字面量表。
+ */
+export declare const EFFORT_CHOICES: readonly ["", "off", "none", "minimal", "low", "medium", "high", "xhigh", "max"];
 export interface MemoryConfig {
     /** 数据目录；留空则用 $DSH_HOME/memory。 */
     dataDir: string;

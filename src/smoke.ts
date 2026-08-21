@@ -32,7 +32,7 @@ import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
 import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts } from './store/search-utils.js';
 import { liveSettingsSchema, registerLiveSettings, type LiveSettingsHandle, type MemoryLiveSettings } from './settings.js';
-import { decideSendableEffort, layerMaxTokens, resolveLayerTokens } from './llm.js';
+import { callLLM, decideSendableEffort, layerMaxTokens, resolveLayerTokens } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { registerMemoryRpc } from './stats.js';
 import { registerMemoryTools } from './tools/index.js';
@@ -605,6 +605,13 @@ async function main(): Promise<void> {
       let badEffort = false;
       try { await call('dsh-memory/settings-set', { reasoningEffort: 'banana' }); } catch { badEffort = true; }
       assert(badEffort, 'settings-set 拒绝非法思考档位');
+      // 0.8.3 词表扩容回归：RPC 白名单须与 schema 同源收下全部新词汇
+      // （曾漏扩致设置页选 none/minimal/low/medium/xhigh 被拒回滚）
+      for (const ev of ['off', 'none', 'minimal', 'low', 'medium', 'xhigh']) {
+        const sev = await call('dsh-memory/settings-set', { reasoningEffort: ev }) as never as { settings: { reasoningEffort: string } };
+        assert(sev.settings.reasoningEffort === ev && liveVal.reasoningEffort === ev, `settings-set 接受扩容档位 ${ev}`);
+      }
+      await call('dsh-memory/settings-set', { reasoningEffort: '' });
 
       // 蒸馏模型选择器端点：供应商目录 + 默认选择 + 覆盖写透
       const lp0 = await call('dsh-memory/llm-providers') as never as {
