@@ -15,21 +15,21 @@
     {
       "kind": "teach",
       "messages": [
-        "api-gw（网关服务）的堆内存调整约定，跟你说清楚：现在（v1 流程）是——1) 手工编辑 config/mem.ini，把 [heap] 段的 max 改成告警给的目标值；config/ 下其他文件（rate.ini 等）一律不动；2) 调整完成后，在根目录 ops-notes.txt 登记一行「heap 调整至 <值>」；3) 重启必须用 bash scripts/restart.sh（必须 bash，用 sh 跑会语法报错），成功后根目录出现 restart.log。日志只看 logs/app-<日期>.log，logs/legacy.log 是旧架构残留，排查时不要看。现在演练一遍：logs/app-0826.log 有 OOM，按 v1 流程把 heap 调到 4g。"
+        "api-gw（网关服务）的堆内存调整约定，跟你说清楚：现在（v1 流程）是——1) 手工编辑 config/mem.ini，把 [heap] 段的 max 改成告警给的目标值；config/ 下其他文件（rate.ini 等）一律不动；2) 调整完成后，在根目录 ops-notes.txt 登记一行「heap 调整至 <值>」；3) 重启必须用 bash scripts/restart.sh（必须 bash，用 sh 跑会语法报错），成功后根目录出现 restart.log。日志只看 logs/app-<日期>.log，logs/legacy.log 是旧架构残留，排查时不要看。现在演练一遍：logs/app-0826.log 有 OOM，按 v1 流程把 heap 调到 4g（三步全做完、根目录出现 restart.log 才算处理完）。"
       ],
       "reteach": "api-gw heap 调整约定（现行 v1）：1) 手改 config/mem.ini 的 [heap] max 为目标值（rate.ini 等其他文件不动）；2) ops-notes.txt 登记「heap 调整至 <值>」；3) bash scripts/restart.sh（必须 bash），成功出 restart.log。日志只看 logs/app-<日期>.log，legacy.log 不看。本次目标 4g。"
     },
     {
       "kind": "change",
       "messages": [
-        "api-gw 流程改版，即日起生效，v1 全部作废：heap 调整不再手改配置、也不再写 ops-notes。新流程（v2）两步：1) bash scripts/heap-set.sh <目标值>——它自动改 config/mem.ini 的 [heap] max、自动把动作登记到 heap-ops.log，除此之外任何文件都不要动；2) bash scripts/restart.sh 重启（成功出 restart.log）。ops-notes.txt 从此废弃、不再维护。演练一遍 v2：把 heap 调到 6g。"
+        "api-gw 流程改版，即日起生效，v1 全部作废：heap 调整不再手改配置、也不再写 ops-notes。新流程（v2）两步：1) bash scripts/heap-set.sh <目标值>——它自动改 config/mem.ini 的 [heap] max、自动把动作登记到 heap-ops.log，除此之外任何文件都不要动；2) bash scripts/restart.sh 重启（成功出 restart.log）。ops-notes.txt 从此废弃、不再维护。演练一遍 v2：把 heap 调到 6g（两步全做完、出 restart.log 才算完成）。"
       ],
       "reteach": "api-gw heap 现行流程（v2，v1 作废）：1) bash scripts/heap-set.sh 6g（自动改 mem.ini、自动记 heap-ops.log；不手改、不写 ops-notes）；2) bash scripts/restart.sh（成功出 restart.log）。本次目标 6g。"
     },
     {
       "kind": "probe",
       "messages": [
-        "api-gw 又 OOM 了（看今天的日志），按现在生效的流程把 heap 上到 8g。"
+        "api-gw 又 OOM 了（看今天的日志），按现在生效的流程把 heap 上到 8g（流程走完、出 restart.log 才算处理完）。"
       ],
       "reteach": "api-gw heap 现行流程（v2）：1) bash scripts/heap-set.sh 8g（自动改 mem.ini、自动记 heap-ops.log；不手改 ini、不写 ops-notes）；2) bash scripts/restart.sh（成功出 restart.log）。日志只看 logs/app-<日期>.log，legacy.log 不看。本次目标 8g。",
       "maxExchanges": 2
