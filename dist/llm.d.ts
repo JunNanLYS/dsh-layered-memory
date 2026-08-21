@@ -46,6 +46,26 @@ export declare function resolveModelRoute(ctx: Context, cfg: MemoryConfig): Prom
     provider: string;
     model: string;
 }>;
+export interface ModelEffortInfo {
+    /** 模型可设置的思考档位 id（适配器声明；空 = 未声明/不可设置） */
+    efforts: string[];
+    /** 适配器配置的默认档位（省略 effort 时的请求值） */
+    defaultEffort?: string;
+}
+/** 清空能力缓存（llm/adapters-updated 时调用：供应商增删/改配置后重新探询）。 */
+export declare function invalidateEffortCache(): void;
+/** 探询某模型的思考档位能力；失败返回 null（调用方保持旧发送行为，不改判）。 */
+export declare function resolveModelEfforts(ctx: Context, provider: string, model: string): Promise<ModelEffortInfo | null>;
+export type EffortDecisionReason = 'supported' | 'auto-default' | 'auto-high' | 'alias-none' | 'unsupported' | 'no-efforts' | 'no-capability';
+export interface EffortDecision {
+    /** 实际发送的档位；'' = 不发送（跟随模型默认） */
+    effort: string;
+    reason: EffortDecisionReason;
+}
+/** 纯决策：配置档位 + 模型能力 → 实际发送值（callLLM 与 settings-get 共用）。 */
+export declare function decideSendableEffort(cap: ModelEffortInfo | null, cfgEffort: string): EffortDecision;
+/** 探询 + 决策 + 一次性告警（不支持/未声明时提示降级，不刷屏）。 */
+export declare function planDistillEffort(ctx: Context, provider: string, model: string, cfgEffort: string, logger?: MemoryLogger): Promise<EffortDecision>;
 /**
  * 一次完整蒸馏调用：流式收集文本，返回最终字符串。
  * 失败（error/aborted finish）抛错，由调用方兜底。

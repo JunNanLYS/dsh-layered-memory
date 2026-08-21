@@ -32,7 +32,7 @@ import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
 import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts } from './store/search-utils.js';
 import { liveSettingsSchema, registerLiveSettings, type LiveSettingsHandle, type MemoryLiveSettings } from './settings.js';
-import { layerMaxTokens, resolveLayerTokens } from './llm.js';
+import { decideSendableEffort, layerMaxTokens, resolveLayerTokens } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { registerMemoryRpc } from './stats.js';
 import { registerMemoryTools } from './tools/index.js';
@@ -526,6 +526,11 @@ async function main(): Promise<void> {
             provider === 'custom-oai'
               ? [{ provider, id: 'custom-model', name: 'Custom Model' }]
               : [{ provider, id: 'deepseek-v4-flash', name: 'v4 flash' }],
+          // 能力探询假实现：deepseek 声明 off/high（无默认），custom-oai 声明 low/high（默认 low）
+          resolveModelInfo: async (provider: string) =>
+            provider === 'custom-oai'
+              ? { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }], defaultEffort: 'low' } }
+              : { reasoning: { efforts: [{ id: 'off' }, { id: 'high' }] } },
         },
         get: (name: string) =>
           name === 'connection'
@@ -563,9 +568,12 @@ async function main(): Promise<void> {
         return r.value as never;
       };
 
-      const sg = await call('dsh-memory/settings-get') as never as { supported: boolean; settings: { enabled: boolean }; ceilings: { capture: boolean }; effort: { current: string; effective: string; fallback: string } };
+      const sg = await call('dsh-memory/settings-get') as never as { supported: boolean; settings: { enabled: boolean }; ceilings: { capture: boolean }; effort: { current: string; effective: string; fallback: string; options: string[] } };
       assert(sg.supported && sg.settings.enabled === true && sg.ceilings.capture === true, 'settings-get 返回开关与上限');
-      assert(sg.effort.current === '' && sg.effort.effective === 'off' && sg.effort.fallback === 'off', 'settings-get 思考档位：空覆盖回退部署默认');
+      assert(
+        sg.effort.current === '' && sg.effort.effective === 'high' && sg.effort.fallback === 'off' && sg.effort.options.join('/') === 'off/high',
+        'settings-get 思考档位：自动档按能力解析（无默认 → high），options 下发模型档位表',
+      );
 
       const st = await call('dsh-memory/stats') as never as { message: string; thresholds: { l2MinNewMemories: number; l3Interval: number } };
       assert(st.message === 'running', 'stats 运行态消息（降级时为 degraded 提示，UI 渲染 badge）');
@@ -588,6 +596,12 @@ async function main(): Promise<void> {
 
       const se = await call('dsh-memory/settings-set', { reasoningEffort: 'high' }) as never as { settings: { reasoningEffort: string } };
       assert(se.settings.reasoningEffort === 'high' && liveVal.reasoningEffort === 'high', 'settings-set 写入思考档位覆盖');
+      const sgHigh = await call('dsh-memory/settings-get') as never as { effort: { effective: string } };
+      assert(sgHigh.effort.effective === 'high', '支持的档位照发（high ∈ deepseek 档位表）');
+      await call('dsh-memory/settings-set', { reasoningEffort: 'max' });
+      const sgMax = await call('dsh-memory/settings-get') as never as { effort: { effective: string } };
+      assert(sgMax.effort.effective === '', '不支持的档位不传（max ∉ deepseek 档位表 → 空串）');
+      await call('dsh-memory/settings-set', { reasoningEffort: '' });
       let badEffort = false;
       try { await call('dsh-memory/settings-set', { reasoningEffort: 'banana' }); } catch { badEffort = true; }
       assert(badEffort, 'settings-set 拒绝非法思考档位');
@@ -608,6 +622,11 @@ async function main(): Promise<void> {
       assert(badModels, 'llm-models 缺 provider 报错');
       const slm = await call('dsh-memory/settings-set', { distillProvider: 'custom-oai', distillModel: 'custom-model' }) as never as { settings: { distillProvider: string; distillModel: string } };
       assert(slm.settings.distillProvider === 'custom-oai' && liveVal.distillProvider === 'custom-oai', 'settings-set 写入蒸馏模型覆盖');
+      const sgCustom = await call('dsh-memory/settings-get') as never as { effort: { effective: string; options: string[]; route: { provider: string } } };
+      assert(
+        sgCustom.effort.route.provider === 'custom-oai' && sgCustom.effort.effective === 'low' && sgCustom.effort.options.join('/') === 'low/high',
+        '切换蒸馏模型后档位表跟随新路由（custom-oai 默认档 low）',
+      );
       const lp1 = await call('dsh-memory/llm-providers') as never as { current: { provider: string; model: string }; effective: { provider: string; model: string } | null };
       assert(lp1.current.provider === 'custom-oai' && lp1.effective?.provider === 'custom-oai' && lp1.effective?.model === 'custom-model', 'llm-providers 覆盖后实际路由切换');
       await call('dsh-memory/settings-set', { distillProvider: '', distillModel: '' });
@@ -1685,7 +1704,7 @@ async function main(): Promise<void> {
       update: async () => {},
     });
     const mkCfg = (provider: string, model: string) =>
-      ({ family: 'auto', llm: { provider, model, reasoningEffort: 'off' } }) as never as Parameters<typeof effectiveCfg>[0];
+      ({ family: 'auto', llm: { provider, model, reasoningEffort: '' } }) as never as Parameters<typeof effectiveCfg>[0];
 
     // a. 运行时成对覆盖 → 路由替换
     const a = effectiveCfg(mkCfg('', ''), mkLive({ distillProvider: 'p1', distillModel: 'm1' }));
@@ -1710,6 +1729,12 @@ async function main(): Promise<void> {
     assert(e.llm.reasoningEffort === 'high' && e.llm.provider === 'p1' && e.llm.model === 'm1', '思考档位与模型覆盖同轮生效');
     assert(e.family === 'auto', '浅拷贝保留 llm 外的 cfg 键');
 
+    // e2. "跟随配置"已删：设置服务在场时运行时 '' 整体接管静态 'off'（不再回退）
+    const cfgOff = ({ family: 'auto', llm: { provider: '', model: '', reasoningEffort: 'off' } }) as never as Parameters<typeof effectiveCfg>[0];
+    const e2 = effectiveCfg(cfgOff, mkLive({}));
+    assert(e2 !== cfgOff && e2.llm.reasoningEffort === '', '运行时空档位接管静态 off（自动语义）');
+    assert(effectiveCfg(cfgOff, undefined).llm.reasoningEffort === 'off', '无 settings 服务时静态档位仍生效');
+
     // f. 分层输出预算覆盖：非零注入 cfg.llm.budgets，零/缺省不注入
     const f1 = effectiveCfg(cfgC, mkLive({ distillBudgets: { extract: 8000, dedup: 0, l2: 64000, l3: 0 } }));
     assert(f1.llm.budgets?.extract === 8000 && f1.llm.budgets?.l2 === 64000, '非零预算注入 budgets');
@@ -1722,6 +1747,20 @@ async function main(): Promise<void> {
     assert(resolveLayerTokens({ llm: { reasoningEffort: 'off', budgets: { extract: 0 } } }, 'extract') === 16_000, '覆盖为 0 回退内置默认');
     assert(resolveLayerTokens({ llm: { reasoningEffort: 'high', budgets: { l2: 64000 } } }, 'l2') === 256_000, '思考档 high 对覆盖值照常 ×4');
     assert(resolveLayerTokens({ llm: { reasoningEffort: '' } }, 'dedup') === 8_000 && resolveLayerTokens({ llm: { reasoningEffort: '' } }, 'l3') === 16_000, '其余层默认（去重 8k / L3 16k）');
+
+    // g2. decideSendableEffort：跨供应商 effort 兼容决策表（callLLM 与 settings-get 共用）
+    assert(decideSendableEffort(null, 'high').effort === 'high' && decideSendableEffort(null, 'high').reason === 'no-capability', '探不到能力保持旧行为照发');
+    const capBare = { efforts: [] as string[] };
+    assert(decideSendableEffort(capBare, 'off').effort === '' && decideSendableEffort(capBare, 'off').reason === 'no-efforts', '未声明档位的模型不传（qwen 形态）');
+    assert(decideSendableEffort(capBare, '').effort === '', '未声明档位的模型自动档同样不传');
+    const capGlm = { efforts: ['low', 'high', 'max'] };
+    assert(decideSendableEffort(capGlm, 'high').effort === 'high' && decideSendableEffort(capGlm, 'high').reason === 'supported', '模型声明的档位照发');
+    assert(decideSendableEffort(capGlm, '').effort === 'high' && decideSendableEffort(capGlm, '').reason === 'auto-high', '自动档无默认 → high（用户规则）');
+    assert(decideSendableEffort(capGlm, 'off').effort === '' && decideSendableEffort(capGlm, 'off').reason === 'unsupported', '不在声明表里的档位不传（glm 无 off）');
+    const capOai = { efforts: ['none', 'minimal', 'low', 'high'] };
+    assert(decideSendableEffort(capOai, 'off').effort === 'none' && decideSendableEffort(capOai, 'off').reason === 'alias-none', 'off 在 OpenAI 系词汇表别名 none');
+    const capDef = { efforts: ['off', 'low', 'high'], defaultEffort: 'off' };
+    assert(decideSendableEffort(capDef, '').effort === 'off' && decideSendableEffort(capDef, '').reason === 'auto-default', '自动档优先模型默认档（deepseek 形态）');
 
     // h. 输入预算覆盖：>0 注入 cfg.llm.maxInputChars（L1 分块/callLLM 截断/rebuild 估算全链消费）
     const h1 = effectiveCfg(mkCfg('', ''), mkLive({ distillMaxInputChars: 300_000 }));

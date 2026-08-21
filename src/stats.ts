@@ -18,7 +18,7 @@ import type {} from '@deepseek-ai/dsh-llm';
 import type {} from '@deepseek-ai/dsh-agent-default-model';
 import { resolveDataDir, type MemoryConfig } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
-import { LAYER_DEFAULT_BUDGETS, resolveModelRoute } from './llm.js';
+import { decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
 import type { RebuildController } from './pipeline/rebuild.js';
 import type { LiveSettingsHandle } from './settings.js';
 import type { L0Store } from './store/l0.js';
@@ -274,6 +274,23 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
     case 'dsh-memory/settings-get': {
       const s = live?.get();
       const budgets = s?.distillBudgets ?? { extract: 0, dedup: 0, l2: 0, l3: 0 };
+      // 蒸馏思考档位：current 是运行时值（'' = 自动）；effective 是能力探询后实际发送值
+      // （'' = 不传，跟随模型默认）；options 是当前生效模型声明的档位表（空声明 → 只显示
+      // high，用户规则：无声明默认 high），供蒸馏思考选择器渲染；fallback 是静态部署值
+      let effortEffective = s?.reasoningEffort || cfg.llm.reasoningEffort;
+      let effortOptions: string[] = ['high'];
+      let effortRoute: { provider: string; model: string } | null = null;
+      try {
+        const ecfg = effectiveCfg(cfg, live);
+        effortRoute = await resolveModelRoute(deps.ctx, ecfg);
+        const cap = await resolveModelEfforts(deps.ctx, effortRoute.provider, effortRoute.model);
+        if (cap) {
+          effortEffective = decideSendableEffort(cap, ecfg.llm.reasoningEffort).effort;
+          if (cap.efforts.length > 0) effortOptions = cap.efforts;
+        }
+      } catch {
+        /* 路由解析/探询失败保持占位（effective 用运行时||静态值） */
+      }
       return {
         supported: live?.supported ?? false,
         settings: s ?? {
@@ -283,11 +300,12 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         },
         // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
         ceilings: { capture: cfg.capture.enabled, distill: cfg.extract.enabled, recall: cfg.recall.enabled },
-        // 蒸馏思考档位：current 是运行时覆盖（'' = 跟随配置），effective 是实际生效值
         effort: {
           current: s?.reasoningEffort ?? '',
-          effective: s?.reasoningEffort || cfg.llm.reasoningEffort,
+          effective: effortEffective,
           fallback: cfg.llm.reasoningEffort,
+          options: effortOptions,
+          ...(effortRoute ? { route: effortRoute } : {}),
         },
         // 分层输出预算：current 是运行时覆盖（0 = 跟随默认），defaults 是内置默认（UI 占位/提示用）
         budgets: {

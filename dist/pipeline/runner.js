@@ -25,6 +25,8 @@ export function pickNextTaskIndex(tasks) {
  */
 export function effectiveCfg(cfg, live) {
     const s = live?.get();
+    // 思考档位：设置服务在场时运行时值整体接管——'' = 自动（按模型能力解析），
+    // 不再回退静态配置（"跟随配置"选项已删）；静态值仅无 settings 服务的部署生效
     const eff = s?.reasoningEffort ?? '';
     // 可选链防御：smoke/测试缝构造的最小 cfg 可能没有 llm 字段
     const pinned = Boolean(cfg.llm?.provider && cfg.llm?.model);
@@ -41,13 +43,15 @@ export function effectiveCfg(cfg, live) {
         }
         : null;
     const maxInput = s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : null;
-    if (!eff && !override && !budgets && !maxInput)
+    // 无任何注入且（无 live，或运行时 '' 且静态本就 ''）→ 原引用返回，保持引用稳定性
+    const effNoop = eff === '' && (!live || !cfg.llm?.reasoningEffort);
+    if (!override && !budgets && !maxInput && effNoop)
         return cfg;
     return {
         ...cfg,
         llm: {
             ...cfg.llm,
-            ...(eff ? { reasoningEffort: eff } : {}),
+            ...(live ? { reasoningEffort: eff } : {}),
             ...(override ?? {}),
             ...(budgets ? { budgets } : {}),
             ...(maxInput ? { maxInputChars: maxInput } : {}),

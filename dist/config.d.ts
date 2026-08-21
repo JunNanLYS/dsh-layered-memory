@@ -198,7 +198,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         provider: Schema<string, string>;
         model: Schema<string, string>;
         maxTokens: Schema<number, number>;
-        reasoningEffort: Schema<"" | "off" | "high" | "max", "" | "off" | "high" | "max">;
+        reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;
@@ -206,7 +206,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         provider: Schema<string, string>;
         model: Schema<string, string>;
         maxTokens: Schema<number, number>;
-        reasoningEffort: Schema<"" | "off" | "high" | "max", "" | "off" | "high" | "max">;
+        reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;
@@ -303,7 +303,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         provider: Schema<string, string>;
         model: Schema<string, string>;
         maxTokens: Schema<number, number>;
-        reasoningEffort: Schema<"" | "off" | "high" | "max", "" | "off" | "high" | "max">;
+        reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;
@@ -311,7 +311,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         provider: Schema<string, string>;
         model: Schema<string, string>;
         maxTokens: Schema<number, number>;
-        reasoningEffort: Schema<"" | "off" | "high" | "max", "" | "off" | "high" | "max">;
+        reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;

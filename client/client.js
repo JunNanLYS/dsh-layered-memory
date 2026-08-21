@@ -770,15 +770,56 @@ window.__ModuleLoader__.load({
         ".dsh-mem-btn:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
         ".dsh-mem-btn:disabled { opacity: 0.45; cursor: not-allowed; }",
         // ── 控件：输入框 / 下拉 ──
-        ".dsh-mem-input, .dsh-mem-select {",
+        ".dsh-mem-input {",
         "  padding: 5px 10px; font-size: 13px; border-radius: 8px; color: var(--dsh-mem-text-1);",
         "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card);",
         "  transition: border-color .15s ease, box-shadow .15s ease;",
         "}",
-        ".dsh-mem-input:focus, .dsh-mem-select:focus {",
+        ".dsh-mem-input:focus {",
         "  outline: none; border-color: var(--dsh-mem-accent);",
         "  box-shadow: 0 0 0 3px var(--dsh-mem-accent-weak);",
         "}",
+        // ── 下拉（NSel 触发钮）：观感同输入框（8px 圆角/同令牌边框底色），文字
+        //    ellipsis + CSS 描边 chevron（展开旋转 180°）；弹出面板见 .dsh-mem-pop ──
+        ".dsh-mem-select {",
+        "  display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;",
+        "  width: 100%; min-width: 0; padding: 5px 10px; font: inherit; font-size: 13px; line-height: 20px;",
+        "  text-align: left; border-radius: 8px; cursor: pointer; color: var(--dsh-mem-text-1);",
+        "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card);",
+        "  transition: border-color .15s ease, box-shadow .15s ease;",
+        "}",
+        ".dsh-mem-select:focus-visible {",
+        "  outline: none; border-color: var(--dsh-mem-accent);",
+        "  box-shadow: 0 0 0 3px var(--dsh-mem-accent-weak);",
+        "}",
+        ".dsh-mem-select:disabled { opacity: 0.45; cursor: not-allowed; }",
+        ".dsh-mem-select-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
+        // 下拉弹出面板：dsh MenuDropdown 同款——浮层 12 圆角 + menu 底 + lv3 投影，
+        // 选项行 10 圆角 + hover 底色 + 选中打勾（选项 active 由 data-active 标记）
+        ".dsh-mem-sel { position: relative; display: inline-flex; min-width: 0; vertical-align: top; }",
+        ".dsh-mem-sel-chev {",
+        "  width: 8px; height: 8px; flex: none; margin-right: 2px;",
+        "  border-right: 1.5px solid var(--dsh-mem-text-3); border-bottom: 1.5px solid var(--dsh-mem-text-3);",
+        "  transform: rotate(45deg); transition: transform .12s ease;",
+        "}",
+        ".dsh-mem-sel-chev-open { transform: rotate(225deg); }",
+        ".dsh-mem-pop {",
+        "  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;",
+        "  min-width: 100%; width: max-content; max-width: 340px; max-height: 264px;",
+        "  overflow-y: auto; overscroll-behavior: contain; padding: 4px;",
+        "  background: var(--dsh-mem-bg-pop); border: 1px solid var(--dsh-mem-border-pop);",
+        "  border-radius: 12px; box-shadow: var(--dsh-mem-shadow-pop);",
+        "}",
+        ".dsh-mem-pop-opt {",
+        "  display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;",
+        "  min-height: 32px; padding: 5px 10px; font: inherit; font-size: 13px; line-height: 20px;",
+        "  text-align: left; color: var(--dsh-mem-text-1); cursor: pointer;",
+        "  background: none; border: none; outline: none; border-radius: 10px;",
+        "}",
+        ".dsh-mem-pop-opt:hover, .dsh-mem-pop-opt[data-active=\"1\"] { background: var(--dsh-mem-bg-hover); }",
+        ".dsh-mem-pop-opt-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
+        ".dsh-mem-pop-check { flex: none; font-size: 12px; color: var(--dsh-mem-text-1); }",
+        ".dsh-mem-pop-empty { padding: 10px; font-size: 13px; color: var(--dsh-mem-text-3); }",
         // ── Tab（下划线式）：active 品牌蓝下划线 + 主文字色 ──
         ".dsh-mem-tab {",
         "  padding: 6px 12px; font-size: 13px; cursor: pointer; background: none; border: none;",
@@ -793,6 +834,8 @@ window.__ModuleLoader__.load({
         "  box-shadow: var(--dsh-mem-shadow-card);",
         "}",
         ".dsh-mem-card-hover:hover { border-color: var(--dsh-mem-border-strong); }",
+        // ── 场景卡折叠箭头：展开态旋转 90°（过渡只做反馈，进 reduced-motion 压制名单） ──
+        ".dsh-mem-scene-chev { display: inline-block; transition: transform .15s ease; color: var(--dsh-mem-text-3); }",
         // ── 记忆类型标签：tint 风格（彩底淡色 + 彩字），--dsh-mem-tag-c 由类型类给定 ──
         ".dsh-mem-tag {",
         "  display: inline-block; padding: 1px 8px; border-radius: 999px;",
@@ -889,7 +932,7 @@ window.__ModuleLoader__.load({
         ".dsh-mem-rb-muted { font-size: 12px; color: var(--dsh-mem-text-3); }",
         // reduced-motion 兜底放样式表末尾：同特异性下后置声明才能压过上面的组件类
         "@media (prefers-reduced-motion: reduce) {",
-        "  .dsh-mem-root, .dsh-mem-root *, .dsh-mem-btn, .dsh-mem-input, .dsh-mem-select, .dsh-mem-rb-fill { transition: none; }",
+        "  .dsh-mem-root, .dsh-mem-root *, .dsh-mem-btn, .dsh-mem-input, .dsh-mem-select, .dsh-mem-rb-fill, .dsh-mem-scene-chev, .dsh-mem-sel-chev { transition: none; }",
         "  .dsh-mem-flow { animation: none; }",
         "}",
       ].join("\n");
@@ -1463,6 +1506,158 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // ── 自绘下拉（NSel）：对齐 dsh MenuDropdown（输入栏模型选择器同款）观感。
+    // 原生 <select> 的弹出列表是操作系统绘的（方角、系统高亮色），appearance:none
+    // 只能改闭合态外壳——所以整件换成按钮触发 + 浮层面板：面板 12px 圆角 /
+    // bg-pop / border-pop / shadow-pop，选项行 10px 圆角 + hover 底色 + 选中打勾。
+    // 键盘 ↑↓ 移动（wrap）、回车/空格开面板与选定、Esc/外点/焦点离开收起；
+    // 焦点始终留在触发钮上（keydown 从钮冒泡到包装层统一处理）。 ──
+    function NSel(props) {
+      var options = props.options || [];
+      var value = props.value || "";
+      var disabled = !!props.disabled;
+      var openState = react.useState(false);
+      var open = openState[0];
+      var setOpen = openState[1];
+      var idxState = react.useState(-1);
+      var idx = idxState[0];
+      var setIdx = idxState[1];
+      var wrapRef = react.useRef(null);
+      var listRef = react.useRef(null);
+
+      var selectedLabel = "";
+      for (var si = 0; si < options.length; si++) {
+        if (options[si].id === value) selectedLabel = options[si].label;
+      }
+
+      react.useEffect(function () {
+        if (!open) return undefined;
+        var onDown = function (e) {
+          if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+        };
+        document.addEventListener("mousedown", onDown);
+        return function () { document.removeEventListener("mousedown", onDown); };
+      }, [open]);
+
+      // 键盘移动后把活动项滚进可视区（鼠标 hover 同步活动项索引）
+      react.useEffect(function () {
+        if (!open || !listRef.current) return;
+        var el = listRef.current.querySelector('[data-active="1"]');
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+      }, [open, idx]);
+
+      var indexOfValue = function () {
+        for (var i = 0; i < options.length; i++) if (options[i].id === value) return i;
+        return -1;
+      };
+      var closeMenu = function (refocus) {
+        setOpen(false);
+        setIdx(-1);
+        if (refocus && wrapRef.current) {
+          var btn = wrapRef.current.querySelector("button");
+          if (btn && btn.focus) btn.focus();
+        }
+      };
+      var pick = function (id) {
+        closeMenu(true);
+        if (id !== value && props.onChange) props.onChange(id);
+      };
+      var moveActive = function (delta) {
+        var n = options.length;
+        if (n === 0) return;
+        var cur = idx >= 0 ? idx : indexOfValue();
+        if (cur < 0) cur = delta > 0 ? -1 : 0;
+        setIdx(delta > 0 ? (cur + 1) % n : (cur - 1 + n) % n);
+      };
+      var onKey = function (e) {
+        if (disabled) return;
+        if (e.key === "Escape") {
+          if (open) { e.preventDefault(); closeMenu(true); }
+          return;
+        }
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          if (!open) { setOpen(true); setIdx(indexOfValue()); }
+          else moveActive(e.key === "ArrowDown" ? 1 : -1);
+          return;
+        }
+        if (!open && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          setOpen(true);
+          setIdx(indexOfValue());
+          return;
+        }
+        if (open && e.key === "Enter") {
+          e.preventDefault();
+          var t = idx >= 0 ? idx : indexOfValue();
+          if (t < 0) t = 0;
+          if (options[t]) pick(options[t].id);
+        }
+      };
+      var onBlur = function (e) {
+        if (!open) return;
+        var to = e.relatedTarget;
+        if (!to || (wrapRef.current && !wrapRef.current.contains(to))) setOpen(false);
+      };
+
+      return react.createElement(
+        "div",
+        { className: "dsh-mem-sel", style: props.style, ref: wrapRef, onKeyDown: onKey, onBlur: onBlur },
+        react.createElement(
+          "button",
+          {
+            type: "button",
+            className: "dsh-mem-select" + (open ? " dsh-mem-select-open" : ""),
+            disabled: disabled,
+            "aria-haspopup": "listbox",
+            "aria-expanded": open,
+            onClick: function () {
+              if (open) closeMenu(false);
+              else { setOpen(true); setIdx(-1); }
+            },
+          },
+          react.createElement("span", { className: "dsh-mem-select-label" }, selectedLabel || props.placeholder || "（请选择）"),
+          react.createElement("span", {
+            className: "dsh-mem-sel-chev" + (open ? " dsh-mem-sel-chev-open" : ""),
+            "aria-hidden": true,
+          }),
+        ),
+        open && !disabled
+          ? react.createElement(
+              "div", { className: "dsh-mem-pop", ref: listRef, role: "listbox" },
+              options.length === 0
+                ? react.createElement("div", { className: "dsh-mem-pop-empty" }, "无选项")
+                : options.map(function (o, i) {
+                    return react.createElement(
+                      "button",
+                      {
+                        type: "button",
+                        key: o.id,
+                        className: "dsh-mem-pop-opt" + (o.id === value ? " dsh-mem-pop-opt-on" : ""),
+                        role: "option",
+                        "aria-selected": o.id === value,
+                        "data-active": i === idx ? "1" : "0",
+                        // 阻断 mousedown 默认行为（抢焦点）：焦点留在触发钮上，避免
+                        // blur-关面板把后续 click 吞掉（点选项无反应的事故根因）
+                        onMouseDown: function (e) { if (e.preventDefault) e.preventDefault(); },
+                        onClick: function () { pick(o.id); },
+                        onMouseEnter: function () { if (idx !== i) setIdx(i); },
+                      },
+                      react.createElement("span", { className: "dsh-mem-pop-opt-label" }, o.label),
+                      o.id === value
+                        ? react.createElement("span", { className: "dsh-mem-pop-check" }, "✓")
+                        : null,
+                    );
+                  }),
+            )
+          : null,
+      );
+    }
+
+    // 供应商 → 模型列表缓存（模块级，会话内存活）：切换供应商时缓存命中即时渲染
+    // （后台仍刷新），面板首次加载时预取全部供应商——消除"切换后模型按钮几秒真空期"
+    var modelsCache = {};
+
     // ── 蒸馏模型选择器（供应商/模型两级下拉）──
     // 数据源：dsh-memory/llm-providers（供应商目录 + 当前覆盖 + 实际生效路由）与
     // dsh-memory/llm-models（所选供应商的模型列表）。写入走 settings-set 的
@@ -1483,14 +1678,21 @@ window.__ModuleLoader__.load({
       var manualModel = manualState[0];
       var setManualModel = manualState[1];
 
+      // 写入在途时丢弃轮询响应（在途请求读到的是写入前的旧值，直接 set 会把
+      // 乐观更新闪回旧文本）；写入成功后主动拉一次服务器真值收敛
+      var pendingWrites = react.useRef(0);
+
+      function refreshInfo() {
+        rpc("dsh-memory/llm-providers", {})
+          .then(function (r) {
+            if (r && r.ok && pendingWrites.current === 0) setInfo(r.value);
+          })
+          .catch(function () {});
+      }
+
       react.useEffect(function () {
-        var load = function () {
-          rpc("dsh-memory/llm-providers", {})
-            .then(function (r) { if (r && r.ok) setInfo(r.value); })
-            .catch(function () {});
-        };
-        load();
-        var timer = setInterval(load, 5000);
+        refreshInfo();
+        var timer = setInterval(refreshInfo, 5000);
         return function () { clearInterval(timer); };
       }, [rpc]);
 
@@ -1500,32 +1702,80 @@ window.__ModuleLoader__.load({
       var curProvider = draft || (info && info.current ? info.current.provider : "");
       var curModel = info && info.current ? info.current.model : "";
 
+      // 预取各供应商模型列表进缓存（后台、失败忽略）：llm-providers 轮询每次都会
+      // 走一遍，缓存齐了以后是空循环
+      react.useEffect(function () {
+        if (!info || !info.providers) return;
+        info.providers.forEach(function (p) {
+          if (!p.id || modelsCache[p.id]) return;
+          rpc("dsh-memory/llm-models", { provider: p.id })
+            .then(function (r) { if (r && r.ok && r.value) modelsCache[p.id] = r.value.models || []; })
+            .catch(function () {});
+        });
+      }, [rpc, info]);
+
       react.useEffect(function () {
         if (!curProvider) { setModels(null); return undefined; }
         var alive = true;
-        setModels(null);
+        var cached = modelsCache[curProvider];
+        var picked = false;
+        // 缓存命中：同步先渲染（跳过"加载中"真空期），后台仍刷新一遍
+        if (cached) {
+          setModels(cached);
+          // 供应商切换自动落第一个模型（缓存路径）：当前覆盖不属于该供应商 → 成对写覆盖
+          if (draft && cached.length > 0 && !cached.some(function (m) { return m.id === curModel; })) {
+            picked = true;
+            writeLlm({ distillProvider: draft, distillModel: cached[0].id });
+          }
+        } else {
+          setModels(null);
+        }
         rpc("dsh-memory/llm-models", { provider: curProvider })
-          .then(function (r) { if (alive && r && r.ok) setModels(r.value.models || []); })
-          .catch(function () { if (alive) setModels([]); });
+          .then(function (r) {
+            if (!alive) return;
+            var list = (r && r.ok && r.value && r.value.models) || [];
+            modelsCache[curProvider] = list;
+            setModels(list);
+            // 自动落第一个模型（网络路径，缓存未命中或缓存路径未写时）
+            if (!picked && draft && list.length > 0 && !list.some(function (m) { return m.id === curModel; })) {
+              writeLlm({ distillProvider: draft, distillModel: list[0].id });
+            }
+          })
+          .catch(function () { if (alive && !cached) setModels([]); });
         return function () { alive = false; };
       }, [rpc, curProvider]);
 
       var writeLlm = function (patch) {
         if (!info) return;
-        // 乐观更新：立即写视图字段，失败回滚
+        // 乐观更新：覆盖必须写成视图键 current.provider/model（按钮文本读这对键）——
+        // 直接合并 settings 键 distillProvider/distillModel 对显示层是空操作，文本要
+        // 等 5s 轮询才变；effective 同步推导（"当前生效"描述行），失败回滚
         var prev = info;
+        var prevCurrent = prev.current || {};
+        var np = patch.distillProvider !== undefined ? patch.distillProvider : prevCurrent.provider;
+        var nm = patch.distillModel !== undefined ? patch.distillModel : prevCurrent.model;
+        var nextEffective;
+        if (np && nm) nextEffective = { provider: np, model: nm };
+        else if (prev.default) nextEffective = { provider: prev.default.provider, model: prev.default.model };
+        else nextEffective = null;
         setInfo(Object.assign({}, prev, {
-          current: Object.assign({}, prev.current, patch),
+          current: Object.assign({}, prevCurrent, { provider: np, model: nm }),
+          effective: nextEffective,
         }));
         setDraft("");
+        pendingWrites.current += 1;
         rpc("dsh-memory/settings-set", patch)
           .then(function (r) {
+            pendingWrites.current -= 1;
             if (!r || !r.ok) {
               setInfo(prev);
               setDraft(draft);
+            } else {
+              refreshInfo();
             }
           })
           .catch(function () {
+            pendingWrites.current -= 1;
             setInfo(prev);
             setDraft(draft);
           });
@@ -1540,7 +1790,8 @@ window.__ModuleLoader__.load({
             react.createElement("div", { style: S.switchLabel }, "蒸馏模型"),
             react.createElement(
               "div", { style: S.switchDesc },
-              "已由部署配置固定：" + info.effective.provider + " / " + info.effective.model,
+              "已由部署配置固定：" + info.effective.provider + " / " + info.effective.model +
+                "（如需在页面切换，请移除 profile cordis.patch.yml 中 llm 的 provider/model 覆盖）",
             )),
         );
       }
@@ -1563,35 +1814,29 @@ window.__ModuleLoader__.load({
         providerOptions.push({ id: curProvider, label: curProvider + "（已不在列表）" });
       }
 
-      var modelOptions = [{ id: "", label: "跟随默认" }].concat(
-        (models || []).map(function (m) { return { id: m.id, label: m.name !== m.id ? m.name + "（" + m.id + "）" : m.id }; }),
-      );
+      var modelOptions = (models || []).map(function (m) {
+        return { id: m.id, label: m.name !== m.id ? m.name + "（" + m.id + "）" : m.id };
+      });
       if (curModel && !modelKnown) {
         modelOptions.push({ id: curModel, label: curModel + "（已不在列表）" });
       }
 
       return react.createElement(
         "div", { style: Object.assign({}, S.switchRow, { flexWrap: "wrap" }) },
-        react.createElement(
-          "select",
-          {
-            className: "dsh-mem-select",
-            style: { flexShrink: 0, maxWidth: 220 },
-            value: curProvider,
-            disabled: disabled,
-            onChange: function (e) {
-              var v = e.target.value;
-              if (v === "") {
-                writeLlm({ distillProvider: "", distillModel: "" });
-              } else {
-                setDraft(v);
-              }
-            },
+        react.createElement(NSel, {
+          style: { flexShrink: 0, width: 220 },
+          options: providerOptions,
+          value: curProvider,
+          disabled: disabled,
+          placeholder: "跟随默认",
+          onChange: function (v) {
+            if (v === "") {
+              writeLlm({ distillProvider: "", distillModel: "" });
+            } else {
+              setDraft(v);
+            }
           },
-          providerOptions.map(function (o) {
-            return react.createElement("option", { key: o.id, value: o.id }, o.label);
-          }),
-        ),
+        }),
         !curProvider
           ? null
           : manualInput
@@ -1607,21 +1852,17 @@ window.__ModuleLoader__.load({
                   }
                 },
               })
-            : react.createElement(
-                "select",
-                {
-                  className: "dsh-mem-select",
-                  style: { flex: 1, minWidth: 160 },
-                  value: curModel,
-                  disabled: disabled || models === null,
-                  onChange: function (e) {
-                    writeLlm({ distillProvider: curProvider, distillModel: e.target.value });
-                  },
+            : react.createElement(NSel, {
+                style: { flex: 1, minWidth: 160 },
+                options: modelOptions,
+                // 拉取期（无缓存首切）显示占位而非上一供应商的过期模型名
+                value: models === null ? "" : curModel,
+                disabled: disabled || models === null,
+                placeholder: models === null ? "加载模型列表…" : "（选择模型）",
+                onChange: function (v) {
+                  writeLlm({ distillProvider: curProvider, distillModel: v });
                 },
-                modelOptions.map(function (o) {
-                  return react.createElement("option", { key: o.id, value: o.id }, o.label);
-                }),
-              ),
+              }),
         react.createElement("div", null,
           react.createElement("div", { style: S.switchLabel }, "蒸馏模型"),
           react.createElement(
@@ -1866,7 +2107,7 @@ window.__ModuleLoader__.load({
         if (key === "reasoningEffort" && next.effort) {
           next.effort = Object.assign({}, prev.effort, {
             current: value,
-            effective: value || prev.effort.fallback,
+            effective: value,
           });
         }
         setSettingsData(next);
@@ -1960,13 +2201,18 @@ window.__ModuleLoader__.load({
                       "div",
                       { style: S.switchRow },
                       react.createElement(Segmented, {
-                        value: settingsData.effort.current,
-                        options: [
-                          { key: "", label: "跟随配置" },
-                          { key: "off", label: "off" },
-                          { key: "high", label: "high" },
-                          { key: "max", label: "max" },
-                        ],
+                        // 档位表来自当前生效模型的能力声明（settings-get 的 effort.options；
+                        // 空声明 → 只显示 high）。''（自动）或档位不在表里时高亮实际生效值。
+                        value: (function () {
+                          var opts = settingsData.effort.options && settingsData.effort.options.length
+                            ? settingsData.effort.options : ["high"];
+                          if (opts.indexOf(settingsData.effort.current) >= 0) return settingsData.effort.current;
+                          return opts.indexOf(settingsData.effort.effective) >= 0
+                            ? settingsData.effort.effective : "high";
+                        })(),
+                        options: (settingsData.effort.options && settingsData.effort.options.length
+                          ? settingsData.effort.options : ["high"]
+                        ).map(function (k) { return { key: k, label: k }; }),
                         disabled: !master,
                         onChange: function (v) { toggle("reasoningEffort", v); },
                       }),
@@ -1976,7 +2222,7 @@ window.__ModuleLoader__.load({
                           "div",
                           { style: S.switchDesc },
                           "当前生效 " + (settingsData.effort.effective || "（不传，跟随模型默认）") +
-                            (settingsData.effort.current ? "" : "（来自部署配置 llm.reasoningEffort）"),
+                            (settingsData.effort.current ? "" : "（自动）"),
                         )),
                     )
                   : null,
@@ -2143,30 +2389,22 @@ window.__ModuleLoader__.load({
             onChange: function (e) { setQuery(e.target.value); },
             onKeyDown: function (e) { if (e.key === "Enter") search(); },
           }),
-          react.createElement(
-            "select",
-            {
-              className: "dsh-mem-select",
-              value: typeFilter,
-              onChange: function (e) { setTypeFilter(e.target.value); },
-            },
-            react.createElement("option", { value: "" }, "全部类型"),
-            typeChoices.map(function (t) {
-              return react.createElement("option", { key: t, value: t }, TYPE_LABELS[t] || t);
-            }),
-          ),
-          react.createElement(
-            "select",
-            {
-              className: "dsh-mem-select",
-              value: sceneFilter,
-              onChange: function (e) { setSceneFilter(e.target.value); },
-            },
-            react.createElement("option", { value: "" }, "全部情境"),
-            sceneOptions.map(function (s) {
-              return react.createElement("option", { key: s, value: s }, s.length > 24 ? s.slice(0, 24) + "…" : s);
-            }),
-          ),
+          react.createElement(NSel, {
+            style: { maxWidth: 200 },
+            options: [{ id: "", label: "全部类型" }].concat(typeChoices.map(function (t) {
+              return { id: t, label: TYPE_LABELS[t] || t };
+            })),
+            value: typeFilter,
+            onChange: setTypeFilter,
+          }),
+          react.createElement(NSel, {
+            style: { maxWidth: 220 },
+            options: [{ id: "", label: "全部情境" }].concat(sceneOptions.map(function (s) {
+              return { id: s, label: s.length > 24 ? s.slice(0, 24) + "…" : s };
+            })),
+            value: sceneFilter,
+            onChange: setSceneFilter,
+          }),
           react.createElement(NButton, { onClick: search }, "搜索"),
         ),
         react.createElement(
@@ -2243,6 +2481,44 @@ window.__ModuleLoader__.load({
     }
 
     // ── Tab：L2 场景 ──
+    // ── 场景卡：默认收起（头部 + 摘要行），点击头部展开/收起正文——与记忆卡的
+    // 点击展开范式同款（cursor pointer + card-hover 描边），箭头 ▸ 展开态旋转 90°。
+    function SceneCard(props) {
+      var s = props.s;
+      var openState = react.useState(false);
+      var open = openState[0];
+      var setOpen = openState[1];
+      return react.createElement(
+        "div", { className: "dsh-mem-card dsh-mem-card-hover", style: S.card },
+        react.createElement(
+          "div",
+          {
+            style: Object.assign({}, S.sceneHead, { cursor: "pointer", userSelect: "none" }),
+            onClick: function () { setOpen(!open); },
+          },
+          react.createElement(
+            "span",
+            { className: "dsh-mem-scene-chev", style: { transform: open ? "rotate(90deg)" : "none" } },
+            "▸",
+          ),
+          react.createElement("span", { style: S.sceneTitle }, s.path),
+          s.heat ? react.createElement("span", { style: S.muted }, "热度 " + s.heat) : null,
+          react.createElement("div", { style: S.grow }),
+          react.createElement("span", { style: S.muted }, "更新 " + fmtTime(s.updated)),
+        ),
+        s.summary
+          ? react.createElement(
+              "div",
+              { style: Object.assign({}, S.muted, { marginBottom: 6 }) },
+              s.summary,
+            )
+          : null,
+        open
+          ? react.createElement("pre", { style: S.pre }, s.content || "(空)")
+          : null,
+      );
+    }
+
     function ScenesTab(props) {
       var rpc = props.rpc;
       var itemsState = react.useState(null);
@@ -2276,24 +2552,7 @@ window.__ModuleLoader__.load({
           ? react.createElement("p", { style: S.intro }, "暂无场景块。累计 5 条新记忆后 L2 会自动整合出第一个场景。")
           : null,
         (items || []).map(function (s) {
-          return react.createElement(
-            "div", { key: s.path, className: "dsh-mem-card", style: S.card },
-            react.createElement(
-              "div", { style: S.sceneHead },
-              react.createElement("span", { style: S.sceneTitle }, s.path),
-              s.heat ? react.createElement("span", { style: S.muted }, "热度 " + s.heat) : null,
-              react.createElement("div", { style: S.grow }),
-              react.createElement("span", { style: S.muted }, "更新 " + fmtTime(s.updated)),
-            ),
-            s.summary
-              ? react.createElement(
-                  "div",
-                  { style: Object.assign({}, S.muted, { marginBottom: 6 }) },
-                  s.summary,
-                )
-              : null,
-            react.createElement("pre", { style: S.pre }, s.content || "(空)"),
-          );
+          return react.createElement(SceneCard, { key: s.path, s: s });
         }),
       );
     }
@@ -2353,6 +2612,7 @@ window.__ModuleLoader__.load({
       var errState = react.useState(null);
       var error = errState[0];
       var setError = errState[1];
+      var preRef = react.useRef(null);
 
       var load = react.useCallback(function () {
         setError(null);
@@ -2365,6 +2625,10 @@ window.__ModuleLoader__.load({
       }, [rpc]);
 
       react.useEffect(function () { load(); }, [load]);
+      // 默认滚到最底：看日志要看最新一条（tail 语义），加载/刷新后贴底
+      react.useEffect(function () {
+        if (lines && preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight;
+      }, [lines]);
 
       return react.createElement(
         "div", null,
@@ -2380,7 +2644,7 @@ window.__ModuleLoader__.load({
               { style: Object.assign({}, S.error, { marginBottom: 10 }) },
               "日志读取失败：" + error + "（点右上“刷新”重试）",
             )
-          : react.createElement("pre", { style: S.pre }, (lines || []).join("\n") || "(暂无日志)"),
+          : react.createElement("pre", { style: S.pre, ref: preRef }, (lines || []).join("\n") || "(暂无日志)"),
       );
     }
 

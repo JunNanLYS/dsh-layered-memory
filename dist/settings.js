@@ -36,7 +36,7 @@ export function liveSettingsSchema() {
         capture: Schema.boolean().default(true),
         distill: Schema.boolean().default(true),
         recall: Schema.boolean().default(true),
-        reasoningEffort: Schema.union(['', 'off', 'high', 'max']).default(''),
+        reasoningEffort: Schema.union(['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).default(''),
         distillProvider: Schema.string().default(''),
         distillModel: Schema.string().default(''),
         distillBudgets: Schema.object({
@@ -154,7 +154,7 @@ function resolveSettings(value) {
     if (!value || typeof value !== 'object')
         return { ...ALWAYS_ON };
     const v = value;
-    const efforts = ['', 'off', 'high', 'max'];
+    const efforts = ['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
     const num = (x) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
     const rawBudgets = (v.distillBudgets ?? {});
     return {

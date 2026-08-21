@@ -12,7 +12,8 @@ import type { DistillBudgetLayer } from './llm.js';
 import type { MemoryLogger } from './types.js';
 
 /** 蒸馏思考档位可选项：'' = 跟随静态 config（部署默认）。 */
-export type EffortChoice = '' | 'off' | 'high' | 'max';
+/** 蒸馏思考档位：'' = 自动（模型默认档 → high）；其余为各适配器通用档位词汇表。 */
+export type EffortChoice = '' | 'off' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 /** 分层输出预算（与 llm.ts 的 DistillBudgetLayer 同键；0 = 跟随内置默认）。 */
 export type DistillBudgets = Record<DistillBudgetLayer, number>;
@@ -88,7 +89,7 @@ export function liveSettingsSchema(): Schema<MemoryLiveSettings> {
     capture: Schema.boolean().default(true),
     distill: Schema.boolean().default(true),
     recall: Schema.boolean().default(true),
-    reasoningEffort: Schema.union(['', 'off', 'high', 'max']).default(''),
+    reasoningEffort: Schema.union(['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).default(''),
     distillProvider: Schema.string().default(''),
     distillModel: Schema.string().default(''),
     distillBudgets: Schema.object({
@@ -213,7 +214,7 @@ export function registerLiveSettings(ctx: Context, logger: MemoryLogger): LiveSe
 function resolveSettings(value: unknown): MemoryLiveSettings {
   if (!value || typeof value !== 'object') return { ...ALWAYS_ON };
   const v = value as Partial<MemoryLiveSettings>;
-  const efforts = ['', 'off', 'high', 'max'] as const;
+  const efforts = ['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
   const num = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
   const rawBudgets = (v.distillBudgets ?? {}) as Partial<DistillBudgets>;
   return {

@@ -46,7 +46,7 @@ import { StateStore } from './store/state.js';
 import { registerMemoryTools } from './tools/index.js';
 import type { MemoryLogger } from './types.js';
 import { errDetail, withFileLog } from './util/filelog.js';
-import { resolveModelRoute } from './llm.js';
+import { resolveModelRoute, invalidateEffortCache } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
 
 export const name = 'dsh-memory-plugin';
@@ -73,6 +73,9 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
   // dsh 宿主无持久化日志，镜像 info+ 到数据目录 memory.log 供蒸馏问题诊断
   const fileLogger = withFileLog(dataDir, logger);
   logger = fileLogger;
+
+  // 供应商拓扑变化（增删/改配置）→ 思考档位能力缓存失效，下次调用重新探询
+  ctx.on('llm/adapters-updated', () => invalidateEffortCache());
 
   // 存储初始化失败只降级（禁用捕获/蒸馏），绝不拖垮宿主——
   // 记忆是增强能力，数据目录不可写时 dsh 本体必须照常启动。

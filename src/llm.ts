@@ -56,7 +56,7 @@ export function resolveLayerTokens(cfg: { llm: { reasoningEffort: string; budget
  * 预算致正文 0 字符）——effort 为 high/max 时分层预算 ×4。
  */
 export function layerMaxTokens(base: number, reasoningEffort: string): number {
-  return reasoningEffort === 'high' || reasoningEffort === 'max' ? base * 4 : base;
+  return reasoningEffort === 'high' || reasoningEffort === 'xhigh' || reasoningEffort === 'max' ? base * 4 : base;
 }
 
 /** 解析蒸馏用的 provider/model：配置优先，其次当前默认选择。 */
@@ -78,6 +78,113 @@ export async function resolveModelRoute(
   );
 }
 
+// ── 思考档位能力探询（ADR：跨供应商 effort 兼容）──
+// dsh-llm 契约对不支持的显式档位【不做 clamp/aliasing】：pi-ai 本地抛
+// UNSUPPORTED_REASONING_EFFORT，openai-responses 网关则把 'off' 等值透传上游吃 400
+// （DeepSeek 适配器的 'off' 是自家概念，跨供应商不通用）。因此发送前按模型实际
+// 能力决策；resolveModelInfo 是 advisory 查询（pi-ai/deepseek 读本地快照不触网），
+// 结果按 (provider, model) 缓存，拓扑变化（llm/adapters-updated）时统一失效。
+export interface ModelEffortInfo {
+  /** 模型可设置的思考档位 id（适配器声明；空 = 未声明/不可设置） */
+  efforts: string[];
+  /** 适配器配置的默认档位（省略 effort 时的请求值） */
+  defaultEffort?: string;
+}
+
+const effortCache = new Map<string, ModelEffortInfo>();
+
+/** 清空能力缓存（llm/adapters-updated 时调用：供应商增删/改配置后重新探询）。 */
+export function invalidateEffortCache(): void {
+  effortCache.clear();
+  effortWarned.clear();
+}
+
+/** 探询某模型的思考档位能力；失败返回 null（调用方保持旧发送行为，不改判）。 */
+export async function resolveModelEfforts(
+  ctx: Context,
+  provider: string,
+  model: string,
+): Promise<ModelEffortInfo | null> {
+  const key = `${provider}::${model}`;
+  const hit = effortCache.get(key);
+  if (hit) return hit;
+  try {
+    if (typeof ctx.llm?.resolveModelInfo !== 'function') return null;
+    const info = await ctx.llm.resolveModelInfo(provider, model);
+    const efforts = (info.reasoning?.efforts ?? [])
+      .map((e) => String(e.id))
+      .filter((id) => id.length > 0);
+    const cap: ModelEffortInfo = {
+      efforts,
+      ...(info.reasoning?.defaultEffort ? { defaultEffort: String(info.reasoning.defaultEffort) } : {}),
+    };
+    effortCache.set(key, cap);
+    return cap;
+  } catch {
+    return null; // 不缓存失败：路由尚未注册等瞬时态，下次调用重试
+  }
+}
+
+export type EffortDecisionReason =
+  | 'supported'        // 配置档位被模型支持，照发
+  | 'auto-default'     // 空配置 → 模型默认档
+  | 'auto-high'        // 空配置且无默认档 → high（用户规则）
+  | 'alias-none'       // off 在 OpenAI 系词汇表里的等价物 none
+  | 'unsupported'      // 模型声明了档位但不含配置值 → 不传
+  | 'no-efforts'       // 模型未声明任何档位 → 不传
+  | 'no-capability';   // 探不到能力（旧宿主/路由缺失）→ 保持旧行为照发
+
+export interface EffortDecision {
+  /** 实际发送的档位；'' = 不发送（跟随模型默认） */
+  effort: string;
+  reason: EffortDecisionReason;
+}
+
+/** 纯决策：配置档位 + 模型能力 → 实际发送值（callLLM 与 settings-get 共用）。 */
+export function decideSendableEffort(cap: ModelEffortInfo | null, cfgEffort: string): EffortDecision {
+  if (!cap) return { effort: cfgEffort, reason: 'no-capability' };
+  if (cfgEffort) {
+    if (cap.efforts.includes(cfgEffort)) return { effort: cfgEffort, reason: 'supported' };
+    if (cfgEffort === 'off' && cap.efforts.includes('none')) return { effort: 'none', reason: 'alias-none' };
+    if (cap.efforts.length === 0) return { effort: '', reason: 'no-efforts' };
+    return { effort: '', reason: 'unsupported' };
+  }
+  // 空配置 = 自动：模型默认档 → 无默认取 high（用户规则：未声明/无默认一律 high）→ 仍无则不传
+  if (cap.defaultEffort && cap.efforts.includes(cap.defaultEffort)) {
+    return { effort: cap.defaultEffort, reason: 'auto-default' };
+  }
+  if (cap.efforts.includes('high')) return { effort: 'high', reason: 'auto-high' };
+  return { effort: '', reason: 'no-efforts' };
+}
+
+const effortWarned = new Set<string>();
+
+/** 探询 + 决策 + 一次性告警（不支持/未声明时提示降级，不刷屏）。 */
+export async function planDistillEffort(
+  ctx: Context,
+  provider: string,
+  model: string,
+  cfgEffort: string,
+  logger?: MemoryLogger,
+): Promise<EffortDecision> {
+  const cap = await resolveModelEfforts(ctx, provider, model);
+  const d = decideSendableEffort(cap, cfgEffort);
+  if ((d.reason === 'unsupported' || d.reason === 'no-efforts') && logger) {
+    const key = `${provider}::${model}::${cfgEffort}::${d.reason}`;
+    if (!effortWarned.has(key)) {
+      effortWarned.add(key);
+      logger.warn(
+        `[memory] 蒸馏思考档位 ${cfgEffort || '(auto)'} 不被 ${provider}/${model} 支持` +
+          (d.reason === 'no-efforts'
+            ? '（模型未声明思考档位）'
+            : `（支持: ${cap?.efforts.join('/')}）`) +
+          '，本次调用不传档位（跟随模型默认）',
+      );
+    }
+  }
+  return d;
+}
+
 /**
  * 一次完整蒸馏调用：流式收集文本，返回最终字符串。
  * 失败（error/aborted finish）抛错，由调用方兜底。
@@ -88,6 +195,9 @@ export async function resolveModelRoute(
 export async function callLLM(ctx: Context, cfg: MemoryConfig, opts: LlmCallOptions): Promise<string> {
   const { provider, model } = await resolveModelRoute(ctx, cfg);
   const signal = opts.signal ?? AbortSignal.timeout(cfg.llm.timeoutMs);
+  // 档位按模型能力决策（跨供应商 effort 兼容）：不支持的档位不传 + 告警一次，
+  // 空配置 = 自动（模型默认档 → high）；详见 decideSendableEffort
+  const effort = await planDistillEffort(ctx, provider, model, cfg.llm.reasoningEffort, opts.logger);
 
   // 输入预算兜底：任何蒸馏调用的用户 prompt 不超过 maxInputChars
   // （L1 已在数据层分块，这里是 L2/L3 与异常场景的最后一道网）
@@ -96,17 +206,23 @@ export async function callLLM(ctx: Context, cfg: MemoryConfig, opts: LlmCallOpti
       ? `${opts.user.slice(0, cfg.llm.maxInputChars)}\n\n[输入超出 ${cfg.llm.maxInputChars} 字符预算，已截断]`
       : opts.user;
 
+  // 输出预算 ×4 防线跟随【实际发送】的档位：阶段侧按原始配置放大（high/max），
+  // 这里补自动档（'' → 模型默认/high）解析出高档时欠放大的缺口
+  const baseMaxTokens = opts.maxTokens ?? cfg.llm.maxTokens;
+  const maxTokens =
+    ['high', 'xhigh', 'max'].includes(effort.effort) && !['high', 'max'].includes(cfg.llm.reasoningEffort)
+      ? layerMaxTokens(baseMaxTokens, 'high')
+      : baseMaxTokens;
+
   const stream = ctx.llm.stream({
     provider,
     model,
     system: opts.system,
     messages: [createUserMessage({ content: [{ type: 'text', text: user }], source: { kind: 'user' } })],
     temperature: opts.temperature ?? cfg.llm.temperature,
-    maxTokens: opts.maxTokens ?? cfg.llm.maxTokens,
-    // 默认 off：蒸馏是结构化抽取，high 思考可吃光全部输出预算致正文 0 字符；空串不传（非推理模型）
-    ...(cfg.llm.reasoningEffort
-      ? { reasoningEffort: ReasoningEffortId(cfg.llm.reasoningEffort) }
-      : {}),
+    maxTokens,
+    // 档位只在能力决策给出非空值时传；空串不传（跟随模型默认）
+    ...(effort.effort ? { reasoningEffort: ReasoningEffortId(effort.effort) } : {}),
     signal,
   });
 

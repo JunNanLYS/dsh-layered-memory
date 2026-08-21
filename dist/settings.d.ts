@@ -8,7 +8,8 @@ import Schema from '@deepseek-ai/schemastery';
 import type { DistillBudgetLayer } from './llm.js';
 import type { MemoryLogger } from './types.js';
 /** 蒸馏思考档位可选项：'' = 跟随静态 config（部署默认）。 */
-export type EffortChoice = '' | 'off' | 'high' | 'max';
+/** 蒸馏思考档位：'' = 自动（模型默认档 → high）；其余为各适配器通用档位词汇表。 */
+export type EffortChoice = '' | 'off' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 /** 分层输出预算（与 llm.ts 的 DistillBudgetLayer 同键；0 = 跟随内置默认）。 */
 export type DistillBudgets = Record<DistillBudgetLayer, number>;
 export interface MemoryLiveSettings {

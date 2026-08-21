@@ -117,6 +117,8 @@ smoke 第 21 节机械断言：inline `borderRadius` 与 CSS `border-radius` 只
 | 滑块吸附 | 圆球 `left` 与填充 `width` 同步 `120ms ease`（拖拽中两者 `transition: none` 保 1:1 跟手） | inline 优先级高于样式表媒体查询，无法被压制（已知限制） |
 | 开关旋钮 | inline `left .15s` | 同上（无法压制，同滑块） |
 | 重建进度 | `.dsh-mem-rb-fill` `width .4s ease` | `prefers-reduced-motion` → `none` |
+| 场景卡折叠箭头 | `.dsh-mem-scene-chev` `transform .15s ease`（展开态 rotate(90deg)） | 同上（兜底块名单内） |
+| 下拉触发钮箭头 | `.dsh-mem-sel-chev` `transform .12s ease`（展开态 rotate(225deg)；CSS 描边画法，无位图/SVG 资产） | 同上（兜底块名单内） |
 
 **reduced-motion 兜底块必须放在样式表末尾**：同特异性（0,1,0）下后置声明才能
 压过前面的组件类 transition；新增带 transition 的类要同步加进该块的压制名单。

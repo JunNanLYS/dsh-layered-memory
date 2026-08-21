@@ -99,7 +99,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         provider: import("@deepseek-ai/schemastery").default<string, string>;
         model: import("@deepseek-ai/schemastery").default<string, string>;
         maxTokens: import("@deepseek-ai/schemastery").default<number, number>;
-        reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "high" | "max", "" | "off" | "high" | "max">;
+        reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: import("@deepseek-ai/schemastery").default<number, number>;
         maxInputChars: import("@deepseek-ai/schemastery").default<number, number>;
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
@@ -107,7 +107,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         provider: import("@deepseek-ai/schemastery").default<string, string>;
         model: import("@deepseek-ai/schemastery").default<string, string>;
         maxTokens: import("@deepseek-ai/schemastery").default<number, number>;
-        reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "high" | "max", "" | "off" | "high" | "max">;
+        reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: import("@deepseek-ai/schemastery").default<number, number>;
         maxInputChars: import("@deepseek-ai/schemastery").default<number, number>;
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
@@ -204,7 +204,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         provider: import("@deepseek-ai/schemastery").default<string, string>;
         model: import("@deepseek-ai/schemastery").default<string, string>;
         maxTokens: import("@deepseek-ai/schemastery").default<number, number>;
-        reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "high" | "max", "" | "off" | "high" | "max">;
+        reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: import("@deepseek-ai/schemastery").default<number, number>;
         maxInputChars: import("@deepseek-ai/schemastery").default<number, number>;
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
@@ -212,7 +212,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         provider: import("@deepseek-ai/schemastery").default<string, string>;
         model: import("@deepseek-ai/schemastery").default<string, string>;
         maxTokens: import("@deepseek-ai/schemastery").default<number, number>;
-        reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "high" | "max", "" | "off" | "high" | "max">;
+        reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: import("@deepseek-ai/schemastery").default<number, number>;
         maxInputChars: import("@deepseek-ai/schemastery").default<number, number>;
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
