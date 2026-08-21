@@ -92,8 +92,16 @@ export class ModelDownloadQueue {
     }
     const proxy = resolveProxyUrl(opts.proxy, host);
     if (proxy) {
-      this.agent = new ProxyAgent(proxy);
-      opts.logger?.info(`[memory] 模型下载走代理 ${proxy}（镜像直连在国内网络间歇不可达）`);
+      try {
+        this.agent = new ProxyAgent(proxy);
+        opts.logger?.info(`[memory] 模型下载走代理 ${maskProxyUrl(proxy)}（镜像直连在国内网络间歇不可达）`);
+      } catch (err) {
+        // 与畸形 mirror 同款容错（见上）：畸形代理（无 scheme 等常见笔误）只降级直连，
+        // 绝不炸构造器——本构造发生在 apply 装配链上，抛错会拖垮宿主启动
+        opts.logger?.warn(
+          `[memory] 代理配置无效，已忽略并直连（${maskProxyUrl(proxy)}）: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
     this.defaultFetch = ((u: string, init?: RequestInit) => {
       const dispatch = this.agent as unknown as Dispatcher | undefined;
@@ -439,6 +447,7 @@ export function resolveProxyUrl(setting: string | undefined, host: string): stri
   if (value.toLowerCase() === 'none') return '';
   if (value) return value;
   const noProxy = process.env.NO_PROXY ?? process.env.no_proxy ?? '';
+  if (noProxy.trim() === '*') return '';
   if (noProxy) {
     for (const raw of noProxy.split(',')) {
       const entry = raw.trim().replace(/^\./, '').toLowerCase();
@@ -454,6 +463,17 @@ export function resolveProxyUrl(setting: string | undefined, host: string): stri
     if (c && c.trim()) return c.trim();
   }
   return '';
+}
+
+/** 代理 URL 日志脱敏：剥掉 userinfo（内网代理常带 user:pass 凭据），只留 scheme//host；
+ *  解析失败的串原样也可能是凭据形态，返回占位符。 */
+export function maskProxyUrl(proxy: string): string {
+  try {
+    const u = new URL(proxy);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return '<invalid-url>';
+  }
 }
 
 async function sha256File(p: string): Promise<string> {

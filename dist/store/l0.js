@@ -90,9 +90,14 @@ export class L0Store {
         for (const [day, list] of byDay) {
             await appendJsonl(path.join(this.dir, `${day}.jsonl`), list);
         }
-        // 检索引擎：DB + 向量（嵌入失败只跳过向量，不影响元数据/FTS，backfill 补齐）
+        // 检索引擎：DB + 向量（嵌入失败只跳过向量，不影响元数据/FTS，backfill 补齐）。
+        // 双写失败闭环：JSONL 事实源已先行追加，DB 缺行 = 这些消息检索不可见
+        // （conversation_search / 蒸馏背景参考都查不到）——升 error 并给自愈指引。
         const vecs = await this.helper.batch(records.map((r) => r.content));
-        this.db.upsertL0Batch(records, vecs);
+        if (!this.db.upsertL0Batch(records, vecs)) {
+            this.logger?.error(`[memory] L0 检索库批量写入失败（${records.length} 条，JSONL 事实源完好），` +
+                '这些消息暂不可检索；可在设置页运行「重建记忆」修复');
+        }
     }
     /** 今日已捕获消息数（SQL 计数，不再读整文件）。 */
     async countToday() {

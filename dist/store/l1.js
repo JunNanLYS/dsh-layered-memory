@@ -43,23 +43,25 @@ export class L1Store {
         try {
             const records = await readJsonl(this.legacyFile);
             const valid = records.filter((r) => r && typeof r.id === 'string' && r.content);
+            const badCount = records.length - valid.length;
             let n = 0;
             if (valid.length > 0 && this.db.upsertL1Batch(valid))
                 n = valid.length;
-            // 只有确实导入成功（或文件为空）才改名，避免把未入库的数据改名带走
-            if (n === records.length) {
+            // 只有确实导入成功才改名，避免把未入库的数据改名带走；判据按 valid 数——
+            // 坏行已在读取时过滤，按 records.length 判会让混入坏行的文件迁移永不完成
+            if (n === valid.length) {
                 const renamed = await fs
                     .rename(this.legacyFile, `${this.legacyFile}.imported`)
                     .then(() => true, () => false);
                 if (renamed) {
-                    this.logger?.info(`[memory] 旧版 L1 数据已导入检索库 ${n} 条（l1/records.jsonl → .imported）`);
+                    this.logger?.info(`[memory] 旧版 L1 数据已导入检索库 ${n} 条${badCount > 0 ? `（另丢弃 ${badCount} 条坏行）` : ''}（l1/records.jsonl → .imported）`);
                 }
                 else {
                     this.logger?.warn('[memory] 旧版 L1 导入完成但改名失败，下次启动会重复导入（upsert 幂等，无害）');
                 }
             }
             else {
-                this.logger?.warn(`[memory] 旧版 L1 导入不完整（${n}/${records.length}），保留原文件下次重试`);
+                this.logger?.warn(`[memory] 旧版 L1 导入不完整（${n}/${valid.length}），保留原文件下次重试`);
             }
         }
         catch (err) {
@@ -96,15 +98,23 @@ export class L1Store {
             await appendJsonl(path.join(this.recordsDir, `${day}.jsonl`), list);
         }
         const vecs = await this.helper.batch(records.map((r) => r.content));
-        // 单事务批量写：逐条开事务在 WAL FULL 下每条一次 fsync
-        this.db.upsertL1Batch(records, vecs);
+        // 单事务批量写：逐条开事务在 WAL FULL 下每条一次 fsync。
+        // 双写失败闭环：JSONL 事实源已先行追加，DB 缺行 = 这批记忆检索不可见、
+        // 去重候选缺失（重复记忆会累积）。upsert 内部已有逐条 warn，这里升 error
+        // 并给出自愈指引——检索库可由"重建记忆"从事实源全量重导修复。
+        if (!this.db.upsertL1Batch(records, vecs)) {
+            this.logger?.error(`[memory] L1 检索库批量写入失败（${records.length} 条，JSONL 事实源完好），` +
+                '这批记忆暂不可检索；可在设置页运行「重建记忆」修复');
+        }
     }
     /** 去重 update/merge 产出的记录：只更新检索库（JSONL 事实源不改写，官方语义）。 */
     async upsert(record) {
         if (!record.family)
             record.family = familyForType(record.type);
         const vec = (await this.helper.batch([record.content]))[0];
-        this.db.upsertL1(record, vec);
+        if (!this.db.upsertL1(record, vec)) {
+            this.logger?.error(`[memory] L1 检索库写入失败 id=${record.id}（JSONL 事实源完好），该记忆暂不可检索，重建可修复`);
+        }
     }
     /** 活切换嵌入源：同步换底层服务（嵌入源三态切换用）。 */
     setEmbeddingService(svc) {

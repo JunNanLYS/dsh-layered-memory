@@ -110,7 +110,7 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
     logger,
     proxy: config.embedding.proxy,
   });
-  const makeLocalService = makeLocalServiceFactory(installer, downloader, logger);
+  const makeLocalService = makeLocalServiceFactory(installer, downloader, logger, config.embedding.maxInputChars);
   let initial: InitialEmbedding = { svc: new NoopEmbeddingService(), dims: 0 };
   /** 管理器引用：启动重嵌链/backfill 闭包在运行期解引用（声明早于创建避免 TDZ）。 */
   let embedManagerRef: EmbeddingManager | undefined;

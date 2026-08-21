@@ -3,10 +3,20 @@ const OFF_NOTICE = '本会话的记忆档位为"关闭"：该会话对记忆系�
 export function registerMemoryTools(ctx, cfg, stores, logger, modes) {
     if (!cfg.tools)
         return;
-    /** 调用会话的检索族（auto → undefined 不过滤；off → null 表示整体禁用）。 */
+    /**
+     * 调用会话的检索族（auto → undefined 不过滤；off → null 表示整体禁用）。
+     * fail-open：exec.agent 缺失（宿主调用路径未带 agent 标识）按全族检索放行——
+     * 档位隔离依赖宿主正确传递 exec.agent.id，缺失只告警一次不拒绝工具调用。
+     */
+    let warnedNoAgent = false;
     const familyOfCaller = (agentId) => {
-        if (agentId === undefined)
+        if (agentId === undefined) {
+            if (!warnedNoAgent) {
+                warnedNoAgent = true;
+                logger.warn('[memory] 工具调用缺少 agent 标识（exec.agent 未传递），档位过滤退化为全族检索');
+            }
             return undefined;
+        }
         const mode = modes.get(agentId);
         if (mode === 'off')
             return null;

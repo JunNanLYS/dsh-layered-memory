@@ -981,7 +981,7 @@ export class MemoryDb {
 
   /** FTS5 BM25 检索（family 缺省不过滤）。失败返回空数组（调用方降级）。 */
   searchL1Fts(query: string, limit: number, family?: string): L1SearchHit[] {
-    if (this.degraded || !this.ftsAvailable) return [];
+    if (this.degraded || !this.ftsAvailable || limit <= 0) return [];
     const ftsQuery = buildFtsQuery(query);
     if (!ftsQuery) return [];
     try {
@@ -1015,7 +1015,7 @@ export class MemoryDb {
 
   /** vec0 余弦 KNN 检索（score = 1 - cosine distance；family 过滤走过度召回 + 回查过滤，vec0 无法 WHERE）。失败返回空数组。 */
   searchL1Vector(embedding: Float32Array, topK: number, family?: string): L1SearchHit[] {
-    if (this.degraded || !this.stmtSearchL1Vec) return [];
+    if (this.degraded || !this.stmtSearchL1Vec || topK <= 0) return [];
     try {
       // 过度召回补偿遗留零向量；带族过滤时再放大（不命中本族的行会被丢弃）
       const retrieveCount = (topK + ZERO_VEC_BUFFER) * (family ? 3 : 1);
@@ -1197,7 +1197,7 @@ export class MemoryDb {
   // ============================
 
   searchL0Fts(query: string, limit: number): L0SearchHit[] {
-    if (this.degraded || !this.ftsAvailable) return [];
+    if (this.degraded || !this.ftsAvailable || limit <= 0) return [];
     const ftsQuery = buildFtsQuery(query);
     if (!ftsQuery) return [];
     try {

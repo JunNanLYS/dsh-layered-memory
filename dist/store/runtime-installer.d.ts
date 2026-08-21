@@ -54,12 +54,19 @@ export declare class RuntimeInstaller {
      * 返回是否就绪（失败/取消返回 false 并在 progress.error 说明原因）。
      */
     ensure(): Promise<boolean>;
-    /** 取消安装（kill 子进程；node_modules 残留无害，npm 幂等重装）。 */
+    /**
+     * 取消安装（kill 子进程；node_modules 残留无害，npm 幂等重装）。
+     * 间隙兼容：ci 退出到回退 install 起跑之间 child 为 null——此时也置取消态，
+     * runNpm 起跑前复查即不再起新进程（否则回退的 npm 会跑到自然结束且无法再取消）。
+     */
     cancel(): boolean;
     /** 从 runtime 目录解析已安装的 transformers 模块（LocalEmbeddingService 用）。 */
     resolveModule(): unknown;
     private pushLine;
     /** 跑一次 npm 子进程（采集尾行 + 超时 kill），返回退出码（null = 被杀死/启动失败）。 */
     private runNpm;
+    /** 取消态判定。独立方法而非内联比较：cancel() 在 await 期间跨方法置位
+     *  phase，TS 的属性流分析不跟踪这种突变，内联比较会被窄化误报"无重叠"。 */
+    private wasCancelled;
     private installOnce;
 }

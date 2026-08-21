@@ -13,7 +13,7 @@ import { memorySchema } from './config.js';
 import { EmbedHelper, NoopEmbeddingService, type EmbeddingService } from './store/embedding.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_TRUNCATION_SUFFIX, truncateRecallLine } from './util/recall-budget.js';
 import { Bm25Index } from './store/bm25.js';
-import { ModelDownloadQueue, resolveProxyUrl } from './store/download-queue.js';
+import { ModelDownloadQueue, maskProxyUrl, resolveProxyUrl } from './store/download-queue.js';
 import {
   EmbeddingManager,
   EmbeddingSourceStore,
@@ -2351,12 +2351,31 @@ async function main(): Promise<void> {
           assert(resolveProxyUrl('', 'huggingface.co') === 'http://127.0.0.1:7890', 'NO_PROXY 未命中仍走代理');
           process.env.NO_PROXY = '.hf-mirror.com';
           assert(resolveProxyUrl('', host) === '', 'NO_PROXY 点前缀通配命中');
+          process.env.NO_PROXY = '*';
+          assert(resolveProxyUrl('', 'huggingface.co') === '', 'NO_PROXY=* 全域禁用代理');
         } finally {
           for (const [k, v] of Object.entries(saved)) {
             if (v === undefined) delete (process.env as never as Record<string, string>)[k];
             else (process.env as never as Record<string, string>)[k] = v;
           }
         }
+      }
+
+      // j. 畸形代理不炸构造器（H1 回归：无 scheme 代理串此前在 apply 装配链上同步抛
+      //    TypeError 拖垮插件加载）+ 日志脱敏剥离 userinfo
+      {
+        const dirJ = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-badproxy-'));
+        const q = new ModelDownloadQueue(dirJ, {
+          mirror: 'https://fake.example',
+          proxy: '127.0.0.1:7890',
+          fetchImpl: serve([['/config.json', bodyA]]),
+          freeBytes: async () => 1e9,
+        });
+        assert(q.getProgress() === null, '畸形代理被降级直连，构造器不抛');
+        assert(q.isBusy() === false, '构造后无任务');
+        q.dispose();
+        assert(maskProxyUrl('http://user:secret@proxy.corp:8080') === 'http://proxy.corp:8080', '代理日志脱敏剥离 userinfo');
+        assert(maskProxyUrl('127.0.0.1:7890') === '<invalid-url>', '不可解析代理串返回占位符');
       }
 
       // h. 服务器对满/异常 Range 回 416：删断点一次性从零重下
@@ -2657,6 +2676,42 @@ async function main(): Promise<void> {
       const insC = new RuntimeInstaller(path.join(tmp25, 'c'), '1.0.0', { logger: silentLogger, spawnImpl: c.impl, lockfileSource: missingLock });
       assert(await insC.ensure(), '无 lockfile 直装 ready');
       assert(c.calls.length === 1 && c.calls[0].args[0] === 'install', '无 lockfile 只走 install');
+
+      // d. ci 阶段取消：不再回退 npm install（回归——此前取消被误判"ci 失败"，
+      //    白跑一次最长 10 分钟的 install 且无法再次取消）
+      {
+        const dCalls: Array<{ cmd: string; args: string[] }> = [];
+        let dKilled = false;
+        const dImpl = ((cmd: string, args: string[], _cwd: string) => {
+          dCalls.push({ cmd, args });
+          const isCi = args[0] === 'ci';
+          return {
+            onStdout: () => {},
+            onStderr: () => {},
+            kill: () => {
+              dKilled = true;
+            },
+            exited: isCi
+              ? new Promise<number | null>((resolve) => {
+                  // ci 挂起直到被 kill（resolve null = 被信号杀死）
+                  const t = setInterval(() => {
+                    if (dKilled) {
+                      clearInterval(t);
+                      resolve(null);
+                    }
+                  }, 5);
+                })
+              : Promise.resolve(0),
+          };
+        }) as SpawnImpl;
+        const insD = new RuntimeInstaller(path.join(tmp25, 'd'), '1.0.0', { logger: silentLogger, spawnImpl: dImpl, lockfileSource: lockSrc });
+        const dPromise = insD.ensure();
+        await new Promise((r) => setTimeout(r, 30)); // 等 ci 起跑
+        assert(insD.cancel() === true, 'ci 阶段取消被接受');
+        assert((await dPromise) === false, '取消后 ensure 返回 false');
+        assert(dCalls.length === 1 && dCalls[0].args[0] === 'ci', `取消后不回退 install（实际调用 ${dCalls.map((x) => x.args[0]).join(',')}）`);
+        assert(insD.getProgress().phase === 'cancelled', '终态 cancelled');
+      }
     } finally {
       await fs.rm(tmp25, { recursive: true, force: true }).catch(() => {});
     }

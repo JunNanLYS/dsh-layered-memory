@@ -93,7 +93,16 @@ export class RuntimeInstaller {
           onStderr(cb) {
             child.stderr?.on('data', (d: Buffer) => String(d).split(/\r?\n/).forEach((l) => l && cb(l)));
           },
-          kill: () => child.kill(),
+          // Windows shell:true 下 child 只是 cmd.exe，npm/node 孙进程不随 child.kill()
+          // 终止（超时与取消都会"表面停止"）——taskkill /T 按进程树杀；启动失败回退裸 kill
+          kill: () => {
+            if (process.platform === 'win32' && child.pid !== undefined) {
+              const tk = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+              tk.on('error', () => child.kill());
+            } else {
+              child.kill();
+            }
+          },
           // 'error'（如 ENOENT：PATH 无 npm）只发 error 不发 close——不监听会永挂
           exited: new Promise((resolve) => {
             child.on('close', (code) => resolve(code));
@@ -160,11 +169,15 @@ export class RuntimeInstaller {
     }
   }
 
-  /** 取消安装（kill 子进程；node_modules 残留无害，npm 幂等重装）。 */
+  /**
+   * 取消安装（kill 子进程；node_modules 残留无害，npm 幂等重装）。
+   * 间隙兼容：ci 退出到回退 install 起跑之间 child 为 null——此时也置取消态，
+   * runNpm 起跑前复查即不再起新进程（否则回退的 npm 会跑到自然结束且无法再取消）。
+   */
   cancel(): boolean {
-    if (this.progress.phase !== 'installing' || !this.child) return false;
+    if (this.progress.phase !== 'installing') return false;
     this.progress.phase = 'cancelled';
-    this.child.kill();
+    this.child?.kill();
     return true;
   }
 
@@ -182,6 +195,8 @@ export class RuntimeInstaller {
 
   /** 跑一次 npm 子进程（采集尾行 + 超时 kill），返回退出码（null = 被杀死/启动失败）。 */
   private async runNpm(args: string[]): Promise<number | null> {
+    // 起跑前复查取消：cancel() 在上一进程退出与本进程 spawn 之间的间隙置位时，不再起新进程
+    if (this.progress.phase === 'cancelled') return null;
     const child = this.spawnImpl('npm', args, this.runtimeDir);
     this.child = child;
     child.onStdout((l) => this.pushLine(l));
@@ -194,6 +209,12 @@ export class RuntimeInstaller {
     clearTimeout(timeout);
     this.child = null;
     return code;
+  }
+
+  /** 取消态判定。独立方法而非内联比较：cancel() 在 await 期间跨方法置位
+   *  phase，TS 的属性流分析不跟踪这种突变，内联比较会被窄化误报"无重叠"。 */
+  private wasCancelled(): boolean {
+    return this.progress.phase === 'cancelled';
   }
 
   private async installOnce(): Promise<boolean> {
@@ -230,6 +251,13 @@ export class RuntimeInstaller {
     } catch {
       /* 无随包 lockfile，直接走 install 回退 */
     }
+    // ci 阶段被取消（退出码 null）不得落入回退分支——那是"ci 失败"语义，会让
+    // 取消后再白跑一次最长 10 分钟的 install
+    if (this.wasCancelled()) {
+      this.progress.elapsedMs = Date.now() - this.progress.startedAt;
+      this.logger?.warn('[memory] 运行时安装已取消（残留无害，重装幂等）');
+      return false;
+    }
     if (!usedCi || code !== 0) {
       if (usedCi) {
         this.pushLine('npm ci 失败（lockfile 与钉死版本漂移？），回退 npm install');
@@ -249,7 +277,7 @@ export class RuntimeInstaller {
     this.progress.elapsedMs = Date.now() - this.progress.startedAt;
     const version = await this.installedVersion();
     this.progress.installedVersion = version;
-    if (this.progress.phase === 'cancelled') {
+    if (this.wasCancelled()) {
       this.logger?.warn('[memory] 运行时安装已取消（残留无害，重装幂等）');
       return false;
     }

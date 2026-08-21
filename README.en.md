@@ -21,7 +21,7 @@ Requires Node ≥ 22.16. Two invocation styles — the `npx` prefix can replace 
 any command below:
 
 ```bash
-# Option 1: run the official CLI directly via npx (no pre-installed dsh; version can be pinned, e.g. dsh-layered-memory@0.8.0)
+# Option 1: run the official CLI directly via npx (no pre-installed dsh; version can be pinned, e.g. dsh-layered-memory@0.8.2)
 npx -y @deepseek-ai/dsh plugin --profile web add dsh-layered-memory
 
 # Option 2: with the dsh CLI installed (dsh is a pnpm forwarder; npm i -g pnpm first if missing)
@@ -297,7 +297,10 @@ The dsh host prints plugin logs to the console; the plugin mirrors info and abov
 chars, duration)` → `L1 extraction done` → `pipeline end`; the next turn shows
 `recall hit N L1 records`. Empty LLM output carries full diagnostics (finish reason /
 token counts / reasoning excerpt); JSON parse failures include the first 400 characters
-of the raw model output; all failure warns carry the first stack frame.
+of the raw model output; all failure warns carry the first stack frame. The JSONL
+fact source is appended per turn and relies on OS write-back (no per-line fsync);
+an extreme crash (power loss) loses at most a small tail, and the index DB can be
+fully re-derived from the fact source via "Rebuild memories".
 
 ## Differences from MemoryCore
 

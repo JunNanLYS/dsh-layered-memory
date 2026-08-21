@@ -43,7 +43,9 @@ export declare class LocalEmbeddingService implements EmbeddingService {
     private readonly entry;
     private readonly loader;
     private readonly logger?;
-    constructor(entry: CatalogEntry, modelDir: string, loader: ModuleLoader, logger?: MemoryLogger);
+    /** 输入截断（与远程路径同源的 embedding.maxInputChars 配置，缺省 5000）。 */
+    private readonly maxInputChars;
+    constructor(entry: CatalogEntry, modelDir: string, loader: ModuleLoader, logger?: MemoryLogger, maxInputChars?: number);
     getDimensions(): number;
     getProviderInfo(): EmbeddingProviderInfo;
     isReady(): boolean;

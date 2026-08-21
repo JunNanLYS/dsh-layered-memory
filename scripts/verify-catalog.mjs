@@ -15,7 +15,7 @@ import { fetch as undiciFetch, ProxyAgent } from 'undici';
 
 const mirror = (process.argv.find((a, i, arr) => arr[i - 1] === '--mirror')) ?? 'https://hf-mirror.com';
 const proxyArg = process.argv.find((a, i, arr) => arr[i - 1] === '--proxy');
-const { resolveProxyUrl } = await import('../dist/store/download-queue.js');
+const { resolveProxyUrl, maskProxyUrl } = await import('../dist/store/download-queue.js');
 const { MODEL_CATALOG } = await import('../dist/store/model-catalog.js');
 
 let host = '';
@@ -26,8 +26,16 @@ try {
   process.exit(1);
 }
 const proxy = resolveProxyUrl(proxyArg, host);
-const agent = proxy ? new ProxyAgent(proxy) : undefined;
-if (proxy) console.log(`走代理 ${proxy}`);
+let agent;
+if (proxy) {
+  try {
+    agent = new ProxyAgent(proxy);
+    console.log(`走代理 ${maskProxyUrl(proxy)}`);
+  } catch (err) {
+    console.warn(`代理配置无效（${maskProxyUrl(proxy)}），已忽略并直连: ${err.message}`);
+    agent = undefined;
+  }
+}
 
 const get = async (url) => {
   const res = await undiciFetch(url, ...(agent ? [{ dispatcher: agent }] : []));

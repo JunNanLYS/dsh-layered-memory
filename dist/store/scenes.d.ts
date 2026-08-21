@@ -19,5 +19,6 @@ export declare class SceneStore {
     /** 场景导航索引（召回注入用）。 */
     navigation(): Promise<string>;
 }
-/** 文件名归一化：只允许字母数字 CJK - _ .，以 .md 结尾，去空格/标点。 */
+/** 文件名归一化：只允许字母数字 CJK - _ .，以 .md 结尾，去空格/标点。
+ *  超长名截断到 120 字符（ENAMETOOLONG 防御）；Windows 保留设备名加前缀 _ 避让。 */
 export declare function sanitizeFilename(name: string): string;

@@ -101,4 +101,7 @@ export declare class ModelDownloadQueue {
  * 镜像直连往往间歇不可达（真实事故：直连超时与污染字节交替出现）。
  */
 export declare function resolveProxyUrl(setting: string | undefined, host: string): string;
+/** 代理 URL 日志脱敏：剥掉 userinfo（内网代理常带 user:pass 凭据），只留 scheme//host；
+ *  解析失败的串原样也可能是凭据形态，返回占位符。 */
+export declare function maskProxyUrl(proxy: string): string;
 export {};

@@ -130,7 +130,11 @@ function parseMeta(content: string, name: string): SceneSummary {
   return s;
 }
 
-/** 文件名归一化：只允许字母数字 CJK - _ .，以 .md 结尾，去空格/标点。 */
+/** Windows 保留设备名（CON.md 等带扩展形态同样命中设备语义，须整体避开）。 */
+const RESERVED_NAME_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/** 文件名归一化：只允许字母数字 CJK - _ .，以 .md 结尾，去空格/标点。
+ *  超长名截断到 120 字符（ENAMETOOLONG 防御）；Windows 保留设备名加前缀 _ 避让。 */
 export function sanitizeFilename(name: string): string {
   let n = name.trim();
   if (!n.toLowerCase().endsWith('.md')) n = `${n}.md`;
@@ -139,6 +143,10 @@ export function sanitizeFilename(name: string): string {
     .replace(/-{2,}/g, '-')
     .replace(/-+\.md$/i, '.md')
     .replace(/^-+|-+$/g, '');
+  let stem = n.slice(0, -3);
+  if (stem.length > 120) stem = stem.slice(0, 120).replace(/[-._]+$/, '');
+  if (RESERVED_NAME_RE.test(stem)) stem = `_${stem}`;
+  n = `${stem}.md`;
   if (!n || !/^[\w\u3400-\u9fff\uf900-\ufaff.\-_]+\.md$/i.test(n)) return '';
   return n;
 }

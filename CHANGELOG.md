@@ -3,14 +3,59 @@
 本文件记录 dsh-layered-memory（0.5.0 前名为 dsh-memory-plugin）的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+全面代码审查（安全 + 健壮性 + 文档一致性）后的修复批次。
+
+### 修复
+
+- **畸形代理配置不再拖垮插件加载**（高危）：`embedding.proxy` 写成无 scheme 形态
+  （如 `127.0.0.1:7890`）或代理环境变量本身无 scheme 时，`ProxyAgent` 构造器同步
+  抛 TypeError → apply 失败。现与畸形 mirror 同款容错：捕获后降级直连 + warn。
+- **代理 URL 日志脱敏**：下载走代理的日志此前原样输出代理 URL（可能带
+  user:pass 凭据）并持久化到 `memory.log`，现剥离 userinfo 只留 `scheme//host`。
+- **`NO_PROXY=*` 通配生效**（此前 `*` 条目永不匹配，设置了仍走代理）。
+- **双写失败的可见性闭环**：L0/L1 的"JSONL 事实源已写、检索库批量写失败"
+  此前静默（记录从此不可检索、去重候选缺失），现升 error 日志并提示可用
+  「重建记忆」从事实源全量重导修复。
+- **原子写耐久性**：state/pending/场景/persona 的 tmp+rename 原子写补上 fsync
+  数据块（此前断电可能留下空文件/半截）；tmp 名加随机段防同毫秒碰撞，失败
+  路径清理孤儿 tmp。
+- **运行时安装器取消语义**（Windows 主平台）：ci 阶段被取消后不再误入
+  "ci 失败"回退分支白跑一次 install；ci 退出与回退起跑之间的间隙里取消同样
+  生效；`shell:true` 下 kill 改用 `taskkill /T /F` 按进程树终止（此前只杀
+  cmd.exe，npm 孙进程继续跑，超时与取消都只是表面停止）。
+- **本地嵌入截断读配置**：`embedding.maxInputChars` 此前只对远程嵌入生效，
+  本地路径硬编码 5000，现两路同源。
+- **场景文件名加固**：Windows 保留设备名（CON/NUL/COM1…带扩展形态）加 `_`
+  前缀避让；超长名截断到 120 字符（ENAMETOOLONG 防御）。
+- **旧版 L1 迁移判据**：旧 `records.jsonl` 混入坏行时迁移永不完成（每次启动
+  重复导入同一批），判据改按过滤后的有效行数。
+- **RPC 入参上限**：sessionId ≤512 / query ≤4096 / provider·model·activeModel ≤200、
+  分页 offset ≤100 万——防 loopback 面畸形超长载荷（session-modes.json 膨胀、
+  jieba 全量分词 CPU 峰值）。
+- **FTS/向量检索 limit 守卫**：三个 search 入口拒绝 `limit ≤ 0`（SQLite 负 LIMIT
+  = 无界；当前调用面已钳制，纯防御未来新增调用方）。
+- **工具调用缺 agent 标识告警**：`exec.agent` 未传递时档位过滤退化为全族检索，
+  现告警一次（fail-open 行为保持，不拒绝工具调用）。
+
+### 文档
+
+- 中文 README 补齐英文版独有的「日志与故障排查」整节（违反中英同步铁律的缺口），
+  两版同步补 JSONL 耐久性边界说明；pin 示例版本 0.8.0 → 0.8.2。
+- **修正 0.8.2 条目两处事实错误**：① peer 范围实际保持 `^0.1.0-rc.6`（rc.6~rc.8
+  兼容），"peer 要求随之变为 dsh ≥ 0.1.0-rc.8" 与 package.json 不符；② 引用的
+  `docs/dsh-dev-experience.md` 不随仓库分发（gitignored），对外是悬空引用。
+
 ## [0.8.2] — 2026-08-20
 
 宿主依赖跟进 dsh 0.1.0-rc.8。
 
-- **宿主依赖钉死升级 0.1.0-rc.6 → 0.1.0-rc.8**：rc.8 实测**零 API 漂移**（类型编译/冒烟/
-  真机启动全过）。注意 peer 要求随之变为 dsh ≥ 0.1.0-rc.8；rc.8 起 dsh 本体改为
-  **全局安装**布局（`profiles/node_modules` 由 heal 机制维护为符号链接农场），
-  旧"实体树"装法会启动失败（详见 `docs/dsh-dev-experience.md` 第 11 节）。
+- **宿主依赖钉死升级 0.1.0-rc.6 → 0.1.0-rc.8**（devDependencies 精确钉死，用于
+  开发/测试；peerDependencies 保持 `^0.1.0-rc.6` 范围——rc.6→rc.8 实测**零 API
+  漂移**，类型编译/冒烟/真机启动全过）。rc.8 起 dsh 本体改为**全局安装**布局
+  （`profiles/node_modules` 由 heal 机制维护为符号链接农场），旧"实体树"装法
+  会启动失败。
 - bench `run.mjs`：dsh CLI 入口改为解析链（`DSH_BIN` → npm 全局前缀 → 旧布局兜底），
   去除硬编码个人路径，其它机器可直接运行。
 

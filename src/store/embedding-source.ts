@@ -148,6 +148,7 @@ export function makeLocalServiceFactory(
   installer: RuntimeInstaller,
   downloader: ModelDownloadQueue,
   logger?: MemoryLogger,
+  maxInputChars?: number,
 ): (modelId: string) => LocalEmbeddingService | null {
   return (modelId: string) => {
     const entry = catalogById(modelId);
@@ -157,6 +158,7 @@ export function makeLocalServiceFactory(
       downloader.modelsDir(entry.id),
       () => Promise.resolve(installer.resolveModule() as TransformersModuleLike),
       logger,
+      maxInputChars,
     );
   };
 }
@@ -260,7 +262,8 @@ export class EmbeddingManager {
 
   /** 构造绑定真实运行时 loader 的本地服务（deps.makeLocal 可注入，测试替换）。 */
   private makeLocalService(modelId: string): LocalEmbeddingService | null {
-    const factory = this.deps.makeLocal ?? makeLocalServiceFactory(this.installer, this.downloader, this.deps.logger);
+    const factory =
+      this.deps.makeLocal ?? makeLocalServiceFactory(this.installer, this.downloader, this.deps.logger, this.deps.cfg.embedding.maxInputChars);
     return factory(modelId);
   }
 

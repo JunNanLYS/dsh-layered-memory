@@ -7,11 +7,14 @@ export class LocalEmbeddingService {
     entry;
     loader;
     logger;
-    constructor(entry, modelDir, loader, logger) {
+    /** 输入截断（与远程路径同源的 embedding.maxInputChars 配置，缺省 5000）。 */
+    maxInputChars;
+    constructor(entry, modelDir, loader, logger, maxInputChars) {
         this.entry = entry;
         this.modelDir = modelDir;
         this.loader = loader;
         this.logger = logger;
+        this.maxInputChars = maxInputChars && maxInputChars > 0 ? maxInputChars : 5000;
     }
     getDimensions() {
         return this.entry.dims;
@@ -59,7 +62,7 @@ export class LocalEmbeddingService {
         const out = [];
         // CPU 推理逐条最稳（ORT session 内部并行），量级为本插件写入/重嵌批（≤16）没问题
         for (const text of texts) {
-            const result = await this.extractor([text.slice(0, 5000)], { pooling: this.entry.pooling, normalize: true });
+            const result = await this.extractor([text.slice(0, this.maxInputChars)], { pooling: this.entry.pooling, normalize: true });
             out.push(new Float32Array(result[0].data));
         }
         return out;

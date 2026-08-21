@@ -132,6 +132,15 @@ async function buildStats(cfg, stores, status) {
         thresholds: { l2MinNewMemories: cfg.l2.minNewMemories, l3Interval: cfg.l3.interval },
     };
 }
+/** RPC 字符串入参上限校验：防 loopback 面畸形超长载荷
+ *  （超长 sessionId 持久化进 session-modes.json / 超长 query 触发 jieba 全量分词 CPU 峰值）。 */
+function expectSessionId(v) {
+    if (typeof v !== 'string' || !v)
+        throw new Error('sessionId 缺失');
+    if (v.length > 512)
+        throw new Error('sessionId 过长（≤512 字符）');
+    return v;
+}
 async function handleEndpoint(endpoint, payload, deps) {
     const { cfg, stores, status, live, modes, dataDir, rebuild, embedManager } = deps;
     switch (endpoint) {
@@ -141,23 +150,21 @@ async function handleEndpoint(endpoint, payload, deps) {
             if (!modes)
                 throw new Error('档位存储未初始化');
             const p = (payload ?? {});
-            if (typeof p.sessionId !== 'string' || !p.sessionId)
-                throw new Error('sessionId 缺失');
-            return { sessionId: p.sessionId, mode: modes.get(p.sessionId), defaultMode: modes.default };
+            const sessionId = expectSessionId(p.sessionId);
+            return { sessionId, mode: modes.get(sessionId), defaultMode: modes.default };
         }
         case 'dsh-memory/session-mode-set': {
             if (!modes)
                 throw new Error('档位存储未初始化');
             const p = (payload ?? {});
-            if (typeof p.sessionId !== 'string' || !p.sessionId)
-                throw new Error('sessionId 缺失');
+            const sessionId = expectSessionId(p.sessionId);
             const allowed = ['auto', 'chat', 'work', 'off'];
             if (typeof p.mode !== 'string' || !allowed.includes(p.mode)) {
                 throw new Error(`非法档位: ${String(p.mode)}（允许 ${allowed.join('/')}）`);
             }
-            modes.set(p.sessionId, p.mode);
-            deps.logger.info(`[memory] 会话档位设置 session=${p.sessionId} mode=${p.mode}`);
-            return { sessionId: p.sessionId, mode: p.mode };
+            modes.set(sessionId, p.mode);
+            deps.logger.info(`[memory] 会话档位设置 session=${sessionId} mode=${p.mode}`);
+            return { sessionId, mode: p.mode };
         }
         case 'dsh-memory/settings-get': {
             const s = live?.get();
@@ -251,8 +258,10 @@ async function handleEndpoint(endpoint, payload, deps) {
         }
         case 'dsh-memory/list-records': {
             const p = (payload ?? {});
+            if (p.query !== undefined && p.query.length > 4096)
+                throw new Error('query 过长（≤4096 字符）');
             const limit = Math.min(Math.max(Number(p.limit) || 50, 1), 200);
-            const offset = Math.max(Number(p.offset) || 0, 0);
+            const offset = Math.min(Math.max(Number(p.offset) || 0, 0), 1_000_000);
             // 关键词路径：复用检索唯一缝（与召回同源），取回后做场景过滤 + 手工分页。
             // 检索侧单次上限 200：分页窗口触达上限时显式标记 truncated（结果可能不完整），
             // 不再静默返回空结果让用户误以为"没有更多"等于"不存在更多"。
@@ -371,6 +380,8 @@ async function handleEndpoint(endpoint, payload, deps) {
             const p = (payload ?? {});
             if (typeof p.provider !== 'string' || !p.provider)
                 throw new Error('provider 缺失');
+            if (p.provider.length > 200)
+                throw new Error('provider 过长（≤200 字符）');
             // 两个内置适配器（deepseek/pi-ai）的 listModels 都读本地快照不触网；
             // 仍加超时兜底，防第三方适配器实现为远端查询拖死 RPC 轮询
             const models = await Promise.race([
@@ -394,6 +405,9 @@ async function handleEndpoint(endpoint, payload, deps) {
             const p = (payload ?? {});
             if (p.source !== 'remote' && p.source !== 'local' && p.source !== 'off') {
                 throw new Error('source 必须是 remote | local | off');
+            }
+            if (typeof p.activeModel === 'string' && p.activeModel.length > 200) {
+                throw new Error('activeModel 过长（≤200 字符）');
             }
             const r = embedManager.requestSource({ source: p.source, activeModel: p.activeModel ?? null });
             if (!r.accepted)

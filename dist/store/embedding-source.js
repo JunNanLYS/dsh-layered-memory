@@ -102,12 +102,12 @@ export async function resolveInitialEmbedding(cfg, sourceStore, downloader, make
     return { svc, dims: cfg.embedding.dimensions, providerInfo: svc.getProviderInfo() };
 }
 /** 本地服务构造工厂（index.ts 的初始解析与 Manager 共用一份实现，防漂移）。 */
-export function makeLocalServiceFactory(installer, downloader, logger) {
+export function makeLocalServiceFactory(installer, downloader, logger, maxInputChars) {
     return (modelId) => {
         const entry = catalogById(modelId);
         if (!entry)
             return null;
-        return new LocalEmbeddingService(entry, downloader.modelsDir(entry.id), () => Promise.resolve(installer.resolveModule()), logger);
+        return new LocalEmbeddingService(entry, downloader.modelsDir(entry.id), () => Promise.resolve(installer.resolveModule()), logger, maxInputChars);
     };
 }
 export class EmbeddingManager {
@@ -167,7 +167,7 @@ export class EmbeddingManager {
     }
     /** 构造绑定真实运行时 loader 的本地服务（deps.makeLocal 可注入，测试替换）。 */
     makeLocalService(modelId) {
-        const factory = this.deps.makeLocal ?? makeLocalServiceFactory(this.installer, this.downloader, this.deps.logger);
+        const factory = this.deps.makeLocal ?? makeLocalServiceFactory(this.installer, this.downloader, this.deps.logger, this.deps.cfg.embedding.maxInputChars);
         return factory(modelId);
     }
     /** 活切换请求：验证通过即接受，后台执行应用链（进度轮询可见）。 */
