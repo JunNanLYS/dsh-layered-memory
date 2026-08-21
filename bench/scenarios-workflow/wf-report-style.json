@@ -1,0 +1,38 @@
+{
+  "id": "wf-report-style",
+  "family": "work",
+  "kind": "workflow",
+  "marker": "日报",
+  "sandboxFiles": {
+    "tools/tally.sh": "#!/usr/bin/env bash\n# tally：数据组日报汇总工具。用法: tools/tally.sh <csv路径>\n# 输出「合计 <总额>」（千分位）——金额一律以本工具输出为准，不要手算。\n[ -f \"$1\" ] || { echo '数据文件不存在' >&2; exit 2; }\nraw=$(awk -F, 'NR>1 { s += $2 } END { print s }' \"$1\")\ngrouped=$(printf '%s' \"$raw\" | sed -E 's/([0-9]+)([0-9]{3})$/\\1,\\2/')\necho \"合计 ${grouped}\"\n",
+    "data/sales-0902.csv": "date,amount\n09-01,820\n09-02,1180\n09-03,460\n",
+    "data/sales-0909.csv": "date,amount\n09-07,1215\n09-08,1100\n09-09,1200\n"
+  },
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "数据组日报的固定做法，每期都一样，记牢：数据在 data/ 下的 csv（每天一行 date,amount）；金额一律用 tools/tally.sh <csv> 汇总，以它的输出为准（自带千分位），不要手算。日报文件写到 out/daily-<期号>.md，期号取数据文件名里的日期（sales-0902.csv 就是 0902）。格式四条：1) 第一行标题「# 日报 <期号>」；2) 正文必须有「## 摘要」和「## 明细」两节；3) 金额保持千分位写法；4) 文件最后一行固定页脚「—— 数据组·内部使用，勿外发」。现在把 0902 这期出了（数据 sales-0902.csv）。"
+      ],
+      "reteach": "日报约定重述：数据 data/ 下的 csv；金额用 tools/tally.sh 汇总（千分位，以工具输出为准）；文件 out/daily-<期号>.md（期号取 csv 文件名里的日期）；标题「# 日报 <期号>」；「## 摘要」+「## 明细」两节；末行页脚「—— 数据组·内部使用，勿外发」。本期 sales-0902.csv（期号 0902）。"
+    },
+    {
+      "kind": "probe",
+      "messages": [
+        "下一期数据到了，把日报出了。"
+      ],
+      "reteach": "日报约定重述：金额用 tools/tally.sh 汇总（千分位，以工具输出为准）；文件 out/daily-<期号>.md（期号取 csv 文件名里的日期）；标题「# 日报 <期号>」；「## 摘要」+「## 明细」两节；末行页脚「—— 数据组·内部使用，勿外发」。本期新数据是 data/sales-0909.csv（期号 0909）。",
+      "maxExchanges": 2
+    }
+  ],
+  "teachChecks": [
+    { "file": "out/daily-0902.md", "contains": ["# 日报 0902", "## 摘要", "## 明细"] },
+    { "file": "out/daily-0902.md", "contains": ["2,460", "—— 数据组·内部使用，勿外发"] }
+  ],
+  "probeChecks": [
+    { "file": "out/daily-0909.md", "contains": ["# 日报 0909"] },
+    { "file": "out/daily-0909.md", "contains": ["## 摘要", "## 明细"] },
+    { "file": "out/daily-0909.md", "contains": ["3,515"] },
+    { "file": "out/daily-0909.md", "contains": ["—— 数据组·内部使用，勿外发"] }
+  ]
+}

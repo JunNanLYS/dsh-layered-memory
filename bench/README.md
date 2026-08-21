@@ -6,7 +6,8 @@
 
 ```
 bench/
-├─ scenarios/            # 15 个场景（chat×8 + work×7），每场景 6 题共 90 题
+├─ scenarios/            # 15 个对话场景（chat×8 + work×7），每场景 6 题共 90 题
+├─ scenarios-workflow/   # 7 个工作流场景（任务延续 ×4 / 流程更新 / 双胞胎消歧 / 风格规范）
 ├─ harness/
 │  ├─ dsh-bench-runner/  # cordis 驱动包（装入 bench profile，apply 即跑）
 │  ├─ patch-arm-on.yml   # A 组：记忆开 + 蒸馏提速 + 无工具面 + 基准 persona
@@ -57,6 +58,8 @@ node bench/harness/run.mjs --track workflow --arm B --provider deepseek-official
 ```
 
 - 场景在 `bench/scenarios-workflow/`：教学会话讲清工作流约定并完成首批（工具在沙箱目录内真实执行）；探针会话给模糊延续任务（"再发一版"），**此前沙箱会重置到原始状态**（防 B 组从教学产物"考古"出流程）；
+- 场景三类考法：**任务延续** ×4（事故处置 / 发版步骤 / 报表管线 / 站点登录取数）；**流程知识更新**（`wf-heap-update`：教学 v1 → 变更会话宣布改版 v2 → 探针考"现在生效的流程"——答出旧流程即旧产物复活，是 L1 去重更新的操作化度量）；**消歧与规范**（`wf-twin-runbook` 双胞胎 runbook，改错服务的配置由负检查判负；`wf-report-style` 考命名 / 结构 / 千分位 / 页脚等风格约定跨会话落地）；
+- 完成度校验四型判据（`checks.js`）：`contains`（正检查）/ `notContains`（禁词，防误改）/ `absent`（旧流程专属产物不得复活）/ `exists`（只看有无）；流程更新场景用可选 `change` 会话（教学后同沙箱追加"改版"教学，重置只发生在探针前）；
 - 指标：完成度校验（产物文件+关键内容，程序化）+ 反问次数 + 输入/输出 token / 步骤（供应商上报，含缓存命中拆分）；
 - 工具面仅开 bash/fs/fs-search，权限 `bench-sandbox`（写限定沙箱、免审批）；runner 记录全部工具调用审计，疑似越出沙箱读记忆库会打 `snoopSuspect` 标记。
 
@@ -81,7 +84,7 @@ node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --mo
 node bench/harness/compare.mjs bench/baseline/run-A bench/results/run-A-<新> [基线B 新B] --out compare.md
 ```
 
-compare 的判定规则：环境头一致 + A 组总分提升超 ±5pp 噪声带 + 无题型单项回归 → **正向**；B 组漂移 >10pp → 疑似环境漂移而非插件改动。
+compare 的判定规则：环境头一致 + A 组总分提升超 ±5pp 噪声带 + 无题型单项回归 → **正向**；B 组漂移 >10pp → 疑似环境漂移而非插件改动。注意 compare 只覆盖对话赛道的题型准确率（工作流赛道人工比 report 的完成度 / 反问 / token 表）；扩场景库后与旧基线 compare 会因场景清单不一致告警"环境不一致"——此时重跑基线，或用 `--scenarios` 指向同子集目录对比。
 
 ## 运行机制（关键事实）
 

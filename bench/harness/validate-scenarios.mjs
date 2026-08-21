@@ -1,9 +1,13 @@
 // 场景库结构校验：node bench/harness/validate-scenarios.mjs [目录]
-// 断言每个场景：id/family 合法、teach+change 会话存在且非空、恰好 6 题且五类型齐备、
-// 判分方式与 gold/stale 的搭配合法。退出码非 0 即校验失败（可挂 CI）。
+// 对话场景：id/family 合法、teach+change 会话存在且非空、恰好 6 题且六类型齐备、
+// 判分方式与 gold/stale 的搭配合法。
+// 工作流场景：teach/probe 会话存在、可选 change 会话（流程更新题）、teach/change/probeChecks
+// 每条恰一种判据（contains / notContains / absent / exists）、marker 出现在教学文本中。
+// 退出码非 0 即校验失败（可挂 CI）。
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { checkShapeProblem } from './dsh-bench-runner/src/checks.js';
 
 const dir = path.resolve(process.argv[2] || new URL('../scenarios', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 const REQUIRED_TYPES = ['extraction', 'multihop', 'temporal', 'update', 'scene', 'abstention'];
@@ -31,21 +35,38 @@ for (const f of files) {
     if (!sc.marker) problems.push('缺 marker（跨场景污染检测的唯一标记词，须出现在教学文本中）');
     if (!sc.sandboxFiles || Object.keys(sc.sandboxFiles).length === 0) problems.push('缺 sandboxFiles');
     const teach = sc.sessions?.find((s) => s.kind === 'teach');
+    const change = sc.sessions?.find((s) => s.kind === 'change');
     const probe = sc.sessions?.find((s) => s.kind === 'probe');
     if (!teach?.messages?.length) problems.push('缺 teach 会话或消息为空');
+    if (change && !change.messages?.length) problems.push('change 会话存在但消息为空');
     if (!probe?.messages?.length) problems.push('缺 probe 会话或消息为空');
     if (!probe?.reteach) problems.push('probe 缺 reteach（B 组反问时的固定重述）');
+    if (sc.marker && !(sc.sessions ?? []).some((x) => (x.messages ?? []).join('\n').includes(sc.marker))) {
+      problems.push(`marker「${sc.marker}」未出现在任一教学会话文本中`);
+    }
     for (const key of ['teachChecks', 'probeChecks']) {
       if (!Array.isArray(sc[key]) || sc[key].length === 0) problems.push(`缺 ${key}（完成度校验）`);
       for (const [i, c] of (sc[key] ?? []).entries()) {
-        if (!c.file || !Array.isArray(c.contains) || c.contains.length === 0) problems.push(`${key}[${i}] 缺 file 或 contains`);
+        const p = checkShapeProblem(c);
+        if (p) problems.push(`${key}[${i}] ${p}`);
+      }
+    }
+    // changeChecks 可选：有 change 会话时用于校验新版流程演练到位（诊断归因用）
+    if (sc.changeChecks !== undefined) {
+      if (!Array.isArray(sc.changeChecks) || sc.changeChecks.length === 0) problems.push('changeChecks 存在但为空');
+      if (!change) problems.push('changeChecks 存在但缺 change 会话');
+      for (const [i, c] of (sc.changeChecks ?? []).entries()) {
+        const p = checkShapeProblem(c);
+        if (p) problems.push(`changeChecks[${i}] ${p}`);
       }
     }
     if (problems.length) {
       console.error(`✗ ${f}（${sc.id ?? '?'} workflow）：\n    - ${problems.join('\n    - ')}`);
       failed++;
     } else {
-      console.log(`✓ ${f}（${sc.id}，workflow，teach ${sc.teachChecks.length} + probe ${sc.probeChecks.length} 项校验）`);
+      const parts = [`teach ${sc.teachChecks.length}`, `probe ${sc.probeChecks.length}`];
+      if (change) parts.push(`change ${(sc.changeChecks ?? []).length}`);
+      console.log(`✓ ${f}（${sc.id}，workflow，${parts.join(' + ')} 项校验）`);
     }
     continue;
   }

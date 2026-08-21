@@ -23,6 +23,18 @@
   schema 对齐）；设置页预算提示与代码注释的"high/max ×4"补全为
   high/xhigh/max。
 
+### 基准
+
+- **DSH-MemBench 工作流赛道扩至 7 场景**（`bench/`），新增三类考法：
+  流程知识更新（`wf-heap-update`——教学 v1 → 变更会话宣布改版 v2 → 探针考
+  "现在生效的流程"，旧流程专属产物不得再出现，L1 去重更新的操作化度量）、
+  相似工作流消歧（`wf-twin-runbook`——双胞胎 runbook，改错服务的配置由负检查
+  判负）、风格规范延续（`wf-report-style`——命名/结构/千分位/页脚约定跨会话
+  落地）。完成度校验从单一正检查扩为四型判据（`contains`/`notContains`/
+  `absent`/`exists`），检查器抽为可独立单测的 `checks.js`；runner 支持可选
+  `change` 会话；场景库校验同步收紧（判据恰选其一、marker 须出现在教学文本）。
+  正式基线（`bench/baseline/`）仍为 4 场景版，扩库后首次回归跑需重建基线。
+
 ## [0.8.3] — 2026-08-21
 
 ### 变更

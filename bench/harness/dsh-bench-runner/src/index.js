@@ -20,14 +20,13 @@ import { installModelSelection } from '@deepseek-ai/dsh-agent';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import z from '@deepseek-ai/schemastery';
+import { SAFE_NAME, safeJoin, evalFileChecks } from './checks.js';
 
 export const name = 'dsh-bench-runner';
 export const inject = ['agentDefaultModel', 'agents', 'sessions', 'llm'];
 export const Config = z.object({});
 
 const POLL_MS = 5000;
-/** 文件名白名单：仅字母数字点下划线连字符，杜绝任何路径片段。 */
-const SAFE_NAME = /^[A-Za-z0-9._-]+$/;
 
 export function apply(ctx) {
   run(ctx).then(
@@ -124,20 +123,6 @@ function listScenarioFiles(dir) {
 
 function readFileInDir(dir, name) {
   return fs.readFileSync(safeJoin(dir, name), 'utf8');
-}
-
-/** 拼接并校验相对路径不越出 base 目录：逐段白名单（段内仅字母数字点下划线连字符）。 */
-function safeJoin(base, rel) {
-  const root = path.resolve(base);
-  const segs = String(rel).split(/[\\/]+/).filter((s) => s !== '');
-  if (segs.length === 0 || segs.some((s) => !SAFE_NAME.test(s))) {
-    throw new Error(`非法相对路径：${rel}`);
-  }
-  const full = path.resolve(root, ...segs);
-  if (full !== root && !full.startsWith(root + path.sep)) {
-    throw new Error(`路径越界：${rel}`);
-  }
-  return full;
 }
 
 // ---------------------------------------------------------------------------
@@ -400,20 +385,9 @@ async function runWorkflowScenario(ctx, sc, opts) {
     }
     if (site) fs.writeFileSync(safeJoin(sandbox, '.site-port'), `${site.port}\n`, 'utf8');
   };
-  const runChecks = (list) => (list ?? []).map((c) => {
-    let ok = false, detail = '';
-    try {
-      const file = safeJoin(sandbox, c.file);
-      const text = fs.readFileSync(file, 'utf8');
-      const missing = (c.contains ?? []).filter((k) => !text.includes(k));
-      ok = missing.length === 0;
-      detail = ok ? '命中' : `缺关键词：${missing.join('、')}`;
-    } catch {
-      detail = '产物文件不存在';
-    }
-    return { file: c.file, ok, detail };
-  });
+  const runChecks = (list) => evalFileChecks(sandbox, list);
   const teach = sc.sessions.find((s) => s.kind === 'teach');
+  const change = sc.sessions.find((s) => s.kind === 'change');
   const probe = sc.sessions.find((s) => s.kind === 'probe');
   if (!teach || !probe) throw new Error(`工作流场景 ${sc.id} 缺 teach 或 probe 会话`);
 
@@ -425,6 +399,18 @@ async function runWorkflowScenario(ctx, sc, opts) {
       maxExchanges: 2,
     });
     const teachChecks = runChecks(sc.teachChecks);
+    // 可选变更会话（流程知识更新题用）：在同一沙箱里追加教学——"流程改版，旧作废"，
+    // 探针考的是召回出【现行】流程还是被旧记忆带偏（L1 去重更新的操作化度量）。
+    let changeRun = null;
+    let changeChecks = [];
+    if (change) {
+      changeRun = await driveScriptedSession(ctx, opts.selection, `${sc.id}-change`, change.messages, {
+        cwd: sandbox,
+        reteach: change.reteach ?? probe.reteach,
+        maxExchanges: change.maxExchanges ?? 2,
+      });
+      changeChecks = runChecks(sc.changeChecks);
+    }
     // 探针前重置沙箱到原始状态：抹掉教学产物，防止 B 组从文件系统"考古"工作流
     //（否则 B 组照抄上一次的产物格式即可，记忆对照失效）。
     resetSandbox();
@@ -437,17 +423,22 @@ async function runWorkflowScenario(ctx, sc, opts) {
       maxExchanges: probe.maxExchanges ?? 2,
     });
     const probeChecks = runChecks(sc.probeChecks);
-    const allChecks = [...teachChecks.map((c) => ({ phase: 'teach', ...c })), ...probeChecks.map((c) => ({ phase: 'probe', ...c }))];
+    const allChecks = [
+      ...teachChecks.map((c) => ({ phase: 'teach', ...c })),
+      ...changeChecks.map((c) => ({ phase: 'change', ...c })),
+      ...probeChecks.map((c) => ({ phase: 'probe', ...c })),
+    ];
     return {
       id: sc.id,
       family: sc.family,
       kind: 'workflow',
       teach: teachRun,
-      change: { metrics: null, skipped: true },
+      change: changeRun ? { metrics: changeRun.metrics, skipped: false } : { metrics: null, skipped: true },
       distill,
       probes: [],
       workflow: {
         probe: { asks: probeRun.asks, toolAudit: probeRun.toolAudit },
+        change: changeRun ? { asks: changeRun.asks, toolAudit: changeRun.toolAudit } : null,
         teachToolAudit: teachRun.toolAudit,
         checks: allChecks,
         checksPassed: allChecks.filter((c) => c.ok).length,
