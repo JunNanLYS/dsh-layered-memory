@@ -5,6 +5,24 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **设置页新思考档位词汇被写入门拒绝**（0.8.3 引入）：档位表扩至八词表时
+  `settings-set` 的 RPC 白名单漏同步（仍只认 `''/off/high/max`），设置页选
+  `none/minimal/low/medium/xhigh` 一律报"非法思考档位"并回滚。现白名单与
+  schema/settings 同源——词汇表收敛为 `config.ts` 的 `EFFORT_CHOICES` 单一
+  事实源（此前同一列表在 4 处字面抄写）。
+- **显式 `xhigh` 输出预算被双重放大 ×16**（0.8.3 引入）：阶段侧 `layerMaxTokens`
+  与 `callLLM` 自动档防线各自持有高档位字面量表且分叉（防线漏 `xhigh`），
+  配置 `xhigh` 且模型声明支持时先 ×4 再 ×4。现两侧共用 `HIGH_EFFORT_TIERS`
+  单一常量，配置本身就是高档位时防线不再放大。
+- **思考档选择器补「自动」项**：0.8.3 删除"跟随配置"选项后选择器只剩模型声明
+  档位，选过显式档位便无法从 UI 回到自动。现首项固定「自动」（key=''，点击
+  回写空串），同时把选项构造的重复三元收敛为单次计算。
+- 文档漂移：README 中英两版 `llm.reasoningEffort` 值列表补 `minimal`（与
+  schema 对齐）；设置页预算提示与代码注释的"high/max ×4"补全为
+  high/xhigh/max。
+
 ## [0.8.3] — 2026-08-21
 
 ### 变更
