@@ -66,7 +66,9 @@ async function run(ctx) {
 
   // 模型钉死：优先环境变量（绕开 settings.yaml 用户层对默认模型的热替换），缺省回落当前默认。
   // reasoningEffort 缺省不传 = 跟随 provider 默认（installModelSelection 的 absent 语义）。
-  const fallback = ctx.get('agentDefaultModel').currentSelection();
+  // agentDefaultModel 是可选服务（并发 heal 竞态等极端情况下可能缺失）——缺失时
+  // 回落空对象（run.mjs 正常路径总会显式传 DSH_BENCH_PROVIDER/MODEL，不依赖这里）
+  const fallback = ctx.get('agentDefaultModel')?.currentSelection?.() ?? {};
   const selection = {
     provider: process.env.DSH_BENCH_PROVIDER || fallback.provider,
     model: process.env.DSH_BENCH_MODEL || fallback.model,

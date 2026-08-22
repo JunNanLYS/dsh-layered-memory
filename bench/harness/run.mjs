@@ -79,8 +79,9 @@ const distillTimeout = String(arg('distill-timeout', 120000));
 
 const dshBin = [
   process.env.DSH_BIN,
-  path.join(os.homedir(), '.npm-global/node_modules/@deepseek-ai/dsh/lib/bin.js'), // rc.8 起全局安装
-  path.join(os.homedir(), '.dsh/profiles/node_modules/@deepseek-ai/dsh/lib/bin.js'), // 旧布局/heal junction 兜底
+  // rc.8 起全局安装；旧布局兜底
+  path.join(os.homedir(), '.npm-global/node_modules/@deepseek-ai/dsh/lib/bin.js'),
+  path.join(os.homedir(), '.dsh/profiles/node_modules/@deepseek-ai/dsh/lib/bin.js'),
 ].filter(Boolean).find((p) => fs.existsSync(p));
 if (!dshBin) {
   console.error('找不到 dsh CLI（依次找 DSH_BIN → npm 全局前缀 → ~/.dsh/profiles；可用环境变量 DSH_BIN 覆盖）');
@@ -225,15 +226,27 @@ if (arm === 'AB') {
   const outA = path.join(repoRoot, 'bench', 'results', `${wfPrefix}A-${stamp}`);
   const outB = path.join(repoRoot, 'bench', 'results', `${wfPrefix}B-${stamp}`);
   const childEnv = { ...process.env, ...gwEnv, DSH_BENCH_SKIP_PURGE: '1', DSH_BENCH_NO_AUTOREPORT: '1', ...(gwPatchFile ? { DSH_BENCH_GW_PATCH: gwPatchFile } : {}) };
+  // 并发启动防线（2026-08-22 实测事故）：dsh 每次启动会 heal 共享的
+  // ~/.dsh/profiles/node_modules 平铺符号链接——链接需要重指时是先 unlink 再建，
+  // 两个子进程同时落在该窗口会互踩 ENOENT 崩溃。①父进程先串行预热一次 boot
+  // （完成待重指的 heal，链接正确后启动不再触碰）；②B 子进程延迟 15s 错峰。
+  {
+    const warm = spawnSync(process.execPath, [dshBin, '--profile', 'bench', '--dump-config'], { cwd: repoRoot, encoding: 'utf8' });
+    if (warm.status !== 0) {
+      console.error(`[run] ✗ bench profile 预热失败（退出码 ${warm.status}）——请先单独排查：dsh --profile bench --dump-config`);
+      process.exit(2);
+    }
+    console.log('[run] profile 预热完成（heal 已在单进程内收敛）');
+  }
   console.log(`[run] AB 并行：A → ${outA}；B → ${outB}（各 ${repeats} 次）`);
-  const children = [
-    ['A', outA],
-    ['B', outB],
-  ].map(([a, out]) => spawn(process.execPath, [fileURLToPath(import.meta.url), '--arm', a, '--track', track, '--out', out, ...passThrough], {
+  const spawnChild = (a, out) => spawn(process.execPath, [fileURLToPath(import.meta.url), '--arm', a, '--track', track, '--out', out, ...passThrough], {
     cwd: repoRoot,
     env: childEnv,
     stdio: 'inherit',
-  }));
+  });
+  const children = [spawnChild('A', outA)];
+  await new Promise((r) => setTimeout(r, 15_000));
+  children.push(spawnChild('B', outB));
   const codes = children.map((c) => new Promise((resolve) => c.on('close', resolve)));
   const results = await Promise.all(codes);
   const failed = results.filter((c) => c !== 0).length;
