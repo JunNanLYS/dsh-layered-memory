@@ -167,9 +167,8 @@ Screenshots show what the plugin looks like — this section answers "**what doe
 ### Methodology & reproduction
 
 ```bash
-node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --model deepseek-v4-flash
-node bench/harness/run.mjs --arm B --repeats 3 --provider deepseek-official --model deepseek-v4-flash   # dialog track
-node bench/harness/run.mjs --track workflow --arm A/B --repeats 3 ...                                  # workflow track
+node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --model deepseek-v4-flash   # dialog track (Group A only)
+node bench/harness/run.mjs --track workflow --arm AB --repeats 3 ...                                  # workflow track (A/B arms in parallel)
 node bench/harness/report.mjs --latest [dialog|workflow]                                               # aggregate report
 ```
 

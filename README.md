@@ -147,9 +147,8 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 ### 方法论与复现
 
 ```bash
-node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --model deepseek-v4-flash
-node bench/harness/run.mjs --arm B --repeats 3 --provider deepseek-official --model deepseek-v4-flash   # 对话赛道
-node bench/harness/run.mjs --track workflow --arm A/B --repeats 3 ...                                  # 工作流赛道
+node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --model deepseek-v4-flash   # 对话赛道（只跑 A 组）
+node bench/harness/run.mjs --track workflow --arm AB --repeats 3 ...                                  # 工作流赛道（A/B 双组并行）
 node bench/harness/report.mjs --latest [dialog|workflow]                                               # 汇总报告
 ```
 

@@ -1,0 +1,32 @@
+{
+  "id": "wf-smoke-basic",
+  "family": "work",
+  "kind": "workflow",
+  "marker": "冒烟约定",
+  "sandboxFiles": {
+    "in.txt": "hello smoke line1\nhello smoke line2\n"
+  },
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "冒烟约定：把 in.txt 的内容原样抄到 out.txt，并在末尾加一行 smoke-done。现在演练一遍。"
+      ],
+      "reteach": "冒烟约定：out.txt = in.txt 全部内容 + 末尾一行 smoke-done。"
+    },
+    {
+      "kind": "probe",
+      "messages": [
+        "再处理一次。"
+      ],
+      "reteach": "冒烟约定：out.txt = in.txt 全部内容 + 末尾一行 smoke-done。本次照做。",
+      "maxExchanges": 2
+    }
+  ],
+  "teachChecks": [
+    { "file": "out.txt", "contains": ["hello smoke line1", "smoke-done"] }
+  ],
+  "probeChecks": [
+    { "file": "out.txt", "contains": ["hello smoke line1", "smoke-done"] }
+  ]
+}

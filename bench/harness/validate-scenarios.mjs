@@ -19,6 +19,20 @@ if (files.length === 0) {
   console.error(`场景目录为空：${dir}`);
   process.exit(1);
 }
+// marker 全库唯一（跨场景污染检测的前提：两个场景共用 marker 会让污染计数互相串扰）
+const markerOwner = new Map();
+for (const f of files) {
+  let sc;
+  try { sc = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+  if (sc?.marker) {
+    if (markerOwner.has(sc.marker) && markerOwner.get(sc.marker) !== sc.id) {
+      console.error(`✗ ${f}：marker「${sc.marker}」与 ${markerOwner.get(sc.marker)} 的场景重复（污染检测要求全库唯一）`);
+      failed++;
+    } else {
+      markerOwner.set(sc.marker, sc.id);
+    }
+  }
+}
 for (const f of files) {
   const problems = [];
   let sc;
@@ -34,9 +48,27 @@ for (const f of files) {
     if (!['chat', 'work'].includes(sc.family)) problems.push(`family 非法：${sc.family}`);
     if (!sc.marker) problems.push('缺 marker（跨场景污染检测的唯一标记词，须出现在教学文本中）');
     if (!sc.sandboxFiles || Object.keys(sc.sandboxFiles).length === 0) problems.push('缺 sandboxFiles');
+    // 防与 snoop 严格档正则撞名（records/、conversations/、scenes/、memory.db 是
+    // 越界读取的判负锚点——沙箱文件用这些名字会让合法操作被误判违规）
+    for (const key of Object.keys(sc.sandboxFiles ?? {})) {
+      if (/^(?:records|conversations|scenes)[\\/]/.test(key) || /memory\.db/.test(key)) {
+        problems.push(`sandboxFiles 键「${key}」撞 snoop 严格档判负锚点，请改名`);
+      }
+    }
+    for (const key of ['teachChecks', 'probeChecks', 'changeChecks']) {
+      for (const [i, c] of (sc[key] ?? []).entries()) {
+        if (c?.file && (/^(?:records|conversations|scenes)[\\/]/.test(c.file) || /memory\.db/.test(c.file))) {
+          problems.push(`${key}[${i}] file「${c.file}」撞 snoop 严格档判负锚点，请改名`);
+        }
+      }
+    }
     const teach = sc.sessions?.find((s) => s.kind === 'teach');
     const change = sc.sessions?.find((s) => s.kind === 'change');
     const probe = sc.sessions?.find((s) => s.kind === 'probe');
+    const kinds = (sc.sessions ?? []).map((s) => s.kind);
+    for (const k of new Set(kinds)) {
+      if (kinds.filter((x) => x === k).length > 1) problems.push(`kind=${k} 的会话出现多次（执行器只取第一个，多余的是笔误）`);
+    }
     if (!teach?.messages?.length) problems.push('缺 teach 会话或消息为空');
     if (change && !change.messages?.length) problems.push('change 会话存在但消息为空');
     if (!probe?.messages?.length) problems.push('缺 probe 会话或消息为空');
@@ -90,6 +122,14 @@ for (const f of files) {
   for (const [i, p] of probes.entries()) {
     const tag = `第${i + 1}题(${p.type})`;
     if (!p.q || typeof p.q !== 'string') problems.push(`${tag} 缺问题文本`);
+    if (p.judge === 'contains-all') {
+      // 程序判的 gold 必须能在教学文本里找到出处（否则该题无记忆不可能答对，是坏题）；
+      // 同时 gold 不得原样出现在问题文本里（问题泄漏答案，B 组靠复读也能过）。
+      for (const g of p.gold ?? []) {
+        if (!teachAll.includes(g)) problems.push(`${tag} gold「${g}」未出现在教学文本（无记忆不可答）`);
+        if (p.q.includes(g)) problems.push(`${tag} gold「${g}」泄漏在问题文本里`);
+      }
+    }
     if (!JUDGES.has(p.judge)) problems.push(`${tag} 判分方式非法：${p.judge}`);
     if (p.judge === 'abstain-llm') {
       if (p.gold) problems.push(`${tag} 拒答题不应有 gold`);

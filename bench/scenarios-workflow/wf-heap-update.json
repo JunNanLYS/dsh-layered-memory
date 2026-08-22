@@ -8,30 +8,31 @@
     "logs/legacy.log": "2025-12-01 legacy-mesh token refresh ok\n2025-12-01 legacy-mesh batch sync 877 rows\n2025-12-02 legacy-mesh disk usage 93%\n2025-12-02 legacy-mesh connection reset, retry 2/3\n",
     "config/mem.ini": "[heap]\nmax = 2g\n",
     "config/rate.ini": "[limit]\nrps = 1000\n",
-    "scripts/heap-set.sh": "#!/usr/bin/env bash\nset -e\n# heap-set：api-gw 堆内存调整工具（新版流程专用）。\n# 用法: scripts/heap-set.sh <目标值>（如 6g）\n# 自动改 config/mem.ini 的 [heap] max 并登记 heap-ops.log——用本工具时不要再手改 ini。\n[ $# -eq 1 ] || { echo '用法: scripts/heap-set.sh <目标值，如 6g>' >&2; exit 2; }\nsed -i \"s/^max = .*/max = $1/\" config/mem.ini\necho \"heap-set $1 (api-gw)\" >> heap-ops.log\necho \"heap 已调整为 $1；已登记 heap-ops.log\"\n",
+    "config/target.env": "TARGET=\n",
+    "scripts/apply.sh": "#!/usr/bin/env bash\nset -e\nv=$(sed -n 's/^TARGET=//p' config/target.env | tail -1)\n[ -n \"$v\" ] || { echo 'config/target.env 未设置 TARGET' >&2; exit 2; }\nsed -i \"s/^max = .*/max = $v/\" config/mem.ini\necho \"apply $v (api-gw)\" >> apply.log\necho \"applied $v\"\n",
     "scripts/restart.sh": "#!/usr/bin/env bash\nset -e\n# bash 专属语法（关联数组）；用 sh/dash 执行会语法报错——必须 bash 跑\ndeclare -A SVC=( [name]=\"api-gw\" )\necho \"restart ok: ${SVC[name]} $(date +%H:%M:%S)\" >> restart.log\necho \"api-gw restarted\"\n"
   },
   "sessions": [
     {
       "kind": "teach",
       "messages": [
-        "api-gw（网关服务）的堆内存调整约定，跟你说清楚：现在（v1 流程）是——1) 手工编辑 config/mem.ini，把 [heap] 段的 max 改成告警给的目标值；config/ 下其他文件（rate.ini 等）一律不动；2) 调整完成后，在根目录 ops-notes.txt 登记一行「heap 调整至 <值>」；3) 重启必须用 bash scripts/restart.sh（必须 bash，用 sh 跑会语法报错），成功后根目录出现 restart.log。日志只看 logs/app-<日期>.log，logs/legacy.log 是旧架构残留，排查时不要看。现在演练一遍：logs/app-0826.log 有 OOM，按 v1 流程把 heap 调到 4g（三步全做完、根目录出现 restart.log 才算处理完）。"
+        "api-gw（网关服务）的堆内存调整约定，跟你说清楚：现在（v1 流程）是——1) 手工编辑 config/mem.ini，把 [heap] 段的 max 改成告警给的目标值；config/ 下其他文件一律不动；2) 调整完成后，在根目录 ops-notes.txt 登记一行「heap 调整至 <值>」；3) 重启必须用 bash scripts/restart.sh（必须 bash，用 sh 跑会语法报错），成功后根目录出现 restart.log。日志只看 logs/app-<日期>.log，logs/legacy.log 是旧架构残留，排查时不要看。现在演练一遍：logs/app-0826.log 有 OOM，按 v1 流程把 heap 调到 4g（三步全做完、根目录出现 restart.log 才算处理完）。"
       ],
-      "reteach": "api-gw heap 调整约定（现行 v1）：1) 手改 config/mem.ini 的 [heap] max 为目标值（rate.ini 等其他文件不动）；2) ops-notes.txt 登记「heap 调整至 <值>」；3) bash scripts/restart.sh（必须 bash），成功出 restart.log。日志只看 logs/app-<日期>.log，legacy.log 不看。本次目标 4g。"
+      "reteach": "api-gw heap 调整约定（现行 v1）：1) 手改 config/mem.ini 的 [heap] max 为目标值（其他文件不动）；2) ops-notes.txt 登记「heap 调整至 <值>」；3) bash scripts/restart.sh（必须 bash），成功出 restart.log。日志只看 logs/app-<日期>.log，legacy.log 不看。本次目标 4g。"
     },
     {
       "kind": "change",
       "messages": [
-        "api-gw 流程改版，即日起生效，v1 全部作废：heap 调整不再手改配置、也不再写 ops-notes。新流程（v2）两步：1) bash scripts/heap-set.sh <目标值>——它自动改 config/mem.ini 的 [heap] max、自动把动作登记到 heap-ops.log，除此之外任何文件都不要动；2) bash scripts/restart.sh 重启（成功出 restart.log）。ops-notes.txt 从此废弃、不再维护。演练一遍 v2：把 heap 调到 6g（两步全做完、出 restart.log 才算完成）。"
+        "api-gw 流程改版，即日起生效，v1 全部作废：heap 调整不再手改配置、也不再写 ops-notes。新流程（v2）两步：1) 把目标值写进 config/target.env 的 TARGET= 行（如 TARGET=6g），然后 bash scripts/apply.sh——它会自动改 config/mem.ini 并把动作记到 apply.log，除此之外任何文件都不要动；2) bash scripts/restart.sh 重启（成功出 restart.log）。ops-notes.txt 从此废弃、不再维护。演练一遍 v2：把 heap 调到 6g（两步全做完、出 restart.log 才算完成）。"
       ],
-      "reteach": "api-gw heap 现行流程（v2，v1 作废）：1) bash scripts/heap-set.sh 6g（自动改 mem.ini、自动记 heap-ops.log；不手改、不写 ops-notes）；2) bash scripts/restart.sh（成功出 restart.log）。本次目标 6g。"
+      "reteach": "api-gw heap 现行流程（v2，v1 作废）：1) config/target.env 写 TARGET=6g，然后 bash scripts/apply.sh（自动改 mem.ini、自动记 apply.log；不手改、不写 ops-notes）；2) bash scripts/restart.sh（成功出 restart.log）。本次目标 6g。"
     },
     {
       "kind": "probe",
       "messages": [
         "api-gw 又 OOM 了（看今天的日志），按现在生效的流程把 heap 上到 8g（流程走完、出 restart.log 才算处理完）。"
       ],
-      "reteach": "api-gw heap 现行流程（v2）：1) bash scripts/heap-set.sh 8g（自动改 mem.ini、自动记 heap-ops.log；不手改 ini、不写 ops-notes）；2) bash scripts/restart.sh（成功出 restart.log）。日志只看 logs/app-<日期>.log，legacy.log 不看。本次目标 8g。",
+      "reteach": "api-gw heap 现行流程（v2）：1) config/target.env 写 TARGET=8g，然后 bash scripts/apply.sh（自动改 mem.ini、自动记 apply.log；不手改 ini、不写 ops-notes）；2) bash scripts/restart.sh（成功出 restart.log）。日志只看 logs/app-<日期>.log，legacy.log 不看。本次目标 8g。",
       "maxExchanges": 2
     }
   ],
@@ -42,11 +43,11 @@
   ],
   "changeChecks": [
     { "file": "config/mem.ini", "contains": ["max = 6g"] },
-    { "file": "heap-ops.log", "contains": ["heap-set", "6g"] }
+    { "file": "apply.log", "contains": ["apply", "6g"] }
   ],
   "probeChecks": [
     { "file": "config/mem.ini", "contains": ["max = 8g"] },
-    { "file": "heap-ops.log", "contains": ["heap-set", "8g"] },
+    { "file": "apply.log", "contains": ["apply", "8g"] },
     { "file": "restart.log", "contains": ["restart ok"] },
     { "file": "ops-notes.txt", "absent": true }
   ]

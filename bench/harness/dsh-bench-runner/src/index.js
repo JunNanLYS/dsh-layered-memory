@@ -8,7 +8,9 @@
 //   DSH_BENCH_ARM           A（记忆开）| B（记忆关）     必填
 //   DSH_BENCH_OUT           结果输出目录                必填
 //   DSH_BENCH_DATA_DIR      本次运行的记忆数据目录       A 组必填（与 patch 的 dataDir 一致）
+//   DSH_BENCH_WORKSPACE     会话与沙箱的工作根目录       必填（run.mjs 分配）
 //   DSH_BENCH_PLUGIN_VERSION 被测插件版本（结果头记录用） 可选
+//   DSH_BENCH_GIT_SHA       被测仓库 git SHA（结果头代码指纹） 可选（run.mjs 注入）
 //   DSH_BENCH_JUDGE_PROVIDER / _MODEL   判卷模型（缺省用当前默认模型）
 //   DSH_BENCH_DISTILL_TIMEOUT_MS        蒸馏等待超时（缺省 120000）
 
@@ -85,6 +87,9 @@ async function run(ctx) {
       judgeProvider: judge.provider,
       judgeModel: judge.model,
       pluginVersion: process.env.DSH_BENCH_PLUGIN_VERSION || '',
+      // git SHA：版本号之外的代码指纹（profile 链接指向哪个工作树、代码是否与
+      // 场景库同源，版本号反映不了——2026-08-21 实测被旧 runner 静默咬过）
+      gitSha: process.env.DSH_BENCH_GIT_SHA || '',
       scenarioFiles: files,
     },
     scenarios: [],
@@ -201,16 +206,22 @@ async function driveScriptedSession(ctx, selection, label, messages, options = {
       metrics: foldMetrics(driven),
       asks,
       toolAudit: collectToolAudit(driven),
+      // 可选：跨场景污染检测（工作流探针也测——召回注入里出现其他场景 marker 即计）
+      ...(options.markers && options.scenarioId
+        ? { contamination: detectContamination(agent.session.events, { id: options.scenarioId }, options.markers) }
+        : {}),
     };
   } finally {
     try { dispose?.(); } catch { /* 拆除失败不影响结果落盘 */ }
   }
 }
 
-/** 求助检测：问号结尾、ask 类工具，或索取凭据/信息/约定的典型措辞。 */
+/** 求助检测：问号结尾、ask 类工具，或索取凭据/信息/约定的典型措辞（中英双语）。 */
 function looksLikeAsk(text) {
   const t = String(text || '');
   if (/[？?]\s*$/.test(t.trimEnd())) return true;
+  if (/\b(password|credential|username|account|token|api ?key)\b\s*(is|are|was)?\b[^.!?]{0,30}\?/i.test(t)) return true;
+  if (/\b(what(?:'s| is| are)|could you|can you|please)\b[^.!?]{0,40}\b(provide|tell|share|confirm|give)\b/i.test(t)) return true;
   return /(请|麻烦|能否|能不能|可以)?\s*(提供|告诉|告知|给我|发我|补充|说明)[^。！？!]{0,24}(账号|密码|凭据|用户名|口令|令牌|密钥|信息|约定|规矩|流程|方式|方法)|(账号|密码|凭据|用户名|口令)(是(什么|多少))|我(需要|缺少|没有)[^。！？!]{0,16}(账号|密码|凭据|信息|约定)|(无法|不能|没能)[^。！？!]{0,20}(因为|由于|没有|缺少|不知道)/.test(t);
 }
 
@@ -223,17 +234,43 @@ function taskSeemsDone(text) {
   return /(已完成|已生成|已写入|搞定|done)/i.test(text || '');
 }
 
-/** 工具调用审计：记录 name + 参数摘要，标记疑似翻越沙箱（.dsh/memory 等）。 */
+/**
+ * 工具调用审计：记录 name + 参数摘要。越界读取分两档：
+ *   snoopViolation（严格）——参数中出现明确的记忆库/会话库路径（~/.dsh、memory.db、
+ *   records/conversations/scenes 存储目录）。触发即判该场景全部检查负（防"翻库作弊"，
+ *   权限模型只限写不限读，这是唯一硬防线）。带路径分隔符锚定 + 词尾负前瞻，
+ *   防止 '.MemoryMappedFiles' 这类子串误命中（2026-08-21 实测误报过）。
+ *   snoopSuspect（宽松）——疑似但不确定（如 .dsh 相关、memory 泛词），仅标记供人工复核。
+ */
+const SNOOP_VIOLATION = /(?:\.dsh[\\/](?:memory|sessions|profiles)|memory\.db|(?:^|[\s"'\\/])(?:records|conversations|scenes)[\\/])/i;
+const SNOOP_SUSPECT = /(\.dsh(?![a-z0-9])|memory\.db|\.memory(?![a-z]))/i;
 function collectToolAudit(events) {
   const audit = [];
   for (const e of events) {
     if (e.type !== 'tool/call') continue;
     const name = String(e.data?.name ?? '');
+    // 合法主动召回通道不进审计：memory_read_scene 的参数本身就是 scenes/<family>/
+    // 路径，按路径正则会误判违规（违规只针对 bash/fs 等通用工具的越界读取）
+    if (/^(memory_search|conversation_search|memory_read_scene)$/.test(name)) continue;
     const args = String(e.data?.arguments ?? e.data?.input ?? '');
-    audit.push({ name, args: args.slice(0, 120) });
+    audit.push({ name, args: args.slice(0, 400) });
   }
-  const snoopSuspect = audit.some((a) => /(\.dsh|memory\.db|\.memory)/i.test(a.args));
-  return audit.length > 40 ? { calls: audit.slice(0, 40), truncated: true, snoopSuspect } : { calls: audit, truncated: false, snoopSuspect };
+  // 检测跑原始全串（截断只影响留痕展示，不产生漏检）
+  const raws = [];
+  for (const e of events) {
+    if (e.type !== 'tool/call') continue;
+    const name = String(e.data?.name ?? '');
+    if (/^(memory_search|conversation_search|memory_read_scene)$/.test(name)) continue;
+    raws.push(String(e.data?.arguments ?? e.data?.input ?? ''));
+  }
+  const test = (re) => raws.some((s) => re.test(s));
+  const out = {
+    calls: audit.length > 40 ? audit.slice(0, 40) : audit,
+    truncated: audit.length > 40,
+    snoopSuspect: test(SNOOP_SUSPECT),
+    snoopViolation: test(SNOOP_VIOLATION),
+  };
+  return out;
 }
 
 /** 探针会话：新会话逐题提问，逐题取末条 assistant 文本并判分；顺带检测召回注入的跨场景污染。 */
@@ -421,13 +458,20 @@ async function runWorkflowScenario(ctx, sc, opts) {
       cwd: sandbox,
       reteach: probe.reteach,
       maxExchanges: probe.maxExchanges ?? 2,
+      markers: opts.markers,
+      scenarioId: sc.id,
     });
     const probeChecks = runChecks(sc.probeChecks);
-    const allChecks = [
+    // 越界读取记忆库（严格档）→ 该场景判负：权限模型只限写不限读，这是唯一硬防线；
+    // 判负逐条写明原因，完成度如实下降而非静默标记。
+    const snoopViolation = [teachRun, changeRun, probeRun]
+      .some((r) => r?.toolAudit?.snoopViolation === true);
+    const allChecks = ([
       ...teachChecks.map((c) => ({ phase: 'teach', ...c })),
       ...changeChecks.map((c) => ({ phase: 'change', ...c })),
       ...probeChecks.map((c) => ({ phase: 'probe', ...c })),
-    ];
+    ]).map((c) => (snoopViolation && c.ok ? { ...c, ok: false, detail: '越界读取记忆库（snoopViolation），该场景判负' } : c));
+    if (snoopViolation) console.warn(`    [${sc.id}] ⚠ snoopViolation：检测到越界读取记忆库，本场景全部检查判负`);
     return {
       id: sc.id,
       family: sc.family,
@@ -436,10 +480,12 @@ async function runWorkflowScenario(ctx, sc, opts) {
       change: changeRun ? { metrics: changeRun.metrics, skipped: false } : { metrics: null, skipped: true },
       distill,
       probes: [],
+      contamination: probeRun.contamination ?? [],
       workflow: {
         probe: { asks: probeRun.asks, toolAudit: probeRun.toolAudit },
         change: changeRun ? { asks: changeRun.asks, toolAudit: changeRun.toolAudit } : null,
         teachToolAudit: teachRun.toolAudit,
+        snoopViolation,
         checks: allChecks,
         checksPassed: allChecks.filter((c) => c.ok).length,
         checksTotal: allChecks.length,
