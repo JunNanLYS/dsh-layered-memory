@@ -10,7 +10,7 @@
 [English](README.en.md) · [最新发行版](https://github.com/JunNanLYS/dsh-layered-memory/releases/latest) · [反馈问题](https://github.com/JunNanLYS/dsh-layered-memory/issues)
 
 [![npm version](https://img.shields.io/npm/v/dsh-layered-memory?color=6f83ff&style=flat-square&label=npm)](https://www.npmjs.com/package/dsh-layered-memory)
-[![DSH 0.1.0-rc.8](https://img.shields.io/badge/DSH-0.1.0--rc.8-8b5cf6?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
+[![DSH 0.1.1-rc.2](https://img.shields.io/badge/DSH-0.1.1--rc.2-8b5cf6?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
 [![MIT License](https://img.shields.io/badge/license-MIT-536990?style=flat-square)](LICENSE)
 
 </div>
@@ -124,39 +124,43 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 
 ## 实测对比（DSH-MemBench：自动化基准）
 
-图文回答"长什么样"，这一节用**自动化基准**的实测数字回答"**开了到底有什么用**"（[`bench/`](./bench/)，一条命令可复现）。方法：同场景库、逐字相同输入，**A 组（记忆开）** 与 **B 组（记忆关）** 各跑 3 次取合并值；环境 DeepSeek 官方 `deepseek-v4-flash`、插件 0.8.0、Windows；题型设计借鉴 [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark)。
+图文回答"长什么样"，这一节用**自动化基准**的实测数字回答"**开了到底有什么用**"（[`bench/`](./bench/)，一条命令可复现）。方法：同场景库、逐字相同输入，**A 组（记忆开）跑 3 次取合并值，B 组（记忆关）跑 1 次**（无记忆的长任务每场景要吞数倍 token，成本护栏）；对话赛道只跑 A 组（B 组会话独立无记忆必然失败，对照无信息量，已下线）。工作流赛道环境：DeepSeek 官方 `deepseek-v4-flash`（思考档 high）、判卷 `glm-5.3`、插件 0.8.3、Windows；题型设计借鉴 [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark)。
 
-### 对话赛道（15 场景 × 6 题型 × 3 次 = 270 题/组）：答得准吗
+### 对话赛道（15 场景 × 6 题型 × 3 次 = 270 题）：答得准吗
+
+> 0.8.0 留档基线（A 组数据；此后对话赛道 B 组下线，只跑 A 组）。
 
 <p align="center">
   <img src="./assets/readme/bench-dialog.svg" width="100%"
-       alt="DSH-MemBench 对话赛道 A/B 对照条形图：A 组（记忆开）总准确率 92.6%（250/270），B 组（记忆关）17.8%（48/270）；分题型各 45 题——抽取 A 45/45 对 B 3/45、多跳 A 45/45 对 B 0/45、时序 A 43/45 对 B 0/45、知识更新 A 31/45 对 B 0/45、场景回忆 A 41/45 对 B 0/45、拒答两组均 45/45 且 0 编造">
+       alt="DSH-MemBench 对话赛道准确率图（A 组·记忆开）：总准确率 92.6%（250/270）；分题型各 45 题——抽取 45/45、多跳 45/45、时序 43/45、知识更新 31/45、场景回忆 41/45、拒答 45/45 且 0 编造；对话赛道 B 组已下线（会话独立无记忆必然失败）">
 </p>
 
 **召回双通道**（A 组）：被动注入召回率 **75.1%**（该题要点出现在召回注入中，169/225），其余多数由模型**主动调用记忆工具**查回——84 题主动查询、**60 题靠工具兜底答对**；端到端 92.6% 是两通道 + 模型利用的合成结果。记忆库跨场景全程累积下，探针召回注入混入其他场景记忆 144 次（已如实计数），总准确率仍稳在 92.6%——抗干扰能力经受住了膨胀记忆库的考验。
 
-### 工作流赛道（4 场景 × 3 次，真实工具沙箱）：做得对、做得省吗
+### 工作流赛道（7 场景 · A 组 3 次 / B 组 1 次，真实工具沙箱）：做得对、做得省吗
 
 <p align="center">
   <img src="./assets/readme/bench-workflow.svg" width="100%"
-       alt="DSH-MemBench 工作流赛道 A/B 对照图：任务完成度 A 组 24/33（72.7%）对 B 组 11/33（33.3%）；成本对比（B 组为满格基准）——步骤 125 对 186（B +49%）、工具调用 184 对 296（B +61%）、输入 token 1.30M 对 1.86M（B +43%）；向用户求助 A 0 次对 B 3 次；登录场景输入 token A 241k 对 B 453k（+88%）">
+       alt="DSH-MemBench 工作流赛道 A/B 对照图：探针段完成度 A 组 59/69（85.5%）对 B 组 10/23（43.5%）；成本对比（B 组为满格基准，每场景均值）——步骤 24.3 对 41.4（B +70%）、工具调用 37.7 对 62.1（B +65%）、输入 token 266k 对 1.81M（B 6.8 倍）；风格规范场景探针 A 12/12 对 B 0/4；长任务每场景输入 token A 266k 对 B 1.81M">
 </p>
 
-**登录场景特写**（凭据只存在于记忆，站点为本地服务、令牌不可伪造）：A 组三次全部**一轮直取**完成（6/6，241k 输入）；B 组每次都要**反问用户要凭据**（3 次求助、双倍轮次）才完成 5/6，输入 453k——**+88%**。这正是记忆的核心价值之一：**省掉的不是任务难度，是无谓的往返与重复教学**。
+**探针段完成度 85.5% vs 43.5%（+42pp）**：教学/变更段两组都有现场上下文，探针段（新会话延续任务）才是纯记忆窗口——A 组三个新考法场景（流程知识更新 / 双胞胎消歧 / 风格规范延续）全部 12/12 满分且三轮一致；B 组在风格规范场景探针 **0/4**（命名/结构/千分位/页脚约定只存记忆，沙箱探不出来），在流程更新场景则能靠读脚本逆向（判别力受沙箱可供性限制，已如实标注）。
+
+**长任务成本：B 组每场景输入 token 是 A 组的 6.8 倍**（1.81M vs 266k）——无记忆时 agent 靠重新探索前进，high 思考档下甚至会自建工程去探测本可用一条脚本约定完成的流程；输出 token 3 倍（46.2k vs 15.4k）、步骤 +70%。这正是记忆的核心价值：**省掉的不是任务难度，是无谓的往返与重复探索**。
 
 ### 方法论与复现
 
 ```bash
-node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --model deepseek-v4-flash
-node bench/harness/run.mjs --arm B --repeats 3 --provider deepseek-official --model deepseek-v4-flash   # 对话赛道
-node bench/harness/run.mjs --track workflow --arm A/B --repeats 3 ...                                  # 工作流赛道
+node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --model deepseek-v4-flash   # 对话赛道（只跑 A 组）
+node bench/harness/run.mjs --track workflow --arm AB --repeats 3 ...                                  # 工作流赛道（A/B 双组并行）
 node bench/harness/report.mjs --latest [dialog|workflow]                                               # 汇总报告
 ```
 
-- 判分：`contains-all` 程序判 + 判卷模型按要点判（答案原文与判分理由全部留痕 `result.json` 可人工复核）；工作流完成度为产物文件 + 关键内容程序化校验；
-- 指标全部来自供应商上报 usage（输入含缓存命中拆分）与会话事件折叠；**稳态缓存率**剔除每会话首请求（A 88.7% vs B 85.4%——记忆注入不伤缓存）；
-- 回归用途：改插件前后各跑一遍，`compare.mjs` 出对比表（环境头校验 + B 组对照组漂移告警）；
-- 局限（诚实声明）：单机 ×3 次合并、判卷模型与被测模型同源、作者自建场景库（倾向记忆优势场景，欢迎自行复现）；工具审计会标记越界访问（实测 Agent 偶发探测用户主目录，本基准场景答案不存于真实记忆库、数字不受影响）。
+- 判分：`contains-all` 程序判 + 判卷模型按要点判（答案原文与判分理由全部留痕 `result.json` 可人工复核）；工作流完成度为产物文件 + 关键内容程序化校验（四型判据：正检查/禁词/产物缺席/存在性）；
+- 实时进度：跑基准时自动拉起本地进度面板并打开浏览器（`--no-panel` 关闭）——A/B 双臂场景/阶段/消息粒度进度、心跳与活动新鲜度（直判"卡住 vs 进程挂了"）、累计成本随跑随涨；
+- 指标全部来自供应商上报 usage（输入含缓存命中拆分）与会话事件折叠；稳态缓存率剔除每会话首请求（0.8.0 留档基线：A 88.7% vs B 85.4%——记忆注入不伤缓存）；
+- 回归用途：改插件前后各跑一遍，`compare.mjs` 出对比表（环境头校验含 gitSha + B 组对照组漂移告警）；
+- 局限（诚实声明）：单机；A 组 ×3 合并、B 组 ×1（成本护栏，噪声更大）；判卷与被测模型：对话留档基线同源、工作流新跑为异构（glm-5.3 判 v4-flash）；作者自建场景库（倾向记忆优势场景，欢迎自行复现）；沙箱文件的可供性会部分泄露流程（B 组可读脚本逆向，判别力受限处已如实标注）；工具审计双档（严格违规判负/宽松提示），实测双方 0 违规。
 
 完整报告与逐题数据：[`bench/baseline/`](./bench/baseline/)。
 
@@ -252,7 +256,7 @@ ONNX 量化 **CPU 推理**——无需 API Key，数据不出本机）。本地�
 | `embedding.proxy` | `''` | 模型下载代理三态：`''`（默认）= 自动探测代理环境变量（`HTTPS_PROXY`/`ALL_PROXY` 等，尊重 `NO_PROXY`）；`none` = 禁用强制直连；其他值 = 代理 URL（如 `http://127.0.0.1:7890`）。镜像直连在国内网络间歇不可达（直连超时与污染字节交替出现过），开代理的机器建议保持默认自动探测 |
 | `llm.provider/model` | 空 | 蒸馏模型静态路由（部署 pin）：provider 与 model **双字段齐**时锁定蒸馏路由，优先于设置页的运行时选择与默认模型（部署可强制蒸馏走指定路由）；留空则跟随"设置页选择 → 默认模型"。运行时可在设置页 → 记忆 → 概览的"蒸馏模型"选择器从**已配置的供应商**（含 dsh 设置 → 模型里添加的自定义供应商）中切换，即时生效无需重启 |
 | `llm.maxTokens` | `65536` | 未分层调用的兜底输出总闸。各蒸馏层有独立预算（抽取 16k / 去重 8k / L2 32k / L3 16k；思考档 high/xhigh/max 时自动 ×4，防 reasoning 吃光预算），分层预算可在设置页 → 记忆 → 概览 → 蒸馏参数运行时调整（留空/0 = 跟随内置默认） |
-| `llm.reasoningEffort` | 空 | 蒸馏思考档位：空串 = **自动**（按模型能力解析：模型默认档 → `high`）；显式值（`off`/`none`/`low`/`medium`/`high`/`xhigh`/`max`）仅在该模型声明支持时发送——跨供应商 effort 词汇表不同（deepseek 认 `off`，OpenAI 系是 `none`，未声明档位的模型不传），不支持的档位自动降级为不传并告警一次；思考档 high/xhigh/max 时输出预算自动 ×4。运行时在设置页 → 记忆 → 概览切换，可选档位表跟随当前模型实时显示 |
+| `llm.reasoningEffort` | 空 | 蒸馏思考档位：空串 = **自动**（按模型能力解析：模型默认档 → `high`）；显式值（`off`/`none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`）仅在该模型声明支持时发送——跨供应商 effort 词汇表不同（deepseek 认 `off`，OpenAI 系是 `none`，未声明档位的模型不传），不支持的档位自动降级为不传并告警一次；思考档 high/xhigh/max 时输出预算自动 ×4。运行时在设置页 → 记忆 → 概览切换，可选档位表跟随当前模型实时显示 |
 | `llm.temperature` | `0.3` | 蒸馏温度 |
 | `llm.maxInputChars` | `700000` | 单次蒸馏输入字符预算（超限的 L1 输入自动分块抽取）；运行时可在设置页 → 蒸馏参数 → 输入预算调整（留空/0 = 跟随本值） |
 | `llm.timeoutMs` | `120000` | 单次蒸馏调用超时（ms） |

@@ -10,7 +10,7 @@
 [简体中文](README.md) · [Latest release](https://github.com/JunNanLYS/dsh-layered-memory/releases/latest) · [Report issues](https://github.com/JunNanLYS/dsh-layered-memory/issues)
 
 [![npm version](https://img.shields.io/npm/v/dsh-layered-memory?color=6f83ff&style=flat-square&label=npm)](https://www.npmjs.com/package/dsh-layered-memory)
-[![DSH 0.1.0-rc.8](https://img.shields.io/badge/DSH-0.1.0--rc.8-8b5cf6?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
+[![DSH 0.1.1-rc.2](https://img.shields.io/badge/DSH-0.1.1--rc.2-8b5cf6?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
 [![MIT License](https://img.shields.io/badge/license-MIT-536990?style=flat-square)](LICENSE)
 
 </div>
@@ -144,39 +144,43 @@ trajectory view):
 
 ## Measured Comparison (DSH-MemBench: Automated Benchmark)
 
-Screenshots show what the plugin looks like — this section answers "**what does enabling it actually buy you?**" with measured numbers from an **automated benchmark** ([`bench/`](./bench/), one command to reproduce). Method: the same scenario bank with verbatim-identical inputs runs in **Group A (memory on)** and **Group B (memory off)**, 3 repetitions each, merged; environment DeepSeek official `deepseek-v4-flash`, plugin 0.8.0, Windows; taxonomy adapted from [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark).
+Screenshots show what the plugin looks like — this section answers "**what does enabling it actually buy you?**" with measured numbers from an **automated benchmark** ([`bench/`](./bench/), one command to reproduce). Method: the same scenario bank with verbatim-identical inputs runs in **Group A (memory on)** with 3 merged repetitions and **Group B (memory off)** with 1 repetition (a memory-off long task burns multiples of the tokens per scenario — a cost guardrail); the dialog track now runs Group A only (memory-off probes in independent sessions cannot succeed, so the control carries no information — retired). Workflow-track environment: DeepSeek official `deepseek-v4-flash` (reasoning effort high), judge `glm-5.3`, plugin 0.8.3, Windows; taxonomy adapted from [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark).
 
-### Dialog track (15 scenarios × 6 probe types × 3 reps = 270 questions/group): does it remember correctly
+### Dialog track (15 scenarios × 6 probe types × 3 reps = 270 questions): does it remember correctly
+
+> Archived 0.8.0 baseline (Group A data; the dialog-track B arm has since been retired — Group A only).
 
 <p align="center">
   <img src="./assets/readme/bench-dialog.svg" width="100%"
-       alt="DSH-MemBench dialog track, Group A vs Group B bar chart: overall accuracy A (memory on) 92.6% (250/270) vs B (memory off) 17.8% (48/270); per probe type, 45 each — extraction A 45/45 vs B 3/45, multi-hop A 45/45 vs B 0/45, temporal A 43/45 vs B 0/45, knowledge updates A 31/45 vs B 0/45, scene recall A 41/45 vs B 0/45, abstention both 45/45 with 0 fabricated">
+       alt="DSH-MemBench dialog track accuracy chart (Group A, memory on): overall accuracy 92.6% (250/270); per probe type, 45 each — extraction 45/45, multi-hop 45/45, temporal 43/45, knowledge updates 31/45, scene recall 41/45, abstention 45/45 with 0 fabricated; the dialog-track B arm is retired (memory-off probes in independent sessions cannot succeed)">
 </p>
 
 **Dual-channel recall** (Group A): passive injection hit rate **75.1%** (the answer's key points appear in the recall injection, 169/225); most of the rest the model recovered by **actively calling the memory tools** — 84 questions with active queries, **60 rescued by tools**. The end-to-end 92.6% is the composite of both channels plus model utilization. With the memory store accumulating across scenarios for the whole run, 144 probe injections carried other scenarios' memories (honestly counted) — yet overall accuracy held at 92.6%: interference resistance under a growing store, measured.
 
-### Workflow track (4 scenarios × 3 reps, real tool sandbox): does it do it right, and cheaper
+### Workflow track (7 scenarios · Group A ×3 / Group B ×1, real tool sandbox): does it do it right, and cheaper
 
 <p align="center">
   <img src="./assets/readme/bench-workflow.svg" width="100%"
-       alt="DSH-MemBench workflow track, Group A vs Group B: task completion A 24/33 (72.7%) vs B 11/33 (33.3%); cost comparison (Group B as the full-bar baseline) — steps 125 vs 186 (B +49%), tool calls 184 vs 296 (B +61%), input tokens 1.30M vs 1.86M (B +43%); asks-user-for-help A 0 vs B 3; login scenario input tokens A 241k vs B 453k (+88%)">
+       alt="DSH-MemBench workflow track, Group A vs Group B: probe-phase completion A 59/69 (85.5%) vs B 10/23 (43.5%); cost comparison (Group B as the full-bar baseline, per-scenario means) — steps 24.3 vs 41.4 (B +70%), tool calls 37.7 vs 62.1 (B +65%), input tokens 266k vs 1.81M (B 6.8×); style-convention scenario probes A 12/12 vs B 0/4; long-task input tokens per scenario A 266k vs B 1.81M">
 </p>
 
-**Login scenario close-up** (credentials exist only in memory; the site is a local service with unforgeable tokens): Group A completed all three runs **in a single turn each** (6/6, 241k input); Group B had to **ask the user for credentials every time** (3 asks, double the turns) and still finished only 5/6, at 453k input — **+88%**. This is one of memory's core values: **what it saves is not task difficulty, but pointless round-trips and re-teaching**.
+**Probe-phase completion 85.5% vs 43.5% (+42pp)**: both groups have live context during teach/change phases — the probe phase (continuation task in a fresh session) is the pure memory window. Group A scored a perfect 12/12 on all three new probe archetypes (workflow knowledge update / twin-runbook disambiguation / style-convention continuity), consistent across all three reps; Group B scored **0/4** on style-convention probes (naming/structure/thousands-separator/footer conventions exist only in memory — they cannot be explored out of the sandbox), while on the workflow-update scenario it can reverse-engineer the procedure by reading the script (discrimination limited by sandbox affordances, honestly noted).
+
+**Long-task cost: Group B burns 6.8× Group A's input tokens per scenario** (1.81M vs 266k) — without memory the agent advances by re-exploring, and under a high reasoning effort it even builds its own projects to probe what a one-line script convention would have done; output tokens 3× (46.2k vs 15.4k), steps +70%. This is memory's core value: **what it saves is not task difficulty, but pointless round-trips and re-exploration**.
 
 ### Methodology & reproduction
 
 ```bash
-node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --model deepseek-v4-flash
-node bench/harness/run.mjs --arm B --repeats 3 --provider deepseek-official --model deepseek-v4-flash   # dialog track
-node bench/harness/run.mjs --track workflow --arm A/B --repeats 3 ...                                  # workflow track
+node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --model deepseek-v4-flash   # dialog track (Group A only)
+node bench/harness/run.mjs --track workflow --arm AB --repeats 3 ...                                  # workflow track (A/B arms in parallel)
 node bench/harness/report.mjs --latest [dialog|workflow]                                               # aggregate report
 ```
 
-- Scoring: programmatic `contains-all` plus an LLM judge against key points (every answer and verdict is preserved in `result.json` for human audit); workflow completion is verified programmatically from produced files and their contents;
-- Metrics come from provider-reported usage (input with cache-hit split) and session-event folding; the **steady-state cache rate** excludes each session's first request (A 88.7% vs B 85.4% — memory injection does not hurt caching);
-- Regression use: run before/after a plugin change and diff with `compare.mjs` (environment header check + Group-B control-drift warning);
-- Limitations (stated honestly): single machine, 3 merged runs; the judge model is the same as the tested model; the scenario bank is author-built (biased toward memory-advantage scenarios — reproduce it yourself); the tool audit flags out-of-sandbox access (agents occasionally probed the user home dir in tests; this benchmark's answers never exist in the real memory store, so the numbers are unaffected).
+- Scoring: programmatic `contains-all` plus an LLM judge against key points (every answer and verdict is preserved in `result.json` for human audit); workflow completion is verified programmatically from produced files and their contents (four check kinds: positive / forbidden-word / must-not-exist / exists);
+- Live progress: running the benchmark auto-starts a local progress panel and opens the browser (`--no-panel` to disable) — per-arm scenario/phase/message-level progress, heartbeat & activity freshness (distinguishes "stuck" from "process died"), and cumulative cost as it accrues;
+- Metrics come from provider-reported usage (input with cache-hit split) and session-event folding; the steady-state cache rate excludes each session's first request (archived 0.8.0 baseline: A 88.7% vs B 85.4% — memory injection does not hurt caching);
+- Regression use: run before/after a plugin change and diff with `compare.mjs` (environment header check including git SHA + Group-B control-drift warning);
+- Limitations (stated honestly): single machine; Group A ×3 merged, Group B ×1 (cost guardrail — noisier); judge vs tested model: same model in the archived dialog baseline, heterogeneous in the new workflow run (glm-5.3 judging v4-flash); the scenario bank is author-built (biased toward memory-advantage scenarios — reproduce it yourself); sandbox-file affordances partially leak procedures (Group B can reverse-engineer by reading scripts — discrimination limits honestly noted); dual-tier tool audit (strict violation voids the scenario / loose heuristic flags only), with 0 violations measured on both sides.
 
 Full reports and per-question data: [`bench/baseline/`](./bench/baseline/).
 
@@ -235,7 +239,7 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `embedding.proxy` | `''` | Three-state download proxy: `''` (default) = auto-detect proxy env vars (`HTTPS_PROXY`/`ALL_PROXY` etc., honoring `NO_PROXY`); `none` = disable, always direct; any other value = proxy URL (e.g. `http://127.0.0.1:7890`). Direct connections to the mirror are intermittently unreachable on some networks (connect timeouts and poisoned bytes have both been observed) — keep the default auto-detection on machines with a proxy |
 | `llm.provider/model` | empty | Static distillation route (deployment pin): when **both** fields are set the route is locked, outranking the settings-page selection and the default model (deployments can force distillation onto a specific route); when empty the route follows "settings-page selection → default model". At runtime, switch among **configured providers** (including custom ones added in dsh Settings → Models) via the "distillation model" picker in Settings → Memory → Overview — effective immediately, no restart needed |
 | `llm.maxTokens` | `65536` | Fallback output cap for non-layered calls. Each distillation stage has its own budget (extraction 16k / dedup 8k / L2 32k / L3 16k; auto ×4 when the reasoning effort is high/xhigh/max, so thinking can't starve the text budget); the per-layer budgets are runtime-adjustable in Settings → Memory → Overview → distillation parameters (empty/0 = built-in defaults) |
-| `llm.reasoningEffort` | empty | Distillation reasoning effort: empty = **auto** (resolved from model capability: the model's default tier, else `high`); an explicit value (`off`/`none`/`low`/`medium`/`high`/`xhigh`/`max`) is only sent when the model declares support — effort vocabularies differ across providers (deepseek accepts `off`, OpenAI-style APIs use `none`, models that declare no tiers get nothing), and unsupported tiers degrade to not-sending with a one-time warning; output budgets auto-×4 at high/xhigh/max. Switchable at runtime in Settings → Memory → Overview; the selectable tiers follow the current model live |
+| `llm.reasoningEffort` | empty | Distillation reasoning effort: empty = **auto** (resolved from model capability: the model's default tier, else `high`); an explicit value (`off`/`none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`) is only sent when the model declares support — effort vocabularies differ across providers (deepseek accepts `off`, OpenAI-style APIs use `none`, models that declare no tiers get nothing), and unsupported tiers degrade to not-sending with a one-time warning; output budgets auto-×4 at high/xhigh/max. Switchable at runtime in Settings → Memory → Overview; the selectable tiers follow the current model live |
 | `llm.temperature` | `0.3` | Distillation temperature |
 | `llm.maxInputChars` | `700000` | Input character budget per distillation call (over-budget L1 inputs are chunked automatically); runtime-adjustable in Settings → distillation parameters → input budget (empty/0 = follow this value) |
 | `llm.timeoutMs` | `120000` | Per-call distillation timeout (ms) |

@@ -5,6 +5,116 @@
 
 ## [Unreleased]
 
+## [0.8.4] — 2026-08-22
+
+### 修复
+
+- **设置页新思考档位词汇被写入门拒绝**（0.8.3 引入）：档位表扩至八词表时
+  `settings-set` 的 RPC 白名单漏同步（仍只认 `''/off/high/max`），设置页选
+  `none/minimal/low/medium/xhigh` 一律报"非法思考档位"并回滚。现白名单与
+  schema/settings 同源——词汇表收敛为 `config.ts` 的 `EFFORT_CHOICES` 单一
+  事实源（此前同一列表在 4 处字面抄写）。
+- **显式 `xhigh` 输出预算被双重放大 ×16**（0.8.3 引入）：阶段侧 `layerMaxTokens`
+  与 `callLLM` 自动档防线各自持有高档位字面量表且分叉（防线漏 `xhigh`），
+  配置 `xhigh` 且模型声明支持时先 ×4 再 ×4。现两侧共用 `HIGH_EFFORT_TIERS`
+  单一常量，配置本身就是高档位时防线不再放大。
+- **思考档选择器补「自动」项**：0.8.3 删除"跟随配置"选项后选择器只剩模型声明
+  档位，选过显式档位便无法从 UI 回到自动。现首项固定「自动」（key=''，点击
+  回写空串），同时把选项构造的重复三元收敛为单次计算。
+- 文档漂移：README 中英两版 `llm.reasoningEffort` 值列表补 `minimal`（与
+  schema 对齐）；设置页预算提示与代码注释的"high/max ×4"补全为
+  high/xhigh/max。
+
+### 变更
+
+- **宿主运行时升级 0.1.0-rc.8 → 0.1.1-rc.2**（devDeps 精确钉死、peers 换线
+  `^0.1.1-rc.2`）：9 个直依赖包 tarball 逐文件比对——7 包代码零变更，
+  dsh-llm / dsh-client-connection 纯增量（多模态图片卸载 / Files API /
+  adapter `prepareCall` / RPC `doFetch` 可选参数），本项目使用的
+  GenerateOptions/StreamChunk/createUserMessage/installModelSelection/
+  rpc.handle|call 逐字节相同，零适配改动。验证：build/smoke/双 profile
+  dump-config/bench fixture 冒烟全过。跨预发布族升级的 npm ERESOLVE 用
+  `--legacy-peer-deps` 过渡（口注已记入 AGENTS.md）。
+
+### 基准
+
+- **DSH-MemBench 工作流赛道扩至 7 场景**（`bench/`），新增三类考法：
+  流程知识更新（`wf-heap-update`——教学 v1 → 变更会话宣布改版 v2 → 探针考
+  "现在生效的流程"，旧流程专属产物不得再出现，L1 去重更新的操作化度量）、
+  相似工作流消歧（`wf-twin-runbook`——双胞胎 runbook，改错服务的配置由负检查
+  判负）、风格规范延续（`wf-report-style`——命名/结构/千分位/页脚约定跨会话
+  落地）。完成度校验从单一正检查扩为四型判据（`contains`/`notContains`/
+  `absent`/`exists`），检查器抽为可独立单测的 `checks.js`；runner 支持可选
+  `change` 会话；场景库校验同步收紧（判据恰选其一、marker 须出现在教学文本）。
+  正式基线（`bench/baseline/`）仍为 4 场景版，扩库后首次回归跑需重建基线。
+
+### 基准加固（漏洞审计后修复批次）
+
+- **AB 双组并行**：`run.mjs --arm AB` 双进程并发跑两组（对照互不依赖），父进程
+  收尾自动出联合报告；子进程免清扫免自动报告防互扰。
+- **跨运行考古通道封堵**：每次运行开始前清扫 `%TEMP%/dsh-mem-bench/` 历史沙箱与
+  `~/.dsh/sessions` 中 bench 命名空间的会话目录（只匹配 `dsh-mem-bench`，用户自身
+  会话/数据不受影响）。
+- **对话赛道 B 组下线**：Harness 会话彼此独立，无记忆的 B 组探针必然失败（历史
+  实测 17.8% ≈ 地板），对照无信息量——`--track dialog --arm B` 拒跑，只保留 A 组。
+- **代码指纹与链接守卫**：结果头 environment 增记 `gitSha`；run.mjs 启动校验 bench
+  profile 两个 link: 依赖指向被测仓库（旧工作树代码会静默污染结果，2026-08-21
+  实测事故）。
+- **越界读取双档审计**（工作流赛道）：严格档命中（`~/.dsh` 记忆/会话库、memory.db、
+  records/conversations/scenes 存储路径）→ 涉事场景全部检查判负；宽松档仅提示复核；
+  修复 `.MemoryMappedFiles` 子串误报；合法记忆工具调用（memory_read_scene 等参数即
+  路径）不进审计。
+- **场景去自明化**：`wf-heap-update` 改 `target.env + apply.sh` 两步约定、
+  `wf-twin-runbook` 改同构 `svc-a/svc-b` 文件（映射只存教学文本）——修复"B 组翻沙箱
+  文件即可逆向流程"的判别力漏洞（实测 B 探针曾 12/12、11/12 逼近满分）。
+- **工作流污染实测**：工作流探针的召回注入纳入 contamination 统计（此前字段缺失
+  被报告显示为 0）；report 新增**探针段完成度**单列（教学/变更段两臂都有现场上下文，
+  探针段才是纯记忆窗口）。
+- **场景库校验收紧**：marker 全库唯一、同 kind 会话查重、contains-all 的 gold 必须
+  出现在教学文本（无记忆不可答即坏题）、gold 不得泄漏进问题文本；求助检测补英文
+  模式；fixtures 按赛道分 `dialog/`、`workflow/` 子目录（对话 patch 下工作流场景
+  无工具必挂，混装冒烟会误报）。
+
+### 基准易用性（bench.env 模型配置）
+
+- **模型三角色集中配置**：`bench/harness/bench.env`（模板 `bench.env.example` 复制
+  使用，含 API key 已 gitignore）统一配被测 Agent / 判卷 / 蒸馏三个模型——
+  `BENCH_PROVIDER/BENCH_MODEL`、`BENCH_JUDGE_*`、`BENCH_DISTILL_*`；命令行参数
+  优先于 env 文件。新增 `--distill-provider/--distill-model` 命令行参数，蒸馏模型
+  从 patch 硬编码改为环境变量化（缺省回落 official/flash）。
+- **自定义 OpenAI 兼容网关**：bench.env 填 `BENCH_TEST_BASE_URL + API_KEY`（判卷
+  可另配一对）后，run.mjs 自动生成 llm-pi-ai patch 注册 `bench-gw` /
+  `bench-judge-gw`（判卷/蒸馏复用被测网关时模型表自动聚合去重），API key 经
+  apiKeyEnv 引用并只注入子进程环境。配置网关后本次运行的自定义供应商完全由
+  bench.env 决定（用户 settings.yaml 的网关不参与，隔离可复现）。
+- **被测模型缺省回落移除**：不配 `--provider/--model` 也不配 bench.env 直接拒跑
+  （原回落命中 settings.yaml 默认模型、bench profile 无 adapter 时启动即炸）。
+- 解析与网关 patch 构造抽为纯函数模块 `env-config.mjs`（22 项单测 + dump-config
+  结构验证全绿）。
+- **思考强度三角色可配**：`BENCH_REASONING_EFFORT`（被测）/ `BENCH_JUDGE_REASONING_EFFORT`
+  （判卷）/ `BENCH_DISTILL_REASONING_EFFORT`（蒸馏，缺省 off）+ 对应 `--effort/
+  --judge-effort/--distill-effort` 命令行参数；经 `ModelSelection.reasoningEffort`
+  （installModelSelection 官方入口）与判卷 GenerateOptions 下发，留空 = 不传跟随
+  provider 默认；结果头 environment 记录两侧 effort（可复现性）。
+
+### 基准实测数据更新（README 中英同步）
+
+- **工作流赛道扩至 7 场景后的新数据**（v4-flash@high、判卷 glm-5.3、插件 0.8.3）：
+  探针段完成度 A 组（记忆开，3 轮）**85.5%**（59/69）对 B 组（记忆关，1 轮）
+  **43.5%**（10/23）；B 组每场景输入 token 为 A 组 **6.8 倍**（1.81M vs 266k，
+  high 档下无记忆的重新探索代价被显著放大）；风格规范场景探针 B 组 0/4（约定
+  只存记忆，判别力天花板）；流程更新场景 B 组仍可读脚本逆向（判别力受沙箱
+  可供性限制，README 如实标注）。`bench-workflow.svg` 图表随数据重制；对话
+  赛道旧数据标注为 0.8.0 留档基线（B 组已下线）。
+- **B 组成本护栏**：`--repeats` 只作用于 A 组，B 组固定只跑 1 次（无记忆长任务
+  的 token 消耗过高，用户决策）。
+- **实时进度面板**：跑基准时 `run.mjs` 自动拉起 `panel.mjs`（零依赖、只绑
+  127.0.0.1）并打开浏览器——A/B 双臂卡片、场景/阶段/消息粒度进度、累计成本、
+  事件尾巴；心跳（5s）与活动新鲜度双指标直判"卡住 vs 进程挂了"。数据源为
+  runner 向 `rep-N/progress.json` 的原子增量写（≥1s 节流）+ `run.mjs` 启动时
+  的 `plan.json`（rep 循环在父进程手里，子进程不知道总轮数）。`--no-panel`
+  关闭；面板随运行退出自动收割（子进程 unref，否则吊住父进程事件循环）。
+
 ## [0.8.3] — 2026-08-21
 
 ### 变更

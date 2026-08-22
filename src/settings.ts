@@ -8,12 +8,12 @@ import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-settings';
 import Schema from '@deepseek-ai/schemastery';
 import { settingsNamespace, type SettingsScope } from '@deepseek-ai/dsh-settings';
+import { EFFORT_CHOICES } from './config.js';
 import type { DistillBudgetLayer } from './llm.js';
 import type { MemoryLogger } from './types.js';
 
-/** 蒸馏思考档位可选项：'' = 跟随静态 config（部署默认）。 */
-/** 蒸馏思考档位：'' = 自动（模型默认档 → high）；其余为各适配器通用档位词汇表。 */
-export type EffortChoice = '' | 'off' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+/** 蒸馏思考档位：'' = 自动（模型默认档 → high）；词汇表单源于 config.ts 的 EFFORT_CHOICES。 */
+export type EffortChoice = (typeof EFFORT_CHOICES)[number];
 
 /** 分层输出预算（与 llm.ts 的 DistillBudgetLayer 同键；0 = 跟随内置默认）。 */
 export type DistillBudgets = Record<DistillBudgetLayer, number>;
@@ -89,7 +89,7 @@ export function liveSettingsSchema(): Schema<MemoryLiveSettings> {
     capture: Schema.boolean().default(true),
     distill: Schema.boolean().default(true),
     recall: Schema.boolean().default(true),
-    reasoningEffort: Schema.union(['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).default(''),
+    reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
     distillProvider: Schema.string().default(''),
     distillModel: Schema.string().default(''),
     distillBudgets: Schema.object({
@@ -214,7 +214,6 @@ export function registerLiveSettings(ctx: Context, logger: MemoryLogger): LiveSe
 function resolveSettings(value: unknown): MemoryLiveSettings {
   if (!value || typeof value !== 'object') return { ...ALWAYS_ON };
   const v = value as Partial<MemoryLiveSettings>;
-  const efforts = ['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
   const num = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
   const rawBudgets = (v.distillBudgets ?? {}) as Partial<DistillBudgets>;
   return {
@@ -223,7 +222,7 @@ function resolveSettings(value: unknown): MemoryLiveSettings {
     distill: v.distill !== false,
     recall: v.recall !== false,
     reasoningEffort:
-      typeof v.reasoningEffort === 'string' && efforts.includes(v.reasoningEffort as EffortChoice)
+      typeof v.reasoningEffort === 'string' && (EFFORT_CHOICES as readonly string[]).includes(v.reasoningEffort)
         ? (v.reasoningEffort as EffortChoice)
         : '',
     distillProvider: typeof v.distillProvider === 'string' ? v.distillProvider : '',

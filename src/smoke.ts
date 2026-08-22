@@ -32,7 +32,7 @@ import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
 import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts } from './store/search-utils.js';
 import { liveSettingsSchema, registerLiveSettings, type LiveSettingsHandle, type MemoryLiveSettings } from './settings.js';
-import { decideSendableEffort, layerMaxTokens, resolveLayerTokens } from './llm.js';
+import { callLLM, decideSendableEffort, layerMaxTokens, resolveLayerTokens } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { registerMemoryRpc } from './stats.js';
 import { registerMemoryTools } from './tools/index.js';
@@ -605,6 +605,13 @@ async function main(): Promise<void> {
       let badEffort = false;
       try { await call('dsh-memory/settings-set', { reasoningEffort: 'banana' }); } catch { badEffort = true; }
       assert(badEffort, 'settings-set 拒绝非法思考档位');
+      // 0.8.3 词表扩容回归：RPC 白名单须与 schema 同源收下全部新词汇
+      // （曾漏扩致设置页选 none/minimal/low/medium/xhigh 被拒回滚）
+      for (const ev of ['off', 'none', 'minimal', 'low', 'medium', 'xhigh']) {
+        const sev = await call('dsh-memory/settings-set', { reasoningEffort: ev }) as never as { settings: { reasoningEffort: string } };
+        assert(sev.settings.reasoningEffort === ev && liveVal.reasoningEffort === ev, `settings-set 接受扩容档位 ${ev}`);
+      }
+      await call('dsh-memory/settings-set', { reasoningEffort: '' });
 
       // 蒸馏模型选择器端点：供应商目录 + 默认选择 + 覆盖写透
       const lp0 = await call('dsh-memory/llm-providers') as never as {
@@ -1746,6 +1753,7 @@ async function main(): Promise<void> {
     assert(resolveLayerTokens({ llm: { reasoningEffort: 'off', budgets: { extract: 8000 } } }, 'extract') === 8000, '运行时覆盖优先');
     assert(resolveLayerTokens({ llm: { reasoningEffort: 'off', budgets: { extract: 0 } } }, 'extract') === 16_000, '覆盖为 0 回退内置默认');
     assert(resolveLayerTokens({ llm: { reasoningEffort: 'high', budgets: { l2: 64000 } } }, 'l2') === 256_000, '思考档 high 对覆盖值照常 ×4');
+    assert(resolveLayerTokens({ llm: { reasoningEffort: 'xhigh', budgets: { l2: 64000 } } }, 'l2') === 256_000, '思考档 xhigh 同为高档 ×4（HIGH_EFFORT_TIERS）');
     assert(resolveLayerTokens({ llm: { reasoningEffort: '' } }, 'dedup') === 8_000 && resolveLayerTokens({ llm: { reasoningEffort: '' } }, 'l3') === 16_000, '其余层默认（去重 8k / L3 16k）');
 
     // g2. decideSendableEffort：跨供应商 effort 兼容决策表（callLLM 与 settings-get 共用）
@@ -1761,6 +1769,31 @@ async function main(): Promise<void> {
     assert(decideSendableEffort(capOai, 'off').effort === 'none' && decideSendableEffort(capOai, 'off').reason === 'alias-none', 'off 在 OpenAI 系词汇表别名 none');
     const capDef = { efforts: ['off', 'low', 'high'], defaultEffort: 'off' };
     assert(decideSendableEffort(capDef, '').effort === 'off' && decideSendableEffort(capDef, '').reason === 'auto-default', '自动档优先模型默认档（deepseek 形态）');
+
+    // g3. callLLM 输出预算 ×4 防线：阶段侧已放大的高档配置不再二次放大（×16 回归锚）。
+    // 能力探询假实现声明 high/xhigh（默认 xhigh）；stream 捕获实际发送的 maxTokens/档位。
+    {
+      let captured: { maxTokens?: number; reasoningEffort?: string } = {};
+      const capCtx = {
+        llm: {
+          stream: async function* (opts: { maxTokens?: number; reasoningEffort?: string }) {
+            captured = { maxTokens: opts.maxTokens, reasoningEffort: opts.reasoningEffort };
+            yield { type: 'block-end', block: { type: 'text', text: 'ok' } };
+            yield { type: 'finish', reason: { kind: 'stop' } };
+          },
+          resolveModelInfo: async () => ({ reasoning: { efforts: [{ id: 'high' }, { id: 'xhigh' }], defaultEffort: 'xhigh' } }),
+        },
+      } as never;
+      const capCfg = (effort: string) => ({
+        llm: { provider: 'cap-p', model: 'cap-m', reasoningEffort: effort, maxTokens: 2000, temperature: 0.3, maxInputChars: 100_000, timeoutMs: 10_000 },
+      }) as never as MemoryConfig;
+      await callLLM(capCtx, capCfg('xhigh'), { system: 's', user: 'u', maxTokens: 1000 });
+      assert(captured.maxTokens === 1000 && captured.reasoningEffort === 'xhigh', '显式 xhigh 声明支持照发，阶段侧已 ×4 防线不再放大（×16 回归锚）');
+      await callLLM(capCtx, capCfg('high'), { system: 's', user: 'u', maxTokens: 1000 });
+      assert(captured.maxTokens === 1000, '显式 high 同样只乘一次');
+      await callLLM(capCtx, capCfg(''), { system: 's', user: 'u', maxTokens: 1000 });
+      assert(captured.maxTokens === 4000 && captured.reasoningEffort === 'xhigh', '自动档解析出高档（模型默认 xhigh）防线补 ×4');
+    }
 
     // h. 输入预算覆盖：>0 注入 cfg.llm.maxInputChars（L1 分块/callLLM 截断/rebuild 估算全链消费）
     const h1 = effectiveCfg(mkCfg('', ''), mkLive({ distillMaxInputChars: 300_000 }));

@@ -3,12 +3,16 @@
 // 装入专用 bench profile（dsh-base + dsh-layered-memory + 本包），apply 即开始执行：
 //   逐场景 → 教学会话 → 变更会话 →（A 组）轮询蒸馏落袋 → 探针会话逐题提问 →
 //   判分（contains-all 程序判 / llm·abstain 判卷模型）→ 逐场景落盘 result.json。
+// 运行全程向 DSH_BENCH_OUT/progress.json 增量写实时进度（消息粒度 + 5s 心跳），
+// 供 bench/harness/panel.mjs 面板轮询——写在结果目录、不在沙箱内，被测 Agent 不可见。
 // 全部旋钮来自环境变量，不依赖 Web/HTTP/client 服务：
 //   DSH_BENCH_SCENARIOS     场景库目录（*.json）       必填
 //   DSH_BENCH_ARM           A（记忆开）| B（记忆关）     必填
 //   DSH_BENCH_OUT           结果输出目录                必填
 //   DSH_BENCH_DATA_DIR      本次运行的记忆数据目录       A 组必填（与 patch 的 dataDir 一致）
+//   DSH_BENCH_WORKSPACE     会话与沙箱的工作根目录       必填（run.mjs 分配）
 //   DSH_BENCH_PLUGIN_VERSION 被测插件版本（结果头记录用） 可选
+//   DSH_BENCH_GIT_SHA       被测仓库 git SHA（结果头代码指纹） 可选（run.mjs 注入）
 //   DSH_BENCH_JUDGE_PROVIDER / _MODEL   判卷模型（缺省用当前默认模型）
 //   DSH_BENCH_DISTILL_TIMEOUT_MS        蒸馏等待超时（缺省 120000）
 
@@ -20,19 +24,19 @@ import { installModelSelection } from '@deepseek-ai/dsh-agent';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import z from '@deepseek-ai/schemastery';
+import { SAFE_NAME, safeJoin, evalFileChecks } from './checks.js';
 
 export const name = 'dsh-bench-runner';
 export const inject = ['agentDefaultModel', 'agents', 'sessions', 'llm'];
 export const Config = z.object({});
 
 const POLL_MS = 5000;
-/** 文件名白名单：仅字母数字点下划线连字符，杜绝任何路径片段。 */
-const SAFE_NAME = /^[A-Za-z0-9._-]+$/;
 
 export function apply(ctx) {
   run(ctx).then(
     (code) => exit(ctx, code),
     (err) => {
+      progressFail(err);
       console.error('[bench-runner] fatal:', err?.stack ?? err);
       exit(ctx, 1);
     },
@@ -64,14 +68,19 @@ async function run(ctx) {
   fs.mkdirSync(outDir, { recursive: true });
 
   // 模型钉死：优先环境变量（绕开 settings.yaml 用户层对默认模型的热替换），缺省回落当前默认。
-  const fallback = ctx.get('agentDefaultModel').currentSelection();
+  // reasoningEffort 缺省不传 = 跟随 provider 默认（installModelSelection 的 absent 语义）。
+  // agentDefaultModel 是可选服务（并发 heal 竞态等极端情况下可能缺失）——缺失时
+  // 回落空对象（run.mjs 正常路径总会显式传 DSH_BENCH_PROVIDER/MODEL，不依赖这里）
+  const fallback = ctx.get('agentDefaultModel')?.currentSelection?.() ?? {};
   const selection = {
     provider: process.env.DSH_BENCH_PROVIDER || fallback.provider,
     model: process.env.DSH_BENCH_MODEL || fallback.model,
+    ...(process.env.DSH_BENCH_REASONING_EFFORT ? { reasoningEffort: process.env.DSH_BENCH_REASONING_EFFORT } : {}),
   };
   const judge = {
     provider: process.env.DSH_BENCH_JUDGE_PROVIDER || selection.provider,
     model: process.env.DSH_BENCH_JUDGE_MODEL || selection.model,
+    ...(process.env.DSH_BENCH_JUDGE_REASONING_EFFORT ? { reasoningEffort: process.env.DSH_BENCH_JUDGE_REASONING_EFFORT } : {}),
   };
   const files = listScenarioFiles(scenariosDir);
   if (files.length === 0) throw new Error(`场景目录为空：${scenariosDir}`);
@@ -83,9 +92,14 @@ async function run(ctx) {
     environment: {
       provider: selection.provider,
       model: selection.model,
+      reasoningEffort: selection.reasoningEffort ?? '',
       judgeProvider: judge.provider,
       judgeModel: judge.model,
+      judgeReasoningEffort: judge.reasoningEffort ?? '',
       pluginVersion: process.env.DSH_BENCH_PLUGIN_VERSION || '',
+      // git SHA：版本号之外的代码指纹（profile 链接指向哪个工作树、代码是否与
+      // 场景库同源，版本号反映不了——2026-08-21 实测被旧 runner 静默咬过）
+      gitSha: process.env.DSH_BENCH_GIT_SHA || '',
       scenarioFiles: files,
     },
     scenarios: [],
@@ -93,25 +107,59 @@ async function run(ctx) {
   console.log(`[bench-runner] ${arm} 组启动：${files.length} 个场景，模型 ${selection.provider}/${selection.model}，判卷 ${judge.provider}/${judge.model}`);
 
   const markers = new Map(); // marker -> 场景 id，跨场景污染检测用
+  const ids = []; // 进度面板用：按执行顺序的场景 id
   for (const file of files) {
     const scenario = JSON.parse(fs.readFileSync(safeJoin(scenariosDir, file), 'utf8'));
+    ids.push(scenario.id);
     if (scenario.marker) markers.set(scenario.marker, scenario.id);
   }
+  progressInit(outDir, arm, ids);
 
-  for (const file of files) {
+  for (let idx = 0; idx < files.length; idx++) {
+    const file = files[idx];
     const scenario = JSON.parse(fs.readFileSync(safeJoin(scenariosDir, file), 'utf8'));
     const t0 = Date.now();
+    progressPatch({
+      scenarioIndex: idx,
+      scenarioId: scenario.id,
+      phase: 'teach',
+      message: null,
+      distillWaitedMs: null,
+      probeDone: 0,
+      probeTotal: (scenario.probes?.length) || 0,
+    });
+    progressEvent(`▶ 场景 ${idx + 1}/${files.length}：${scenario.id}`);
     const r = await runScenario(ctx, scenario, { arm, selection, judge, dataDir, outDir, workspace, markers });
     r.file = file;
     r.durationMs = Date.now() - t0;
     result.scenarios.push(r);
     writeJson(path.join(outDir, 'result.json'), result); // 逐场景落盘，中断不丢已完成部分
+    progressCompleteScenario(r);
     const hit = r.probes.filter((p) => p.score === 1).length;
     console.log(`[bench-runner] 场景完成 ${scenario.id}：探针 ${hit}/${r.probes.length}，耗时 ${(r.durationMs / 1000).toFixed(0)}s`);
   }
   result.finishedAt = new Date().toISOString();
   writeJson(path.join(outDir, 'result.json'), result);
+  progressFinish();
   return 0;
+}
+
+/** 场景完成 → 进度收尾：完成清单 + 全 rep 累计指标（面板的成本表数据源）。 */
+function progressCompleteScenario(r) {
+  if (!progress) return;
+  const wf = r.workflow;
+  const passed = wf ? wf.checksPassed : r.probes.filter((p) => p.score === 1).length;
+  const total = wf ? wf.checksTotal : r.probes.length;
+  progress.completed.push({ id: r.id, passed, total, durationMs: r.durationMs });
+  const sessions = [r.teach?.metrics, r.change?.metrics, r.probeMetrics].filter(Boolean);
+  for (const m of sessions) {
+    progress.totals.inputTokens += m.inputTokens ?? 0;
+    progress.totals.outputTokens += m.outputTokens ?? 0;
+    progress.totals.toolCalls += m.toolCalls ?? 0;
+    progress.totals.turns += m.turns ?? 0;
+  }
+  progress.totals.asks += (r.teach?.asks ?? 0) + (r.change?.asks ?? 0) + (r.workflow?.probe?.asks ?? 0);
+  progressEvent(`✓ ${r.id}：${passed}/${total}，耗时 ${(r.durationMs / 1000).toFixed(0)}s`);
 }
 
 // ---------------------------------------------------------------------------
@@ -124,20 +172,6 @@ function listScenarioFiles(dir) {
 
 function readFileInDir(dir, name) {
   return fs.readFileSync(safeJoin(dir, name), 'utf8');
-}
-
-/** 拼接并校验相对路径不越出 base 目录：逐段白名单（段内仅字母数字点下划线连字符）。 */
-function safeJoin(base, rel) {
-  const root = path.resolve(base);
-  const segs = String(rel).split(/[\\/]+/).filter((s) => s !== '');
-  if (segs.length === 0 || segs.some((s) => !SAFE_NAME.test(s))) {
-    throw new Error(`非法相对路径：${rel}`);
-  }
-  const full = path.resolve(root, ...segs);
-  if (full !== root && !full.startsWith(root + path.sep)) {
-    throw new Error(`路径越界：${rel}`);
-  }
-  return full;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,15 +190,19 @@ async function runDialogScenario(ctx, sc, opts) {
   if (!teachSession || !changeSession) throw new Error(`场景 ${sc.id} 缺少 teach 或 change 会话`);
 
   const teach = await driveScriptedSession(ctx, opts.selection, `${sc.id}-teach`, teachSession.messages, { cwd: opts.workspace });
+  progressPatch({ phase: 'change' });
   const change = await driveScriptedSession(ctx, opts.selection, `${sc.id}-change`, changeSession.messages, { cwd: opts.workspace });
 
   // A 组等蒸馏落袋（records/ 行数稳定）；B 组插件整体禁用，无蒸馏可等。
   // 记忆生命周期：一个 rep 的 dataDir 从第一次蒸馏起全程保留、跨场景累积，rep 结束才废弃
   // ——后续场景的探针因此会被前面场景的记忆干扰，抗干扰能力经 contamination 指标量化。
+  progressPatch({ phase: 'distill' });
   const distill = opts.arm === 'A'
     ? await waitForDistillation(opts.dataDir, Number(process.env.DSH_BENCH_DISTILL_TIMEOUT_MS) || 120_000)
     : { skipped: true };
+  if (!distill.skipped) progressEvent(`蒸馏等待 ${(distill.waitedMs / 1000).toFixed(0)}s（records ${distill.recordLines} 行${distill.timedOut ? '，超时' : ''}）`);
 
+  progressPatch({ phase: 'probe' });
   const probe = await runProbeSession(ctx, sc, opts);
 
   return {
@@ -193,6 +231,7 @@ async function driveScriptedSession(ctx, selection, label, messages, options = {
     for (let i = 0; i < messages.length; i++) {
       agent.followup(userMessage(messages[i]));
       await agent.whenIdle();
+      progressLive(label, i + 1, messages.length, foldMetrics(agent.session.events.filter((e) => e.seq >= firstSeq)));
       // 交互窗口（剧本最后一条消息后）：agent 求助（问凭据/约定/信息）→ 补发固定重述，
       // 真实用户行为——"问就再讲一遍"。轮次与 token 如实计入，这正是记忆缺失的代价。
       if (options.reteach && i === messages.length - 1) {
@@ -204,8 +243,10 @@ async function driveScriptedSession(ctx, selection, label, messages, options = {
           exchanges++;
           asks++;
           console.log(`    [${label}] 检测到求助，补发固定重述（第 ${asks} 次）`);
+          progressEvent(`[${label}] 检测到求助，补发固定重述（第 ${asks} 次）`);
           agent.followup(userMessage(options.reteach));
           await agent.whenIdle();
+          progressLive(label, i + 1, messages.length, foldMetrics(agent.session.events.filter((e) => e.seq >= firstSeq)));
         }
       }
     }
@@ -216,16 +257,22 @@ async function driveScriptedSession(ctx, selection, label, messages, options = {
       metrics: foldMetrics(driven),
       asks,
       toolAudit: collectToolAudit(driven),
+      // 可选：跨场景污染检测（工作流探针也测——召回注入里出现其他场景 marker 即计）
+      ...(options.markers && options.scenarioId
+        ? { contamination: detectContamination(agent.session.events, { id: options.scenarioId }, options.markers) }
+        : {}),
     };
   } finally {
     try { dispose?.(); } catch { /* 拆除失败不影响结果落盘 */ }
   }
 }
 
-/** 求助检测：问号结尾、ask 类工具，或索取凭据/信息/约定的典型措辞。 */
+/** 求助检测：问号结尾、ask 类工具，或索取凭据/信息/约定的典型措辞（中英双语）。 */
 function looksLikeAsk(text) {
   const t = String(text || '');
   if (/[？?]\s*$/.test(t.trimEnd())) return true;
+  if (/\b(password|credential|username|account|token|api ?key)\b\s*(is|are|was)?\b[^.!?]{0,30}\?/i.test(t)) return true;
+  if (/\b(what(?:'s| is| are)|could you|can you|please)\b[^.!?]{0,40}\b(provide|tell|share|confirm|give)\b/i.test(t)) return true;
   return /(请|麻烦|能否|能不能|可以)?\s*(提供|告诉|告知|给我|发我|补充|说明)[^。！？!]{0,24}(账号|密码|凭据|用户名|口令|令牌|密钥|信息|约定|规矩|流程|方式|方法)|(账号|密码|凭据|用户名|口令)(是(什么|多少))|我(需要|缺少|没有)[^。！？!]{0,16}(账号|密码|凭据|信息|约定)|(无法|不能|没能)[^。！？!]{0,20}(因为|由于|没有|缺少|不知道)/.test(t);
 }
 
@@ -238,17 +285,43 @@ function taskSeemsDone(text) {
   return /(已完成|已生成|已写入|搞定|done)/i.test(text || '');
 }
 
-/** 工具调用审计：记录 name + 参数摘要，标记疑似翻越沙箱（.dsh/memory 等）。 */
+/**
+ * 工具调用审计：记录 name + 参数摘要。越界读取分两档：
+ *   snoopViolation（严格）——参数中出现明确的记忆库/会话库路径（~/.dsh、memory.db、
+ *   records/conversations/scenes 存储目录）。触发即判该场景全部检查负（防"翻库作弊"，
+ *   权限模型只限写不限读，这是唯一硬防线）。带路径分隔符锚定 + 词尾负前瞻，
+ *   防止 '.MemoryMappedFiles' 这类子串误命中（2026-08-21 实测误报过）。
+ *   snoopSuspect（宽松）——疑似但不确定（如 .dsh 相关、memory 泛词），仅标记供人工复核。
+ */
+const SNOOP_VIOLATION = /(?:\.dsh[\\/](?:memory|sessions|profiles)|memory\.db|(?:^|[\s"'\\/])(?:records|conversations|scenes)[\\/])/i;
+const SNOOP_SUSPECT = /(\.dsh(?![a-z0-9])|memory\.db|\.memory(?![a-z]))/i;
 function collectToolAudit(events) {
   const audit = [];
   for (const e of events) {
     if (e.type !== 'tool/call') continue;
     const name = String(e.data?.name ?? '');
+    // 合法主动召回通道不进审计：memory_read_scene 的参数本身就是 scenes/<family>/
+    // 路径，按路径正则会误判违规（违规只针对 bash/fs 等通用工具的越界读取）
+    if (/^(memory_search|conversation_search|memory_read_scene)$/.test(name)) continue;
     const args = String(e.data?.arguments ?? e.data?.input ?? '');
-    audit.push({ name, args: args.slice(0, 120) });
+    audit.push({ name, args: args.slice(0, 400) });
   }
-  const snoopSuspect = audit.some((a) => /(\.dsh|memory\.db|\.memory)/i.test(a.args));
-  return audit.length > 40 ? { calls: audit.slice(0, 40), truncated: true, snoopSuspect } : { calls: audit, truncated: false, snoopSuspect };
+  // 检测跑原始全串（截断只影响留痕展示，不产生漏检）
+  const raws = [];
+  for (const e of events) {
+    if (e.type !== 'tool/call') continue;
+    const name = String(e.data?.name ?? '');
+    if (/^(memory_search|conversation_search|memory_read_scene)$/.test(name)) continue;
+    raws.push(String(e.data?.arguments ?? e.data?.input ?? ''));
+  }
+  const test = (re) => raws.some((s) => re.test(s));
+  const out = {
+    calls: audit.length > 40 ? audit.slice(0, 40) : audit,
+    truncated: audit.length > 40,
+    snoopSuspect: test(SNOOP_SUSPECT),
+    snoopViolation: test(SNOOP_VIOLATION),
+  };
+  return out;
 }
 
 /** 探针会话：新会话逐题提问，逐题取末条 assistant 文本并判分；顺带检测召回注入的跨场景污染。 */
@@ -264,6 +337,7 @@ async function runProbeSession(ctx, sc, opts) {
       await agent.whenIdle();
       const events = agent.session.events.filter((e) => e.seq > before);
       const answer = lastAssistantText(events);
+      progressPatch({ phase: 'judge' });
       const judged = await judgeProbe(ctx, opts.judge, p, answer);
       // 召回分析：该题的被动注入是否含 gold 要点；模型是否主动调了记忆工具（双通道分离）
       const injText = recallInjectionText(events);
@@ -284,6 +358,7 @@ async function runProbeSession(ctx, sc, opts) {
         usedMemoryTool: events.some((e) => e.type === 'tool/call' && /memory|conversation/i.test(String(e.data?.name ?? ''))),
       });
       console.log(`  [${sc.id}·${p.type}] score=${judged.score} ${judged.reason ?? ''}`);
+      progressPatch({ phase: 'probe', probeDone: probes.length });
     }
     const contamination = detectContamination(agent.session.events, sc, opts.markers);
     await ctx.get('sessions').flush(agent.session);
@@ -400,55 +475,78 @@ async function runWorkflowScenario(ctx, sc, opts) {
     }
     if (site) fs.writeFileSync(safeJoin(sandbox, '.site-port'), `${site.port}\n`, 'utf8');
   };
-  const runChecks = (list) => (list ?? []).map((c) => {
-    let ok = false, detail = '';
-    try {
-      const file = safeJoin(sandbox, c.file);
-      const text = fs.readFileSync(file, 'utf8');
-      const missing = (c.contains ?? []).filter((k) => !text.includes(k));
-      ok = missing.length === 0;
-      detail = ok ? '命中' : `缺关键词：${missing.join('、')}`;
-    } catch {
-      detail = '产物文件不存在';
-    }
-    return { file: c.file, ok, detail };
-  });
+  const runChecks = (list) => evalFileChecks(sandbox, list);
   const teach = sc.sessions.find((s) => s.kind === 'teach');
+  const change = sc.sessions.find((s) => s.kind === 'change');
   const probe = sc.sessions.find((s) => s.kind === 'probe');
   if (!teach || !probe) throw new Error(`工作流场景 ${sc.id} 缺 teach 或 probe 会话`);
 
   try {
     resetSandbox();
+    progressPatch({ phase: 'teach' });
     const teachRun = await driveScriptedSession(ctx, opts.selection, `${sc.id}-teach`, teach.messages, {
       cwd: sandbox,
       reteach: teach.reteach ?? probe.reteach,
       maxExchanges: 2,
     });
     const teachChecks = runChecks(sc.teachChecks);
+    progressEvent(`教学段检查 ${teachChecks.filter((c) => c.ok).length}/${teachChecks.length}`);
+    // 可选变更会话（流程知识更新题用）：在同一沙箱里追加教学——"流程改版，旧作废"，
+    // 探针考的是召回出【现行】流程还是被旧记忆带偏（L1 去重更新的操作化度量）。
+    let changeRun = null;
+    let changeChecks = [];
+    if (change) {
+      progressPatch({ phase: 'change' });
+      changeRun = await driveScriptedSession(ctx, opts.selection, `${sc.id}-change`, change.messages, {
+        cwd: sandbox,
+        reteach: change.reteach ?? probe.reteach,
+        maxExchanges: change.maxExchanges ?? 2,
+      });
+      changeChecks = runChecks(sc.changeChecks);
+      progressEvent(`改版段检查 ${changeChecks.filter((c) => c.ok).length}/${changeChecks.length}`);
+    }
     // 探针前重置沙箱到原始状态：抹掉教学产物，防止 B 组从文件系统"考古"工作流
     //（否则 B 组照抄上一次的产物格式即可，记忆对照失效）。
     resetSandbox();
+    progressPatch({ phase: 'distill' });
     const distill = opts.arm === 'A'
       ? await waitForDistillation(opts.dataDir, Number(process.env.DSH_BENCH_DISTILL_TIMEOUT_MS) || 120_000)
       : { skipped: true };
+    if (!distill.skipped) progressEvent(`蒸馏等待 ${(distill.waitedMs / 1000).toFixed(0)}s（records ${distill.recordLines} 行${distill.timedOut ? '，超时' : ''}）`);
+    progressPatch({ phase: 'probe' });
     const probeRun = await driveScriptedSession(ctx, opts.selection, `${sc.id}-probe`, probe.messages, {
       cwd: sandbox,
       reteach: probe.reteach,
       maxExchanges: probe.maxExchanges ?? 2,
+      markers: opts.markers,
+      scenarioId: sc.id,
     });
     const probeChecks = runChecks(sc.probeChecks);
-    const allChecks = [...teachChecks.map((c) => ({ phase: 'teach', ...c })), ...probeChecks.map((c) => ({ phase: 'probe', ...c }))];
+    progressEvent(`探针段检查 ${probeChecks.filter((c) => c.ok).length}/${probeChecks.length}`);
+    // 越界读取记忆库（严格档）→ 该场景判负：权限模型只限写不限读，这是唯一硬防线；
+    // 判负逐条写明原因，完成度如实下降而非静默标记。
+    const snoopViolation = [teachRun, changeRun, probeRun]
+      .some((r) => r?.toolAudit?.snoopViolation === true);
+    const allChecks = ([
+      ...teachChecks.map((c) => ({ phase: 'teach', ...c })),
+      ...changeChecks.map((c) => ({ phase: 'change', ...c })),
+      ...probeChecks.map((c) => ({ phase: 'probe', ...c })),
+    ]).map((c) => (snoopViolation && c.ok ? { ...c, ok: false, detail: '越界读取记忆库（snoopViolation），该场景判负' } : c));
+    if (snoopViolation) console.warn(`    [${sc.id}] ⚠ snoopViolation：检测到越界读取记忆库，本场景全部检查判负`);
     return {
       id: sc.id,
       family: sc.family,
       kind: 'workflow',
       teach: teachRun,
-      change: { metrics: null, skipped: true },
+      change: changeRun ? { metrics: changeRun.metrics, skipped: false } : { metrics: null, skipped: true },
       distill,
       probes: [],
+      contamination: probeRun.contamination ?? [],
       workflow: {
         probe: { asks: probeRun.asks, toolAudit: probeRun.toolAudit },
+        change: changeRun ? { asks: changeRun.asks, toolAudit: changeRun.toolAudit } : null,
         teachToolAudit: teachRun.toolAudit,
+        snoopViolation,
         checks: allChecks,
         checksPassed: allChecks.filter((c) => c.ok).length,
         checksTotal: allChecks.length,
@@ -574,6 +672,7 @@ async function waitForDistillation(dataDir, timeoutMs) {
   let last = -1, stable = 0;
   while (Date.now() - started < timeoutMs) {
     await sleep(POLL_MS);
+    progressPatch({ distillWaitedMs: Date.now() - started });
     const count = countRecordLines(recordsDir);
     if (count > last) {
       last = count;
@@ -646,6 +745,7 @@ async function askJudge(ctx, judge, system, userText) {
       const stream = ctx.llm.stream({
         provider: judge.provider,
         model: judge.model,
+        ...(judge.reasoningEffort ? { reasoningEffort: judge.reasoningEffort } : {}),
         system,
         messages: [userMessage(userText)],
         maxTokens: 1024,
@@ -666,6 +766,117 @@ async function askJudge(ctx, judge, system, userText) {
     console.log('    [judge] 空输出，重试一次');
   }
   return '';
+}
+
+// ---------------------------------------------------------------------------
+// 实时进度输出（progress.json → 面板数据源）
+// ---------------------------------------------------------------------------
+// 设计约束：
+//   - 写在 DSH_BENCH_OUT（rep-N/）里，不在沙箱内——被测 Agent 读不到，不影响指标；
+//   - tmp+rename 原子写 + ≥1s 节流（事件驱动但补一个 trailing 定时器，防末事件被节流吞掉）；
+//   - 5s 心跳 interval 只更新 heartbeatAt——面板据此区分"模型慢"（心跳在、活动旧）
+//     与"进程挂了"（心跳停）；
+//   - 任何写失败静默忽略：进度是观测面，绝不影响基准本身。
+
+let progress = null;
+let progressFile = '';
+let progressLastWrite = 0;
+let progressTimer = null;
+let progressHeartbeatTimer = null;
+
+function progressInit(outDir, arm, scenarioIds) {
+  progressFile = path.join(outDir, 'progress.json');
+  progress = {
+    version: 1,
+    arm,
+    startedAt: new Date().toISOString(),
+    updatedAt: '',
+    heartbeatAt: '',
+    scenarios: scenarioIds,
+    scenarioIndex: -1,
+    scenarioId: '',
+    phase: 'init',
+    message: null,          // {label, i, n, turns, steps, inputTokens, outputTokens, toolCalls}
+    distillWaitedMs: null,
+    probeDone: 0,
+    probeTotal: 0,
+    completed: [],          // {id, passed, total, durationMs}
+    totals: { inputTokens: 0, outputTokens: 0, toolCalls: 0, turns: 0, asks: 0 },
+    events: [],             // 环形，最近 24 条 {t, msg}
+  };
+  progressHeartbeatTimer = setInterval(() => {
+    if (!progress) return;
+    progress.heartbeatAt = new Date().toISOString();
+    progressWrite(true);
+  }, 5000);
+  progressWrite(true);
+}
+
+function progressPatch(patch) {
+  if (!progress) return;
+  Object.assign(progress, patch);
+  progressWrite();
+}
+
+function progressEvent(msg) {
+  if (!progress) return;
+  progress.events.push({ t: new Date().toISOString(), msg: String(msg).slice(0, 200) });
+  if (progress.events.length > 24) progress.events.splice(0, progress.events.length - 24);
+  progressWrite();
+}
+
+/** 会话内消息粒度：label 剧本会话名，i/n 当前第几条，m 为该会话至今的折叠指标。 */
+function progressLive(label, i, n, m) {
+  if (!progress) return;
+  progress.message = {
+    label,
+    i,
+    n,
+    turns: m?.turns ?? 0,
+    steps: m?.steps ?? 0,
+    inputTokens: m?.inputTokens ?? 0,
+    outputTokens: m?.outputTokens ?? 0,
+    toolCalls: m?.toolCalls ?? 0,
+  };
+  progressWrite();
+}
+
+function progressWrite(force = false) {
+  if (!progress) return;
+  const now = Date.now();
+  if (!force && now - progressLastWrite < 1000) {
+    if (!progressTimer) {
+      progressTimer = setTimeout(() => {
+        progressTimer = null;
+        progressWrite(true);
+      }, 1050 - (now - progressLastWrite));
+    }
+    return;
+  }
+  progressLastWrite = now;
+  progress.updatedAt = new Date().toISOString();
+  const tmp = `${progressFile}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(progress) + '\n', 'utf8');
+    fs.renameSync(tmp, progressFile);
+  } catch { /* 进度写失败不影响基准 */ }
+}
+
+function progressFinish() {
+  if (!progress) return;
+  if (progressHeartbeatTimer) clearInterval(progressHeartbeatTimer);
+  if (progressTimer) { clearTimeout(progressTimer); progressTimer = null; }
+  if (progress.phase !== 'error') progress.phase = 'done';
+  progress.message = null;
+  progressWrite(true);
+}
+
+function progressFail(err) {
+  if (!progress) return;
+  progress.phase = 'error';
+  progress.error = String(err?.message ?? err).slice(0, 300);
+  progressEvent(`✗ 运行失败：${progress.error}`);
+  progressFinish();
 }
 
 // ---------------------------------------------------------------------------

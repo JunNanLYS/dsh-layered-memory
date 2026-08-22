@@ -1,9 +1,13 @@
 // 场景库结构校验：node bench/harness/validate-scenarios.mjs [目录]
-// 断言每个场景：id/family 合法、teach+change 会话存在且非空、恰好 6 题且五类型齐备、
-// 判分方式与 gold/stale 的搭配合法。退出码非 0 即校验失败（可挂 CI）。
+// 对话场景：id/family 合法、teach+change 会话存在且非空、恰好 6 题且六类型齐备、
+// 判分方式与 gold/stale 的搭配合法。
+// 工作流场景：teach/probe 会话存在、可选 change 会话（流程更新题）、teach/change/probeChecks
+// 每条恰一种判据（contains / notContains / absent / exists）、marker 出现在教学文本中。
+// 退出码非 0 即校验失败（可挂 CI）。
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { checkShapeProblem } from './dsh-bench-runner/src/checks.js';
 
 const dir = path.resolve(process.argv[2] || new URL('../scenarios', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 const REQUIRED_TYPES = ['extraction', 'multihop', 'temporal', 'update', 'scene', 'abstention'];
@@ -14,6 +18,20 @@ const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
 if (files.length === 0) {
   console.error(`场景目录为空：${dir}`);
   process.exit(1);
+}
+// marker 全库唯一（跨场景污染检测的前提：两个场景共用 marker 会让污染计数互相串扰）
+const markerOwner = new Map();
+for (const f of files) {
+  let sc;
+  try { sc = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+  if (sc?.marker) {
+    if (markerOwner.has(sc.marker) && markerOwner.get(sc.marker) !== sc.id) {
+      console.error(`✗ ${f}：marker「${sc.marker}」与 ${markerOwner.get(sc.marker)} 的场景重复（污染检测要求全库唯一）`);
+      failed++;
+    } else {
+      markerOwner.set(sc.marker, sc.id);
+    }
+  }
 }
 for (const f of files) {
   const problems = [];
@@ -30,22 +48,57 @@ for (const f of files) {
     if (!['chat', 'work'].includes(sc.family)) problems.push(`family 非法：${sc.family}`);
     if (!sc.marker) problems.push('缺 marker（跨场景污染检测的唯一标记词，须出现在教学文本中）');
     if (!sc.sandboxFiles || Object.keys(sc.sandboxFiles).length === 0) problems.push('缺 sandboxFiles');
+    // 防与 snoop 严格档正则撞名（records/、conversations/、scenes/、memory.db 是
+    // 越界读取的判负锚点——沙箱文件用这些名字会让合法操作被误判违规）
+    for (const key of Object.keys(sc.sandboxFiles ?? {})) {
+      if (/^(?:records|conversations|scenes)[\\/]/.test(key) || /memory\.db/.test(key)) {
+        problems.push(`sandboxFiles 键「${key}」撞 snoop 严格档判负锚点，请改名`);
+      }
+    }
+    for (const key of ['teachChecks', 'probeChecks', 'changeChecks']) {
+      for (const [i, c] of (sc[key] ?? []).entries()) {
+        if (c?.file && (/^(?:records|conversations|scenes)[\\/]/.test(c.file) || /memory\.db/.test(c.file))) {
+          problems.push(`${key}[${i}] file「${c.file}」撞 snoop 严格档判负锚点，请改名`);
+        }
+      }
+    }
     const teach = sc.sessions?.find((s) => s.kind === 'teach');
+    const change = sc.sessions?.find((s) => s.kind === 'change');
     const probe = sc.sessions?.find((s) => s.kind === 'probe');
+    const kinds = (sc.sessions ?? []).map((s) => s.kind);
+    for (const k of new Set(kinds)) {
+      if (kinds.filter((x) => x === k).length > 1) problems.push(`kind=${k} 的会话出现多次（执行器只取第一个，多余的是笔误）`);
+    }
     if (!teach?.messages?.length) problems.push('缺 teach 会话或消息为空');
+    if (change && !change.messages?.length) problems.push('change 会话存在但消息为空');
     if (!probe?.messages?.length) problems.push('缺 probe 会话或消息为空');
     if (!probe?.reteach) problems.push('probe 缺 reteach（B 组反问时的固定重述）');
+    if (sc.marker && !(sc.sessions ?? []).some((x) => (x.messages ?? []).join('\n').includes(sc.marker))) {
+      problems.push(`marker「${sc.marker}」未出现在任一教学会话文本中`);
+    }
     for (const key of ['teachChecks', 'probeChecks']) {
       if (!Array.isArray(sc[key]) || sc[key].length === 0) problems.push(`缺 ${key}（完成度校验）`);
       for (const [i, c] of (sc[key] ?? []).entries()) {
-        if (!c.file || !Array.isArray(c.contains) || c.contains.length === 0) problems.push(`${key}[${i}] 缺 file 或 contains`);
+        const p = checkShapeProblem(c);
+        if (p) problems.push(`${key}[${i}] ${p}`);
+      }
+    }
+    // changeChecks 可选：有 change 会话时用于校验新版流程演练到位（诊断归因用）
+    if (sc.changeChecks !== undefined) {
+      if (!Array.isArray(sc.changeChecks) || sc.changeChecks.length === 0) problems.push('changeChecks 存在但为空');
+      if (!change) problems.push('changeChecks 存在但缺 change 会话');
+      for (const [i, c] of (sc.changeChecks ?? []).entries()) {
+        const p = checkShapeProblem(c);
+        if (p) problems.push(`changeChecks[${i}] ${p}`);
       }
     }
     if (problems.length) {
       console.error(`✗ ${f}（${sc.id ?? '?'} workflow）：\n    - ${problems.join('\n    - ')}`);
       failed++;
     } else {
-      console.log(`✓ ${f}（${sc.id}，workflow，teach ${sc.teachChecks.length} + probe ${sc.probeChecks.length} 项校验）`);
+      const parts = [`teach ${sc.teachChecks.length}`, `probe ${sc.probeChecks.length}`];
+      if (change) parts.push(`change ${(sc.changeChecks ?? []).length}`);
+      console.log(`✓ ${f}（${sc.id}，workflow，${parts.join(' + ')} 项校验）`);
     }
     continue;
   }
@@ -69,6 +122,14 @@ for (const f of files) {
   for (const [i, p] of probes.entries()) {
     const tag = `第${i + 1}题(${p.type})`;
     if (!p.q || typeof p.q !== 'string') problems.push(`${tag} 缺问题文本`);
+    if (p.judge === 'contains-all') {
+      // 程序判的 gold 必须能在教学文本里找到出处（否则该题无记忆不可能答对，是坏题）；
+      // 同时 gold 不得原样出现在问题文本里（问题泄漏答案，B 组靠复读也能过）。
+      for (const g of p.gold ?? []) {
+        if (!teachAll.includes(g)) problems.push(`${tag} gold「${g}」未出现在教学文本（无记忆不可答）`);
+        if (p.q.includes(g)) problems.push(`${tag} gold「${g}」泄漏在问题文本里`);
+      }
+    }
     if (!JUDGES.has(p.judge)) problems.push(`${tag} 判分方式非法：${p.judge}`);
     if (p.judge === 'abstain-llm') {
       if (p.gold) problems.push(`${tag} 拒答题不应有 gold`);

@@ -1,5 +1,6 @@
 import Schema from '@deepseek-ai/schemastery';
 import { settingsNamespace } from '@deepseek-ai/dsh-settings';
+import { EFFORT_CHOICES } from './config.js';
 const NS = settingsNamespace('dsh-memory');
 const ALWAYS_ON = {
     enabled: true,
@@ -36,7 +37,7 @@ export function liveSettingsSchema() {
         capture: Schema.boolean().default(true),
         distill: Schema.boolean().default(true),
         recall: Schema.boolean().default(true),
-        reasoningEffort: Schema.union(['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).default(''),
+        reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
         distillProvider: Schema.string().default(''),
         distillModel: Schema.string().default(''),
         distillBudgets: Schema.object({
@@ -154,7 +155,6 @@ function resolveSettings(value) {
     if (!value || typeof value !== 'object')
         return { ...ALWAYS_ON };
     const v = value;
-    const efforts = ['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
     const num = (x) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
     const rawBudgets = (v.distillBudgets ?? {});
     return {
@@ -162,7 +162,7 @@ function resolveSettings(value) {
         capture: v.capture !== false,
         distill: v.distill !== false,
         recall: v.recall !== false,
-        reasoningEffort: typeof v.reasoningEffort === 'string' && efforts.includes(v.reasoningEffort)
+        reasoningEffort: typeof v.reasoningEffort === 'string' && EFFORT_CHOICES.includes(v.reasoningEffort)
             ? v.reasoningEffort
             : '',
         distillProvider: typeof v.distillProvider === 'string' ? v.distillProvider : '',

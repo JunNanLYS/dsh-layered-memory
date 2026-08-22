@@ -2044,7 +2044,7 @@ window.__ModuleLoader__.load({
               "div", { style: S.switchDesc },
               "各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 " +
                 layers.map(function (l) { return eff[l[0]] || "?"; }).join(" / ") +
-                "）；思考档 high/max 时实际限额自动 ×4",
+                "）；思考档 high/xhigh/max 时实际限额自动 ×4",
             )),
         ),
         react.createElement(
@@ -2197,34 +2197,37 @@ window.__ModuleLoader__.load({
                 // 分组：蒸馏参数（模型路由 / 思考档位 / 输出预算）
                 react.createElement("div", { style: S.panelLabel }, "蒸馏参数"),
                 settingsData.effort
-                  ? react.createElement(
-                      "div",
-                      { style: S.switchRow },
-                      react.createElement(Segmented, {
-                        // 档位表来自当前生效模型的能力声明（settings-get 的 effort.options；
-                        // 空声明 → 只显示 high）。''（自动）或档位不在表里时高亮实际生效值。
-                        value: (function () {
-                          var opts = settingsData.effort.options && settingsData.effort.options.length
-                            ? settingsData.effort.options : ["high"];
-                          if (opts.indexOf(settingsData.effort.current) >= 0) return settingsData.effort.current;
-                          return opts.indexOf(settingsData.effort.effective) >= 0
-                            ? settingsData.effort.effective : "high";
-                        })(),
-                        options: (settingsData.effort.options && settingsData.effort.options.length
-                          ? settingsData.effort.options : ["high"]
-                        ).map(function (k) { return { key: k, label: k }; }),
-                        disabled: !master,
-                        onChange: function (v) { toggle("reasoningEffort", v); },
-                      }),
-                      react.createElement("div", null,
-                        react.createElement("div", { style: S.switchLabel }, "蒸馏思考"),
-                        react.createElement(
-                          "div",
-                          { style: S.switchDesc },
-                          "当前生效 " + (settingsData.effort.effective || "（不传，跟随模型默认）") +
-                            (settingsData.effort.current ? "" : "（自动）"),
-                        )),
-                    )
+                  ? (function () {
+                      // 档位表来自当前生效模型的能力声明（settings-get 的 effort.options；
+                      // 空声明 → 只显示 high）。首项固定「自动」（key=''，点击回写空串=
+                      // 按模型能力解析），选过显式档位后仍可回到自动；失效档位高亮实际生效值。
+                      var f = settingsData.effort;
+                      var opts = f.options && f.options.length ? f.options : ["high"];
+                      var segOptions = [{ key: "", label: "自动" }].concat(
+                        opts.map(function (k) { return { key: k, label: k }; })
+                      );
+                      var segValue = f.current === "" || opts.indexOf(f.current) >= 0
+                        ? f.current
+                        : opts.indexOf(f.effective) >= 0 ? f.effective : "high";
+                      return react.createElement(
+                        "div",
+                        { style: S.switchRow },
+                        react.createElement(Segmented, {
+                          value: segValue,
+                          options: segOptions,
+                          disabled: !master,
+                          onChange: function (v) { toggle("reasoningEffort", v); },
+                        }),
+                        react.createElement("div", null,
+                          react.createElement("div", { style: S.switchLabel }, "蒸馏思考"),
+                          react.createElement(
+                            "div",
+                            { style: S.switchDesc },
+                            "当前生效 " + (f.effective || "（不传，跟随模型默认）") +
+                              (f.current ? "" : "（自动）"),
+                          )),
+                      );
+                    })()
                   : null,
                 react.createElement(LlmModelRow, { rpc: rpc, disabled: !master }),
                 react.createElement(BudgetInputs, {

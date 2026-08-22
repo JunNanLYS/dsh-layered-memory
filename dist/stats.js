@@ -9,7 +9,7 @@
 import { createRequire } from 'node:module';
 import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { resolveDataDir } from './config.js';
+import { EFFORT_CHOICES, resolveDataDir } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
 import { errDetail } from './util/filelog.js';
@@ -234,8 +234,10 @@ async function handleEndpoint(endpoint, payload, deps) {
             }
             if (patch.reasoningEffort !== undefined) {
                 const v = String(patch.reasoningEffort);
-                if (!['', 'off', 'high', 'max'].includes(v)) {
-                    throw new Error(`非法思考档位: ${v}（允许 ''/off/high/max）`);
+                // 白名单与 schema/settings 同源（config.ts EFFORT_CHOICES）——此前此处漏扩词表，
+                // 设置页新词汇（none/minimal/low/medium/xhigh）被拒并回滚
+                if (!EFFORT_CHOICES.includes(v)) {
+                    throw new Error(`非法思考档位: ${v}（允许 '' 或 ${EFFORT_CHOICES.filter((x) => x !== '').join('/')}）`);
                 }
                 clean.reasoningEffort = v;
             }

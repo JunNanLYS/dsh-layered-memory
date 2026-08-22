@@ -5,11 +5,11 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import Schema from '@deepseek-ai/schemastery';
+import { EFFORT_CHOICES } from './config.js';
 import type { DistillBudgetLayer } from './llm.js';
 import type { MemoryLogger } from './types.js';
-/** 蒸馏思考档位可选项：'' = 跟随静态 config（部署默认）。 */
-/** 蒸馏思考档位：'' = 自动（模型默认档 → high）；其余为各适配器通用档位词汇表。 */
-export type EffortChoice = '' | 'off' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+/** 蒸馏思考档位：'' = 自动（模型默认档 → high）；词汇表单源于 config.ts 的 EFFORT_CHOICES。 */
+export type EffortChoice = (typeof EFFORT_CHOICES)[number];
 /** 分层输出预算（与 llm.ts 的 DistillBudgetLayer 同键；0 = 跟随内置默认）。 */
 export type DistillBudgets = Record<DistillBudgetLayer, number>;
 export interface MemoryLiveSettings {

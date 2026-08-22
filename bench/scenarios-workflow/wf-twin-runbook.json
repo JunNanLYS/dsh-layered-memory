@@ -1,0 +1,44 @@
+{
+  "id": "wf-twin-runbook",
+  "family": "work",
+  "kind": "workflow",
+  "marker": "pay-svc",
+  "sandboxFiles": {
+    "logs/trade-0827.log": "2026-08-27T09:14:01 INFO  trade-svc startup complete\n2026-08-27T09:31:47 ERROR trade-svc OutOfMemoryError: heap space (used=1810mb limit=2048mb)\n2026-08-27T09:32:10 INFO  trade-svc healthcheck still passing\n",
+    "logs/pay-0827.log": "2026-08-27T11:02:11 INFO  pay-svc payout worker alive\n2026-08-27T11:08:44 ERROR pay-svc pool exhausted: OutOfMemory (used=960mb limit=1024mb)\n2026-08-27T11:09:02 WARN  pay-svc refund queue backlog growing\n",
+    "logs/legacy.log": "2025-10-04 legacy-bus token refresh ok\n2025-10-05 legacy-bus batch sync 655 rows\n2025-10-05 legacy-bus connection reset, retry 1/3\n",
+    "config/svc-a.ini": "[tuning]\ncap = 2g\n",
+    "config/svc-b.ini": "[tuning]\ncap = 2g\n",
+    "scripts/roll-a.sh": "#!/usr/bin/env bash\nset -e\n# bash 专属语法（关联数组）；用 sh/dash 执行会语法报错——必须 bash 跑\ndeclare -A SVC=( [name]=\"a\" )\necho \"roll ok: ${SVC[name]} $(date +%H:%M:%S)\" >> roll-a.log\necho \"rolled\"\n",
+    "scripts/roll-b.sh": "#!/usr/bin/env bash\nset -e\n# bash 专属语法（关联数组）；用 sh/dash 执行会语法报错——必须 bash 跑\ndeclare -A SVC=( [name]=\"b\" )\necho \"roll ok: ${SVC[name]} $(date +%H:%M:%S)\" >> roll-b.log\necho \"rolled\"\n"
+  },
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "两条 OOM 处理约定，服务不同、对应的文件也不同，注意区分别搞混：trade-svc（交易服务）——容量配置在 config/svc-a.ini，只改 [tuning] 段的 cap；重启用 bash scripts/roll-a.sh（必须 bash，sh 会语法报错），成功后根目录出现 roll-a.log。pay-svc（支付服务）——容量配置在 config/svc-b.ini，只改 [tuning] 段的 cap；重启用 bash scripts/roll-b.sh（必须 bash），成功后出现 roll-b.log。对应关系记牢：trade=a、pay=b，两个 ini 内容长得一模一样，靠这个对应关系区分，别凭文件内容猜。两家的日志分开看：trade 看 logs/trade-<日期>.log，pay 看 logs/pay-<日期>.log；logs/legacy.log 是旧系统残留，一律不看。把两个都演练一遍：trade-svc 有 OOM（logs/trade-0827.log），heap 调到 4g；pay-svc 也有 OOM（logs/pay-0827.log），pool 调到 6g（每个服务各走完自己的两步、各自出现 roll-*.log 才算完成）。"
+      ],
+      "reteach": "双服务 OOM 约定重述（对应关系 trade=a、pay=b）：trade-svc 改 config/svc-a.ini 的 [tuning] cap + bash scripts/roll-a.sh（出 roll-a.log）；pay-svc 改 config/svc-b.ini 的 [tuning] cap + bash scripts/roll-b.sh（出 roll-b.log）；日志 trade 看 logs/trade-<日期>.log、pay 看 logs/pay-<日期>.log，legacy.log 不看。本次 trade cap 4g、pay cap 6g。"
+    },
+    {
+      "kind": "probe",
+      "messages": [
+        "pay-svc 又 OOM 了（今天的日志在 logs/），照老规矩处理，pool 上到 8g（走完 pay-svc 的两步、出 roll-b.log 才算完）。"
+      ],
+      "reteach": "双服务约定重述（trade=a、pay=b）：trade-svc 改 config/svc-a.ini 的 [tuning] cap + bash scripts/roll-a.sh（出 roll-a.log）；pay-svc 改 config/svc-b.ini 的 [tuning] cap + bash scripts/roll-b.sh（出 roll-b.log）；日志各看 logs/<服务>-<日期>.log，legacy.log 不看。本次只处理 pay-svc，cap 8g。",
+      "maxExchanges": 2
+    }
+  ],
+  "teachChecks": [
+    { "file": "config/svc-a.ini", "contains": ["cap = 4g"] },
+    { "file": "config/svc-b.ini", "contains": ["cap = 6g"] },
+    { "file": "roll-a.log", "contains": ["roll ok"] },
+    { "file": "roll-b.log", "contains": ["roll ok"] }
+  ],
+  "probeChecks": [
+    { "file": "config/svc-b.ini", "contains": ["cap = 8g"] },
+    { "file": "roll-b.log", "contains": ["roll ok"] },
+    { "file": "config/svc-a.ini", "notContains": ["8g"] },
+    { "file": "roll-a.log", "absent": true }
+  ]
+}

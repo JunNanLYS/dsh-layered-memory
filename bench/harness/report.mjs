@@ -88,7 +88,7 @@ function armStats(arm) {
   const byType = Object.fromEntries(TYPES.map((t) => [t, { hit: 0, total: 0 }]));
   let hit = 0, total = 0, updateHit = 0, abstainFabricate = 0;
   const perScenario = [];
-  const wf = { scenarios: 0, checksPassed: 0, checksTotal: 0, asks: 0, snoopSuspect: false };
+  const wf = { scenarios: 0, checksPassed: 0, checksTotal: 0, probePassed: 0, probeTotal: 0, asks: 0, snoopSuspect: false, snoopViolation: false };
   const contamination = [];
   for (const { result } of items) {
     for (const sc of result.scenarios) {
@@ -97,8 +97,15 @@ function armStats(arm) {
         wf.scenarios++;
         wf.checksPassed += sc.workflow?.checksPassed ?? 0;
         wf.checksTotal += sc.workflow?.checksTotal ?? 0;
+        // 探针单列：教学/变更段两臂都有现场上下文，探针段才是纯记忆窗口（口径更锐）
+        const probeChecks = (sc.workflow?.checks ?? []).filter((c) => c.phase === 'probe');
+        wf.probePassed += probeChecks.filter((c) => c.ok).length;
+        wf.probeTotal += probeChecks.length;
         wf.asks += sc.workflow?.probe?.asks ?? 0;
-        wf.snoopSuspect = wf.snoopSuspect || sc.workflow?.probe?.toolAudit?.snoopSuspect === true || sc.workflow?.teachToolAudit?.snoopSuspect === true;
+        wf.snoopSuspect = wf.snoopSuspect || sc.workflow?.probe?.toolAudit?.snoopSuspect === true
+          || sc.workflow?.teachToolAudit?.snoopSuspect === true
+          || sc.workflow?.change?.toolAudit?.snoopSuspect === true;
+        wf.snoopViolation = wf.snoopViolation || sc.workflow?.snoopViolation === true;
         continue;
       }
       let scHit = 0;
@@ -232,16 +239,19 @@ const wfArms = arms.filter((a) => stats[a].wf.scenarios > 0);
 if (wfArms.length) {
   lines.push('## 工作流赛道（复杂任务延续：完成度校验 + 反问次数）');
   lines.push('');
-  lines.push('| 组 | 场景数 | 完成度校验 | 探针反问次数 |');
-  lines.push('|---|---|---|---|');
+  lines.push('| 组 | 场景数 | 完成度校验 | 探针段完成度 | 探针反问次数 |');
+  lines.push('|---|---|---|---|---|');
   for (const a of wfArms) {
     const w = stats[a].wf;
-    lines.push(`| ${a} 组 | ${w.scenarios} | ${w.checksPassed}/${w.checksTotal} | ${w.asks} |`);
+    const probe = w.probeTotal > 0 ? `${w.probePassed}/${w.probeTotal}` : '—';
+    lines.push(`| ${a} 组 | ${w.scenarios} | ${w.checksPassed}/${w.checksTotal} | ${probe} | ${w.asks} |`);
   }
   lines.push('');
-  const snoop = wfArms.filter((a) => stats[a].wf.snoopSuspect);
-  if (snoop.length) lines.push(`> ⚠ 疑似越出沙箱读取记忆库的运行：${snoop.join('、')} 组（见 result.json 的 toolAudit）`);
-  lines.push('> 完成度 = 产物文件与关键内容校验（程序化）；反问 = 探针会话中 agent 向用户求助次数（补发固定重述，token 如实计入）。');
+  const violated = wfArms.filter((a) => stats[a].wf.snoopViolation);
+  if (violated.length) lines.push(`> ⛔ **越界读取记忆库（严格档命中，涉事场景已判负）**：${violated.join('、')} 组（详见 result.json 各场景 workflow.snoopViolation 与检查 detail）。\n`);
+  const snoop = wfArms.filter((a) => stats[a].wf.snoopSuspect && !stats[a].wf.snoopViolation);
+  if (snoop.length) lines.push(`> ⚠ 疑似越出沙箱（宽松启发式，未达判负线，仅提示人工复核）：${snoop.join('、')} 组。\n`);
+  lines.push('> 完成度 = 产物文件与关键内容校验（程序化）；**探针段**只计探针会话检查（教学/变更段两臂都有现场上下文，探针段才是纯记忆对照窗口）；反问 = 探针会话中 agent 向用户求助次数（补发固定重述，token 如实计入）。');
   lines.push('');
 }
 const md = lines.join('\n');

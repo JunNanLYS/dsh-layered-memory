@@ -102,14 +102,15 @@ off = `--dsh-mem-track`；旋钮 `left .15s` inline 过渡（reduced-motion 压�
 
 选项**跟随当前生效模型的能力声明**：`settings-get` 返回的 `effort.options`
 （`resolveModelInfo().reasoning.efforts`，5s 轮询随模型切换自动刷新）；模型未声明
-档位时只显示 `high`（用户规则：无声明默认 high）。无"跟随配置"选项——运行时值
-整体接管（'' = 自动：模型默认档 → high，服务端 `decideSendableEffort` 解析）。
-选择器值：`effort.current` 在表内用它，否则高亮 `effort.effective`（自动/失效
-档位的实际发送值）。描述行展示 `effort.effective`（'' = "不传，跟随模型默认"）+
-"（自动）"后缀（current 为空时）。写入同样走 `settings-set`（`reasoningEffort`
-键）。乐观更新必须**同时**写 `settings.reasoningEffort` 与视图字段
-`effort.current/effective`——选择器只读后者，漏掉会在下一个 5s 轮询前弹回旧值
-（已修过的不同步点）。
+档位时只显示 `high`（用户规则：无声明默认 high）。**首项固定「自动」（key=''）**，
+点击回写空串 = 按模型能力解析（模型默认档 → high，服务端 `decideSendableEffort`
+解析）——选过显式档位后仍可经首项回到自动。选择器值：`effort.current` 为 '' 或
+在表内用它，否则高亮 `effort.effective`（失效档位的实际发送值），再否则 `high`。
+描述行展示 `effort.effective`（'' = "不传，跟随模型默认"）+ "（自动）"后缀
+（current 为空时）。写入同样走 `settings-set`（`reasoningEffort` 键；'' 是合法
+值，服务端白名单与 schema 同源 `EFFORT_CHOICES`）。乐观更新必须**同时**写
+`settings.reasoningEffort` 与视图字段 `effort.current/effective`——选择器只读
+后者，漏掉会在下一个 5s 轮询前弹回旧值（已修过的不同步点）。
 
 ### 蒸馏模型选择器（LlmModelRow，供应商/模型两级下拉）
 
@@ -153,7 +154,7 @@ token）与**输入预算**（单个输入，宽 120px，单位字符 ≈token�
 提交；输入走 `distillMaxInputChars` 单键（0 或 1000~100 万，与静态 schema 同款
 下限）。击键只入本地草稿，blur/回车才提交（焦点切换先 blur 旧框，逐框触发各自
 提交）；乐观更新同步 `settings.*` 与对应视图字段，失败回滚。输出预算描述行注明
-思考档 high/max 的 ×4 放大只作用于输出预算。
+思考档 high/xhigh/max 的 ×4 放大只作用于输出预算。
 
 ## 场景 Tab（ScenesTab）
 

@@ -8,13 +8,13 @@
     extract:
       minMessages: 1
       idleSeconds: 30
-    # 蒸馏模型钉死：默认模型回落会命中 settings.yaml 的 deepseek-vision（bench profile 无此 adapter）。
-    # 想省钱可换自有网关（my-ai-gateway/Auto-Free，定义于用户 settings.yaml 的 llm-pi-ai.providers，
-    # 密钥走凭据服务解析），但免费档抖动大（实测流式空闲超时），正式基线建议用官方直连。
+    # 蒸馏模型：读 DSH_BENCH_DISTILL_PROVIDER/MODEL（run.mjs 从 --distill-* 参数或
+    # bench.env 注入，缺省回落 official/flash）——默认模型回落会命中 settings.yaml
+    # 的 deepseek-vision（bench profile 无此 adapter），故必须显式指定。
     llm:
-      provider: deepseek-official
-      model: deepseek-v4-flash
-      reasoningEffort: "off"
+      provider: !!js (() => process.env.DSH_BENCH_DISTILL_PROVIDER || 'deepseek-official')()
+      model: !!js (() => process.env.DSH_BENCH_DISTILL_MODEL || 'deepseek-v4-flash')()
+      reasoningEffort: !!js (() => process.env.DSH_BENCH_DISTILL_REASONING_EFFORT || 'off')()
 
 # ---- 基准无工具面（两组共用，防 Agent 用 shell/文件工具翻记忆库作弊或被真实数据污染）----
 # 只关面向模型的工具行；`tools` 运行时服务本身保留（dsh-layered-memory 硬依赖）。

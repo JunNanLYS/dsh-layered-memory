@@ -16,7 +16,7 @@ import type {} from '@deepseek-ai/dsh-client-connection';
 // 同款：llm 服务（ctx.llm）与默认模型选择（ctx.get('agentDefaultModel')）的声明合并
 import type {} from '@deepseek-ai/dsh-llm';
 import type {} from '@deepseek-ai/dsh-agent-default-model';
-import { resolveDataDir, type MemoryConfig } from './config.js';
+import { EFFORT_CHOICES, resolveDataDir, type MemoryConfig } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
 import type { RebuildController } from './pipeline/rebuild.js';
@@ -336,8 +336,10 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       }
       if (patch.reasoningEffort !== undefined) {
         const v = String(patch.reasoningEffort);
-        if (!['', 'off', 'high', 'max'].includes(v)) {
-          throw new Error(`非法思考档位: ${v}（允许 ''/off/high/max）`);
+        // 白名单与 schema/settings 同源（config.ts EFFORT_CHOICES）——此前此处漏扩词表，
+        // 设置页新词汇（none/minimal/low/medium/xhigh）被拒并回滚
+        if (!(EFFORT_CHOICES as readonly string[]).includes(v)) {
+          throw new Error(`非法思考档位: ${v}（允许 '' 或 ${EFFORT_CHOICES.filter((x) => x !== '').join('/')}）`);
         }
         clean.reasoningEffort = v;
       }
