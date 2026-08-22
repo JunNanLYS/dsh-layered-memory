@@ -72,7 +72,7 @@ if (mc.problems.length) {
   console.error(`[run] ✗ ${mc.problems.join('；')}。`);
   process.exit(2);
 }
-const { provider, model, judgeProvider, judgeModel, distillProvider, distillModel, gw } = mc;
+const { provider, model, judgeProvider, judgeModel, distillProvider, distillModel, effort, judgeEffort, distillEffort, gw } = mc;
 const scenarios = path.resolve(String(arg('scenarios', path.join(repoRoot, 'bench', track === 'workflow' ? 'scenarios-workflow' : 'scenarios'))));
 const repeats = Math.max(1, Number(arg('repeats', 1)) || 1);
 const distillTimeout = String(arg('distill-timeout', 120000));
@@ -189,9 +189,11 @@ function runSingleArm(a, outRoot) {
       DSH_BENCH_GIT_SHA: gitSha,
       DSH_BENCH_PROVIDER: provider,
       DSH_BENCH_MODEL: model,
+      DSH_BENCH_REASONING_EFFORT: effort,
       DSH_BENCH_DISTILL_PROVIDER: distillProvider,
       DSH_BENCH_DISTILL_MODEL: distillModel,
-      ...(judgeProvider ? { DSH_BENCH_JUDGE_PROVIDER: judgeProvider, DSH_BENCH_JUDGE_MODEL: judgeModel || model } : {}),
+      DSH_BENCH_DISTILL_REASONING_EFFORT: distillEffort,
+      ...(judgeProvider ? { DSH_BENCH_JUDGE_PROVIDER: judgeProvider, DSH_BENCH_JUDGE_MODEL: judgeModel || model, DSH_BENCH_JUDGE_REASONING_EFFORT: judgeEffort } : {}),
     };
     console.log(`[run] 第 ${i}/${repeats} 次 → ${outDir}`);
     const patches = [patchFileOf(a), ...(gwPatchFile ? [gwPatchFile] : [])];
@@ -216,7 +218,7 @@ function patchFileOf(a) {
 // ── AB 并行：两组互不依赖，双进程并发跑，父进程等齐后出联合报告 ──
 if (arm === 'AB') {
   const passThrough = [];
-  for (const opt of ['scenarios', 'provider', 'model', 'judge-provider', 'judge-model', 'distill-provider', 'distill-model', 'repeats', 'distill-timeout']) {
+  for (const opt of ['scenarios', 'provider', 'model', 'effort', 'judge-provider', 'judge-model', 'judge-effort', 'distill-provider', 'distill-model', 'distill-effort', 'repeats', 'distill-timeout']) {
     const v = arg(opt, undefined);
     if (typeof v === 'string') passThrough.push(`--${opt}`, v);
   }

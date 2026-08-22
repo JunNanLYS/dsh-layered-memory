@@ -65,14 +65,17 @@ async function run(ctx) {
   fs.mkdirSync(outDir, { recursive: true });
 
   // 模型钉死：优先环境变量（绕开 settings.yaml 用户层对默认模型的热替换），缺省回落当前默认。
+  // reasoningEffort 缺省不传 = 跟随 provider 默认（installModelSelection 的 absent 语义）。
   const fallback = ctx.get('agentDefaultModel').currentSelection();
   const selection = {
     provider: process.env.DSH_BENCH_PROVIDER || fallback.provider,
     model: process.env.DSH_BENCH_MODEL || fallback.model,
+    ...(process.env.DSH_BENCH_REASONING_EFFORT ? { reasoningEffort: process.env.DSH_BENCH_REASONING_EFFORT } : {}),
   };
   const judge = {
     provider: process.env.DSH_BENCH_JUDGE_PROVIDER || selection.provider,
     model: process.env.DSH_BENCH_JUDGE_MODEL || selection.model,
+    ...(process.env.DSH_BENCH_JUDGE_REASONING_EFFORT ? { reasoningEffort: process.env.DSH_BENCH_JUDGE_REASONING_EFFORT } : {}),
   };
   const files = listScenarioFiles(scenariosDir);
   if (files.length === 0) throw new Error(`场景目录为空：${scenariosDir}`);
@@ -84,8 +87,10 @@ async function run(ctx) {
     environment: {
       provider: selection.provider,
       model: selection.model,
+      reasoningEffort: selection.reasoningEffort ?? '',
       judgeProvider: judge.provider,
       judgeModel: judge.model,
+      judgeReasoningEffort: judge.reasoningEffort ?? '',
       pluginVersion: process.env.DSH_BENCH_PLUGIN_VERSION || '',
       // git SHA：版本号之外的代码指纹（profile 链接指向哪个工作树、代码是否与
       // 场景库同源，版本号反映不了——2026-08-21 实测被旧 runner 静默咬过）
@@ -683,6 +688,7 @@ async function askJudge(ctx, judge, system, userText) {
       const stream = ctx.llm.stream({
         provider: judge.provider,
         model: judge.model,
+        ...(judge.reasoningEffort ? { reasoningEffort: judge.reasoningEffort } : {}),
         system,
         messages: [userMessage(userText)],
         maxTokens: 1024,

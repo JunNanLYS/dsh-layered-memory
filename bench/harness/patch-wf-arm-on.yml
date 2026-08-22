@@ -12,7 +12,7 @@
     llm:
       provider: !!js (() => process.env.DSH_BENCH_DISTILL_PROVIDER || 'deepseek-official')()
       model: !!js (() => process.env.DSH_BENCH_DISTILL_MODEL || 'deepseek-v4-flash')()
-      reasoningEffort: "off"
+      reasoningEffort: !!js (() => process.env.DSH_BENCH_DISTILL_REASONING_EFFORT || 'off')()
 
 - id: permission
   config:

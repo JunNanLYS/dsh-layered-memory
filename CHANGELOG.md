@@ -78,6 +78,11 @@
   （原回落命中 settings.yaml 默认模型、bench profile 无 adapter 时启动即炸）。
 - 解析与网关 patch 构造抽为纯函数模块 `env-config.mjs`（22 项单测 + dump-config
   结构验证全绿）。
+- **思考强度三角色可配**：`BENCH_REASONING_EFFORT`（被测）/ `BENCH_JUDGE_REASONING_EFFORT`
+  （判卷）/ `BENCH_DISTILL_REASONING_EFFORT`（蒸馏，缺省 off）+ 对应 `--effort/
+  --judge-effort/--distill-effort` 命令行参数；经 `ModelSelection.reasoningEffort`
+  （installModelSelection 官方入口）与判卷 GenerateOptions 下发，留空 = 不传跟随
+  provider 默认；结果头 environment 记录两侧 effort（可复现性）。
 
 ## [0.8.3] — 2026-08-21
 

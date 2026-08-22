@@ -58,11 +58,11 @@ export function resolveModelConfig({ argv, envFile }) {
   };
   if ((gw.testBase && !gw.testKey) || (gw.judgeBase && !gw.judgeKey)) {
     problems.push('配置了网关 BASE_URL 但缺对应 API_KEY（bench.env 的 BENCH_TEST_API_KEY / BENCH_JUDGE_API_KEY）');
-    return { provider: '', model: '', judgeProvider: '', judgeModel: '', distillProvider: '', distillModel: '', gw, problems };
+    return { provider: '', model: '', judgeProvider: '', judgeModel: '', distillProvider: '', distillModel: '', effort: '', judgeEffort: '', distillEffort: '', gw, problems };
   }
   if ((gw.testKey && !gw.testBase) || (gw.judgeKey && !gw.judgeBase)) {
     problems.push('填了 API_KEY 但没填 BASE_URL（bench.env）——key 无法生效，请补 BASE_URL 或清掉 key');
-    return { provider: '', model: '', judgeProvider: '', judgeModel: '', distillProvider: '', distillModel: '', gw, problems };
+    return { provider: '', model: '', judgeProvider: '', judgeModel: '', distillProvider: '', distillModel: '', effort: '', judgeEffort: '', distillEffort: '', gw, problems };
   }
   const provider = pick('provider', 'BENCH_PROVIDER', gw.testBase ? TEST_GW_ID : '');
   const model = pick('model', 'BENCH_MODEL');
@@ -74,7 +74,12 @@ export function resolveModelConfig({ argv, envFile }) {
   const distillProvider = pick('distill-provider', 'BENCH_DISTILL_PROVIDER', 'deepseek-official');
   const distillModel = pick('distill-model', 'BENCH_DISTILL_MODEL', 'deepseek-v4-flash');
   if (distillProvider === TEST_GW_ID && !gw.testBase) problems.push(`蒸馏 provider 引用 ${TEST_GW_ID} 但 bench.env 未配置 BENCH_TEST_BASE_URL`);
-  return { provider, model, judgeProvider, judgeModel, distillProvider, distillModel, gw, problems };
+  // 思考强度：词表由适配器持有（off/low/medium/high/xhigh/max…，OpenAI 系 none），
+  // 留空 = 不传（跟随 provider 默认）；蒸馏缺省 off（后台任务不需要思考）。
+  const effort = pick('effort', 'BENCH_REASONING_EFFORT', '');
+  const judgeEffort = pick('judge-effort', 'BENCH_JUDGE_REASONING_EFFORT', '');
+  const distillEffort = pick('distill-effort', 'BENCH_DISTILL_REASONING_EFFORT', 'off');
+  return { provider, model, judgeProvider, judgeModel, distillProvider, distillModel, effort, judgeEffort, distillEffort, gw, problems };
 }
 
 /**
