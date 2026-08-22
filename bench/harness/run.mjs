@@ -10,7 +10,8 @@
 //   --model <m>                被测 Agent 模型名
 //   --judge-provider/--judge-model   判卷模型（缺省同被测模型；正式跑建议换模型，避免自判偏置）
 //   --distill-provider/--distill-model  蒸馏模型（A 组记忆插件用；缺省 deepseek-official/deepseek-v4-flash）
-//   --repeats <n>              重复次数（缺省 1；正式跑建议 3 取均值）
+//   --repeats <n>              重复次数（缺省 1；正式跑建议 3 取均值。**只作用于 A 组**
+//                              ——B 组固定 1 次：无记忆的长任务每场景要吞数倍 token）
 //   --distill-timeout <ms>     A 组蒸馏等待超时（缺省 120000）
 //
 // 模型也可集中在 bench.env 配置（模板 bench.env.example，复制后本地填写；该文件
@@ -74,7 +75,13 @@ if (mc.problems.length) {
 }
 const { provider, model, judgeProvider, judgeModel, distillProvider, distillModel, effort, judgeEffort, distillEffort, gw } = mc;
 const scenarios = path.resolve(String(arg('scenarios', path.join(repoRoot, 'bench', track === 'workflow' ? 'scenarios-workflow' : 'scenarios'))));
-const repeats = Math.max(1, Number(arg('repeats', 1)) || 1);
+let repeats = Math.max(1, Number(arg('repeats', 1)) || 1);
+// B 组成本护栏：记忆关的长任务每场景要吞数倍 token（2026-08-22 实测 1.81M 输入/场景），
+// 固定只跑 1 次；--repeats 只作用于 A 组。
+if (arm === 'B' && repeats > 1) {
+  console.log(`[run] B 组固定只跑 1 次（成本护栏：--repeats ${repeats} 仅对 A 组生效）`);
+  repeats = 1;
+}
 const distillTimeout = String(arg('distill-timeout', 120000));
 
 const dshBin = [
@@ -238,7 +245,7 @@ if (arm === 'AB') {
     }
     console.log('[run] profile 预热完成（heal 已在单进程内收敛）');
   }
-  console.log(`[run] AB 并行：A → ${outA}；B → ${outB}（各 ${repeats} 次）`);
+  console.log(`[run] AB 并行：A → ${outA}（${repeats} 次）；B → ${outB}（1 次，成本护栏）`);
   const spawnChild = (a, out) => spawn(process.execPath, [fileURLToPath(import.meta.url), '--arm', a, '--track', track, '--out', out, ...passThrough], {
     cwd: repoRoot,
     env: childEnv,

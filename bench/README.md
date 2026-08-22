@@ -71,6 +71,8 @@ node bench/harness/run.mjs --track workflow --arm A --provider deepseek-official
   --scenarios bench/harness/fixtures/workflow
 
 # 正式：两组并行（互不依赖，双进程并发，收尾自动出联合报告）
+# --repeats 只作用于 A 组；B 组固定只跑 1 次（成本护栏：无记忆的长任务
+# 每场景实测 1.81M 输入 token，多 rep 消耗过高）
 node bench/harness/run.mjs --track workflow --arm AB --repeats 3 --provider deepseek-official --model deepseek-v4-flash
 
 # 也可单组跑（自动配对另一组最新运行出报告）
