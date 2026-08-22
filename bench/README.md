@@ -50,6 +50,18 @@ cp bench/harness/bench.env.example bench/harness/bench.env
 
 ## 跑基准
 
+跑基准时**自动拉起实时进度面板**并打开浏览器（`http://127.0.0.1:4173`，端口占用自动顺延）：A/B 双臂卡片、当前场景/阶段（教学/改版/蒸馏/探针/判分）、消息粒度 token 与工具数、场景清单、事件尾巴、累计成本。两个新鲜度指标直答"是不是卡了"——**心跳**（runner 每 5s 落一次；停止 = 进程退出/崩溃）与**活动**（最后一次状态更新；超 5min 变黄 = 长回复或疑似卡住）。
+
+```bash
+# 关闭自动面板：--no-panel（或环境变量 DSH_BENCH_NO_PANEL=1）
+node bench/harness/run.mjs --no-panel ...
+
+# 手动启动（盯历史/进行中的运行；--no-open 不弹浏览器）
+node bench/harness/panel.mjs [--root <results目录>] [--port 4173] [--no-open]
+```
+
+数据面：`run.mjs` 启动时写 `run-*/plan.json`（arm/repeats/场景清单/模型指纹），bench-runner 向 `rep-N/progress.json` 原子增量写进度（≥1s 节流 + 5s 心跳）。面板只读这两个文件、只绑 127.0.0.1；progress.json 在结果目录不在沙箱内，被测 Agent 读不到，不影响指标。
+
 ## 对话赛道（准确率主表，只跑 A 组）
 
 对话赛道**只运行 A 组**（记忆开）：Harness 里每个会话彼此独立，无记忆的 B 组探针必然失败（历史实测 17.8% ≈ 地板），对照无信息量；B 组对照保留在工作流赛道（那里的重新探索/反问代价是有效测量目标）。

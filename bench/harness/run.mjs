@@ -13,6 +13,8 @@
 //   --repeats <n>              重复次数（缺省 1；正式跑建议 3 取均值。**只作用于 A 组**
 //                              ——B 组固定 1 次：无记忆的长任务每场景要吞数倍 token）
 //   --distill-timeout <ms>     A 组蒸馏等待超时（缺省 120000）
+//   --no-panel                 不自动拉起实时进度面板（默认自动拉起并打开浏览器；
+//                              等价环境变量 DSH_BENCH_NO_PANEL=1）
 //
 // 模型也可集中在 bench.env 配置（模板 bench.env.example，复制后本地填写；该文件
 // 含 API key 已 gitignore）：BENCH_PROVIDER/BENCH_MODEL（被测）、BENCH_JUDGE_*（判卷）、
@@ -174,8 +176,57 @@ const gwEnv = {
   ...(gw.judgeBase && gw.judgeKey ? { BENCH_JUDGE_API_KEY: gw.judgeKey } : {}),
 };
 
+// ── 运行计划落盘（面板数据源之一）：arm/repeats/场景清单/模型指纹 ──
+// rep 级的 progress.json 由 bench-runner 增量写；这里在 spawn 前写好计划，
+// 面板才能显示"还没开始的 rep/场景"（runner 自己不知道总 rep 数）。
+function writePlan(outRoot, a) {
+  let ids = [];
+  try {
+    ids = fs.readdirSync(scenarios)
+      .filter((f) => f.endsWith('.json'))
+      .sort()
+      .map((f) => JSON.parse(fs.readFileSync(path.join(scenarios, f), 'utf8')).id);
+  } catch { /* 场景目录异常留给 runner 报具体错误（plan 不先崩） */ }
+  // stamp 以目录名为准（AB 子进程会重写 plan，用自己的时钟会漂移分组）
+  const m = path.basename(outRoot).match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})$/);
+  fs.mkdirSync(outRoot, { recursive: true });
+  fs.writeFileSync(path.join(outRoot, 'plan.json'), JSON.stringify({
+    version: 1,
+    stamp: m ? m[1] : stamp,
+    track,
+    arm: a,
+    repeats: a === 'B' ? 1 : repeats, // B 组成本护栏：固定 1 次
+    scenarioCount: ids.length,
+    scenarios: ids,
+    distillTimeoutMs: Number(distillTimeout),
+    model: `${provider}/${model}`,
+    judgeModel: judgeProvider ? `${judgeProvider}/${judgeModel}` : '',
+    pluginVersion,
+    gitSha,
+    startedAt: new Date().toISOString(),
+  }, null, 2) + '\n', 'utf8');
+}
+
+// ── 实时进度面板：自动拉起 + 打开浏览器（--no-panel / DSH_BENCH_NO_PANEL=1 关闭）──
+function startPanel() {
+  if (arg('no-panel', false) === true) {
+    console.log('[run] 进度面板未启用（--no-panel）；手动查看：node bench/harness/panel.mjs');
+    return null;
+  }
+  if (process.env.DSH_BENCH_NO_PANEL === '1') return null; // AB 子进程：面板由父进程统一拉起
+  fs.mkdirSync(path.join(repoRoot, 'bench', 'results'), { recursive: true });
+  const p = spawn(process.execPath, [path.join(here, 'panel.mjs'), '--root', path.dirname(outRootOf('A'))], { stdio: 'inherit' });
+  p.unref(); // 面板是常驻服务器：不 unref 会吊住 run.mjs 的事件循环，跑完也退不了
+  console.log('[run] 实时进度面板已拉起（浏览器将自动打开；面板随本次运行退出而关闭）');
+  process.on('exit', () => {
+    try { p.kill(); } catch { /* already gone */ }
+  });
+  return p;
+}
+
 function runSingleArm(a, outRoot) {
   console.log(`[run] ${a} 组 × ${repeats} 次，场景库 ${scenarios}，输出 ${outRoot}`);
+  writePlan(outRoot, a);
   for (let i = 1; i <= repeats; i++) {
     const outDir = path.join(outRoot, `rep-${i}`);
     fs.mkdirSync(outDir, { recursive: true });
@@ -232,7 +283,7 @@ if (arm === 'AB') {
   }
   const outA = path.join(repoRoot, 'bench', 'results', `${wfPrefix}A-${stamp}`);
   const outB = path.join(repoRoot, 'bench', 'results', `${wfPrefix}B-${stamp}`);
-  const childEnv = { ...process.env, ...gwEnv, DSH_BENCH_SKIP_PURGE: '1', DSH_BENCH_NO_AUTOREPORT: '1', ...(gwPatchFile ? { DSH_BENCH_GW_PATCH: gwPatchFile } : {}) };
+  const childEnv = { ...process.env, ...gwEnv, DSH_BENCH_SKIP_PURGE: '1', DSH_BENCH_NO_AUTOREPORT: '1', DSH_BENCH_NO_PANEL: '1', ...(gwPatchFile ? { DSH_BENCH_GW_PATCH: gwPatchFile } : {}) };
   // 并发启动防线（2026-08-22 实测事故）：dsh 每次启动会 heal 共享的
   // ~/.dsh/profiles/node_modules 平铺符号链接——链接需要重指时是先 unlink 再建，
   // 两个子进程同时落在该窗口会互踩 ENOENT 崩溃。①父进程先串行预热一次 boot
@@ -246,6 +297,9 @@ if (arm === 'AB') {
     console.log('[run] profile 预热完成（heal 已在单进程内收敛）');
   }
   console.log(`[run] AB 并行：A → ${outA}（${repeats} 次）；B → ${outB}（1 次，成本护栏）`);
+  writePlan(outA, 'A');
+  writePlan(outB, 'B');
+  startPanel();
   const spawnChild = (a, out) => spawn(process.execPath, [fileURLToPath(import.meta.url), '--arm', a, '--track', track, '--out', out, ...passThrough], {
     cwd: repoRoot,
     env: childEnv,
@@ -268,6 +322,7 @@ if (arm === 'AB') {
   process.exit(r.status === 0 ? 0 : 1);
 }
 
+startPanel();
 const outRoot = runSingleArm(arm, outRootOf(arm));
 
 // 跑完自动出报告：本次目录 + 另一组最新目录（若有），写入 outRoot/report.md。
