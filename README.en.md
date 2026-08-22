@@ -146,13 +146,13 @@ trajectory view):
 
 Screenshots show what the plugin looks like — this section answers "**what does enabling it actually buy you?**" with measured numbers from an **automated benchmark** ([`bench/`](./bench/), one command to reproduce). Method: the same scenario bank with verbatim-identical inputs runs in **Group A (memory on)** with 3 merged repetitions and **Group B (memory off)** with 1 repetition (a memory-off long task burns multiples of the tokens per scenario — a cost guardrail); the dialog track now runs Group A only (memory-off probes in independent sessions cannot succeed, so the control carries no information — retired). Workflow-track environment: DeepSeek official `deepseek-v4-flash` (reasoning effort high), judge `glm-5.3`, plugin 0.8.3, Windows; taxonomy adapted from [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark).
 
-### Dialog track (15 scenarios × 6 probe types × 3 reps = 270 questions/group): does it remember correctly
+### Dialog track (15 scenarios × 6 probe types × 3 reps = 270 questions): does it remember correctly
 
-> Archived 0.8.0 baseline below (includes the Group-B control; the dialog-track B arm has since been retired — Group A only).
+> Archived 0.8.0 baseline (Group A data; the dialog-track B arm has since been retired — Group A only).
 
 <p align="center">
   <img src="./assets/readme/bench-dialog.svg" width="100%"
-       alt="DSH-MemBench dialog track, Group A vs Group B bar chart: overall accuracy A (memory on) 92.6% (250/270) vs B (memory off) 17.8% (48/270); per probe type, 45 each — extraction A 45/45 vs B 3/45, multi-hop A 45/45 vs B 0/45, temporal A 43/45 vs B 0/45, knowledge updates A 31/45 vs B 0/45, scene recall A 41/45 vs B 0/45, abstention both 45/45 with 0 fabricated">
+       alt="DSH-MemBench dialog track accuracy chart (Group A, memory on): overall accuracy 92.6% (250/270); per probe type, 45 each — extraction 45/45, multi-hop 45/45, temporal 43/45, knowledge updates 31/45, scene recall 41/45, abstention 45/45 with 0 fabricated; the dialog-track B arm is retired (memory-off probes in independent sessions cannot succeed)">
 </p>
 
 **Dual-channel recall** (Group A): passive injection hit rate **75.1%** (the answer's key points appear in the recall injection, 169/225); most of the rest the model recovered by **actively calling the memory tools** — 84 questions with active queries, **60 rescued by tools**. The end-to-end 92.6% is the composite of both channels plus model utilization. With the memory store accumulating across scenarios for the whole run, 144 probe injections carried other scenarios' memories (honestly counted) — yet overall accuracy held at 92.6%: interference resistance under a growing store, measured.
