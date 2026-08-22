@@ -6,9 +6,12 @@
     extract:
       minMessages: 1
       idleSeconds: 30
+    # 蒸馏模型：读 DSH_BENCH_DISTILL_PROVIDER/MODEL（run.mjs 从 --distill-* 参数或
+    # bench.env 注入，缺省回落 official/flash）——默认模型回落会命中 settings.yaml
+    # 的 deepseek-vision（bench profile 无此 adapter），故必须显式指定。
     llm:
-      provider: deepseek-official
-      model: deepseek-v4-flash
+      provider: !!js (() => process.env.DSH_BENCH_DISTILL_PROVIDER || 'deepseek-official')()
+      model: !!js (() => process.env.DSH_BENCH_DISTILL_MODEL || 'deepseek-v4-flash')()
       reasoningEffort: "off"
 
 - id: permission

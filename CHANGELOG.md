@@ -62,6 +62,23 @@
   模式；fixtures 按赛道分 `dialog/`、`workflow/` 子目录（对话 patch 下工作流场景
   无工具必挂，混装冒烟会误报）。
 
+### 基准易用性（bench.env 模型配置）
+
+- **模型三角色集中配置**：`bench/harness/bench.env`（模板 `bench.env.example` 复制
+  使用，含 API key 已 gitignore）统一配被测 Agent / 判卷 / 蒸馏三个模型——
+  `BENCH_PROVIDER/BENCH_MODEL`、`BENCH_JUDGE_*`、`BENCH_DISTILL_*`；命令行参数
+  优先于 env 文件。新增 `--distill-provider/--distill-model` 命令行参数，蒸馏模型
+  从 patch 硬编码改为环境变量化（缺省回落 official/flash）。
+- **自定义 OpenAI 兼容网关**：bench.env 填 `BENCH_TEST_BASE_URL + API_KEY`（判卷
+  可另配一对）后，run.mjs 自动生成 llm-pi-ai patch 注册 `bench-gw` /
+  `bench-judge-gw`（判卷/蒸馏复用被测网关时模型表自动聚合去重），API key 经
+  apiKeyEnv 引用并只注入子进程环境。配置网关后本次运行的自定义供应商完全由
+  bench.env 决定（用户 settings.yaml 的网关不参与，隔离可复现）。
+- **被测模型缺省回落移除**：不配 `--provider/--model` 也不配 bench.env 直接拒跑
+  （原回落命中 settings.yaml 默认模型、bench profile 无 adapter 时启动即炸）。
+- 解析与网关 patch 构造抽为纯函数模块 `env-config.mjs`（22 项单测 + dump-config
+  结构验证全绿）。
+
 ## [0.8.3] — 2026-08-21
 
 ### 变更

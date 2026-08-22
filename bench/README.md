@@ -34,7 +34,19 @@ dsh plugin --profile bench add D:\Project\dsh-memory\bench\harness\dsh-bench-run
 node bench/harness/validate-scenarios.mjs bench/scenarios
 ```
 
-注意：系统 `settings.yaml` 的 `agent-default-model`（如 deepseek-vision）在 bench profile 里可能没有 adapter——**运行时必须显式传 `--provider/--model`**（当前验证可用：deepseek-official / deepseek-v4-flash）。
+## 模型与网关配置（bench.env）
+
+被测 / 判卷 / 蒸馏三个模型角色可集中在 `bench/harness/bench.env` 配置——从模板复制后本地填写（**该文件含 API key，已被 .gitignore 排除，绝不入库**）：
+
+```bash
+cp bench/harness/bench.env.example bench/harness/bench.env
+```
+
+- **三个角色**：`BENCH_PROVIDER/BENCH_MODEL`（被测 Agent）、`BENCH_JUDGE_*`（判卷，缺省同被测）、`BENCH_DISTILL_*`（A 组蒸馏，缺省 deepseek-official/deepseek-v4-flash）；对应的命令行参数（`--provider/--model/--judge-*/--distill-*`）优先于 env 文件。
+- **自定义 OpenAI 兼容网关**：填 `BENCH_TEST_BASE_URL + BENCH_TEST_API_KEY`（判卷走独立网关再加 `BENCH_JUDGE_*` 一对）后，run.mjs 自动生成临时 patch 把网关注册为 `bench-gw` / `bench-judge-gw`（llm-pi-ai providers），并把 API key 注入本次运行的子进程环境（凭据服务从继承环境读取）。注意 providers 键整行替换——**配置网关后本次运行的自定义供应商完全由 bench.env 决定**（用户 settings.yaml 的自定义网关不参与；deepseek-official 等内置路由不受影响）；patch 随 `bench/results/.gw-*.patch.yml` 留痕。
+- 被测模型缺省回落已移除：不配 `--provider/--model` 也不配 bench.env 会直接拒跑（原回落会命中 settings.yaml 默认模型、bench profile 无 adapter 时启动即炸，现在启动前拦截并给出可操作的提示）。
+
+注意：系统 `settings.yaml` 的 `agent-default-model`（如 deepseek-vision）在 bench profile 里可能没有 adapter——**被测模型必须显式配置**（`--provider/--model` 或 bench.env；缺省回落已移除，未配置直接拒跑）。当前验证可用：deepseek-official / deepseek-v4-flash。
 
 ## 跑基准
 

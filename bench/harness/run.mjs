@@ -6,11 +6,17 @@
 //   --arm AB                   双组并行：两个子进程分别跑 A/B（互不依赖），父进程收尾出联合报告
 //   --scenarios <dir>          场景库目录（缺省按赛道取 bench/scenarios[-workflow]）
 //   --out <dir>                输出根目录（缺省 bench/results/run-<arm>-<时间戳>；AB 模式不支持）
-//   --provider <p>             被测 Agent 模型 provider（缺省回落当前默认模型）
+//   --provider <p>             被测 Agent 模型 provider
 //   --model <m>                被测 Agent 模型名
 //   --judge-provider/--judge-model   判卷模型（缺省同被测模型；正式跑建议换模型，避免自判偏置）
+//   --distill-provider/--distill-model  蒸馏模型（A 组记忆插件用；缺省 deepseek-official/deepseek-v4-flash）
 //   --repeats <n>              重复次数（缺省 1；正式跑建议 3 取均值）
 //   --distill-timeout <ms>     A 组蒸馏等待超时（缺省 120000）
+//
+// 模型也可集中在 bench.env 配置（模板 bench.env.example，复制后本地填写；该文件
+// 含 API key 已 gitignore）：BENCH_PROVIDER/BENCH_MODEL（被测）、BENCH_JUDGE_*（判卷）、
+// BENCH_DISTILL_*（蒸馏）、BENCH_TEST/JUDGE_BASE_URL+API_KEY+API（自定义 OpenAI 兼容
+// 网关，配置后自动注册临时 provider 并注入 API key）。优先级：命令行 > bench.env > 缺省。
 //
 // 前置（一次性）：见 bench/README.md——初始化 bench profile 并 link 安装插件与 runner。
 // 每次重复独立 dataDir 与结果目录（rep-N/），互不污染。
@@ -23,6 +29,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
+import { resolveModelConfig, buildGatewayPatch, TEST_GW_ID, JUDGE_GW_ID } from './env-config.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../..');
@@ -58,6 +65,14 @@ if (arm === 'AB' && arg('out', undefined) !== undefined) {
   console.error('AB 并行模式不支持 --out（两组各自使用默认目录，父进程按时间戳统一分配并出联合报告）。');
   process.exit(2);
 }
+
+// ── 模型配置（bench.env，模板 bench.env.example；解析与网关 patch 构造见 env-config.mjs）──
+const mc = resolveModelConfig({ argv: process.argv, envFile: path.join(here, 'bench.env') });
+if (mc.problems.length) {
+  console.error(`[run] ✗ ${mc.problems.join('；')}。`);
+  process.exit(2);
+}
+const { provider, model, judgeProvider, judgeModel, distillProvider, distillModel, gw } = mc;
 const scenarios = path.resolve(String(arg('scenarios', path.join(repoRoot, 'bench', track === 'workflow' ? 'scenarios-workflow' : 'scenarios'))));
 const repeats = Math.max(1, Number(arg('repeats', 1)) || 1);
 const distillTimeout = String(arg('distill-timeout', 120000));
@@ -131,6 +146,26 @@ const wfPrefix = track === 'workflow' ? 'run-wf-' : 'run-';
 const outRootOf = (a) => path.resolve(String(arg('out', path.join(repoRoot, 'bench', 'results', `${wfPrefix}${a}-${stamp}`))));
 const pluginVersion = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version;
 
+// ── 自定义网关注入：生成 llm-pi-ai patch（配置了 BASE_URL 才生成；随 bench/results 留痕）──
+const gwPatchFile = (() => {
+  // AB 子进程复用父进程生成的文件（避免每个子进程再生成一份）
+  if (process.env.DSH_BENCH_GW_PATCH && fs.existsSync(process.env.DSH_BENCH_GW_PATCH)) {
+    return process.env.DSH_BENCH_GW_PATCH;
+  }
+  const y = buildGatewayPatch(mc);
+  if (!y) return null;
+  fs.mkdirSync(path.join(repoRoot, 'bench', 'results'), { recursive: true });
+  const f = path.join(repoRoot, 'bench', 'results', `.gw-${stamp}.patch.yml`);
+  fs.writeFileSync(f, y, 'utf8');
+  console.log(`[run] 自定义网关已注入（${gw.testBase ? TEST_GW_ID : ''}${gw.testBase && gw.judgeBase ? ' + ' : ''}${gw.judgeBase ? JUDGE_GW_ID : ''}）：${f}`);
+  return f;
+})();
+// 凭据服务从继承的进程环境读 key（apiKeyEnv 引用名）——只注入子进程，不污染当前 shell
+const gwEnv = {
+  ...(gw.testBase && gw.testKey ? { BENCH_TEST_API_KEY: gw.testKey } : {}),
+  ...(gw.judgeBase && gw.judgeKey ? { BENCH_JUDGE_API_KEY: gw.judgeKey } : {}),
+};
+
 function runSingleArm(a, outRoot) {
   console.log(`[run] ${a} 组 × ${repeats} 次，场景库 ${scenarios}，输出 ${outRoot}`);
   for (let i = 1; i <= repeats; i++) {
@@ -143,6 +178,7 @@ function runSingleArm(a, outRoot) {
     fs.mkdirSync(workspace, { recursive: true });
     const env = {
       ...process.env,
+      ...gwEnv,
       DSH_BENCH_SCENARIOS: scenarios,
       DSH_BENCH_ARM: a,
       DSH_BENCH_OUT: outDir,
@@ -151,13 +187,15 @@ function runSingleArm(a, outRoot) {
       DSH_BENCH_PLUGIN_VERSION: pluginVersion,
       DSH_BENCH_DISTILL_TIMEOUT_MS: distillTimeout,
       DSH_BENCH_GIT_SHA: gitSha,
+      DSH_BENCH_PROVIDER: provider,
+      DSH_BENCH_MODEL: model,
+      DSH_BENCH_DISTILL_PROVIDER: distillProvider,
+      DSH_BENCH_DISTILL_MODEL: distillModel,
+      ...(judgeProvider ? { DSH_BENCH_JUDGE_PROVIDER: judgeProvider, DSH_BENCH_JUDGE_MODEL: judgeModel || model } : {}),
     };
-    for (const [opt, key] of [['provider', 'DSH_BENCH_PROVIDER'], ['model', 'DSH_BENCH_MODEL'], ['judge-provider', 'DSH_BENCH_JUDGE_PROVIDER'], ['judge-model', 'DSH_BENCH_JUDGE_MODEL']]) {
-      const v = arg(opt, undefined);
-      if (typeof v === 'string') env[key] = v;
-    }
     console.log(`[run] 第 ${i}/${repeats} 次 → ${outDir}`);
-    const r = spawnSync(process.execPath, [dshBin, '--profile', 'bench', '--patch', patchFileOf(a)], {
+    const patches = [patchFileOf(a), ...(gwPatchFile ? [gwPatchFile] : [])];
+    const r = spawnSync(process.execPath, [dshBin, '--profile', 'bench', ...patches.flatMap((p) => ['--patch', p])], {
       cwd: repoRoot,
       env,
       stdio: 'inherit',
@@ -178,13 +216,13 @@ function patchFileOf(a) {
 // ── AB 并行：两组互不依赖，双进程并发跑，父进程等齐后出联合报告 ──
 if (arm === 'AB') {
   const passThrough = [];
-  for (const opt of ['scenarios', 'provider', 'model', 'judge-provider', 'judge-model', 'repeats', 'distill-timeout']) {
+  for (const opt of ['scenarios', 'provider', 'model', 'judge-provider', 'judge-model', 'distill-provider', 'distill-model', 'repeats', 'distill-timeout']) {
     const v = arg(opt, undefined);
     if (typeof v === 'string') passThrough.push(`--${opt}`, v);
   }
   const outA = path.join(repoRoot, 'bench', 'results', `${wfPrefix}A-${stamp}`);
   const outB = path.join(repoRoot, 'bench', 'results', `${wfPrefix}B-${stamp}`);
-  const childEnv = { ...process.env, DSH_BENCH_SKIP_PURGE: '1', DSH_BENCH_NO_AUTOREPORT: '1' };
+  const childEnv = { ...process.env, ...gwEnv, DSH_BENCH_SKIP_PURGE: '1', DSH_BENCH_NO_AUTOREPORT: '1', ...(gwPatchFile ? { DSH_BENCH_GW_PATCH: gwPatchFile } : {}) };
   console.log(`[run] AB 并行：A → ${outA}；B → ${outB}（各 ${repeats} 次）`);
   const children = [
     ['A', outA],
