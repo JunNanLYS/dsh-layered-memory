@@ -23,6 +23,17 @@
   schema 对齐）；设置页预算提示与代码注释的"high/max ×4"补全为
   high/xhigh/max。
 
+### 变更
+
+- **宿主运行时升级 0.1.0-rc.8 → 0.1.1-rc.2**（devDeps 精确钉死、peers 换线
+  `^0.1.1-rc.2`）：9 个直依赖包 tarball 逐文件比对——7 包代码零变更，
+  dsh-llm / dsh-client-connection 纯增量（多模态图片卸载 / Files API /
+  adapter `prepareCall` / RPC `doFetch` 可选参数），本项目使用的
+  GenerateOptions/StreamChunk/createUserMessage/installModelSelection/
+  rpc.handle|call 逐字节相同，零适配改动。验证：build/smoke/双 profile
+  dump-config/bench fixture 冒烟全过。跨预发布族升级的 npm ERESOLVE 用
+  `--legacy-peer-deps` 过渡（口注已记入 AGENTS.md）。
+
 ### 基准
 
 - **DSH-MemBench 工作流赛道扩至 7 场景**（`bench/`），新增三类考法：

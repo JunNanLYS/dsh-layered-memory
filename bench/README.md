@@ -109,7 +109,7 @@ node bench/harness/report.mjs bench/results/run-wf-A-<时间戳> bench/results/r
 
 报告含：准确率总表（分题型/更新专项/编造计数）、效率表（**输入 token 含缓存命中 + 输出 token + 轮次 + 步骤**，供应商上报值）、工作流完成度表、蒸馏超时与越界审计告警。
 
-> 模型说明：默认 `deepseek-official/deepseek-v4-flash`（稳定）。自有网关（settings.yaml 的 llm-pi-ai providers，如 my-ai-gateway/Auto-Free）经验证可用——凭据走 dsh 凭据服务解析，仓库不落任何密钥——但免费档实测有流式空闲超时抖动，正式基线建议官方直连。
+> 模型说明：默认 `deepseek-official/deepseek-v4-flash`（稳定）。自定义 OpenAI 兼容网关走 `bench.env` 的 `BENCH_TEST/JUDGE_BASE_URL + API_KEY`（见上节，自动注册临时 provider 并注入 key）；系统 settings.yaml 里配置的自有网关**不参与**被测/判卷路由（配置网关后本次运行的自定义供应商完全由 bench.env 决定），正式基线建议官方直连。
 
 ## 回归对比（改插件后）
 

@@ -154,7 +154,7 @@ token）与**输入预算**（单个输入，宽 120px，单位字符 ≈token�
 提交；输入走 `distillMaxInputChars` 单键（0 或 1000~100 万，与静态 schema 同款
 下限）。击键只入本地草稿，blur/回车才提交（焦点切换先 blur 旧框，逐框触发各自
 提交）；乐观更新同步 `settings.*` 与对应视图字段，失败回滚。输出预算描述行注明
-思考档 high/max 的 ×4 放大只作用于输出预算。
+思考档 high/xhigh/max 的 ×4 放大只作用于输出预算。
 
 ## 场景 Tab（ScenesTab）
 
