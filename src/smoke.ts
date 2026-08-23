@@ -38,7 +38,7 @@ import { registerMemoryRpc } from './stats.js';
 import { registerMemoryTools } from './tools/index.js';
 import { StateStore } from './store/state.js';
 import { dayKey } from './store/io.js';
-import { familyForType } from './types.js';
+import { familyForType, normExtractedFamily, resolveRecordFamily } from './types.js';
 import { CaptureBuffers, isCaptureRelevant, registerCapture, trimBuffer } from './hooks/capture.js';
 import { buildRecallQuery, registerRecall, type RecallSessionStats } from './hooks/recall.js';
 import { sanitizeText, shouldCaptureL0, stripCodeBlocks } from './util/sanitize.js';
@@ -48,6 +48,8 @@ import { chunkByCharBudget } from './pipeline/l1.js';
 import { MemoryRunner, pickNextTaskIndex } from './pipeline/runner.js';
 import { advanceWarmupThreshold, effectiveExtractThreshold, idleSessionsToFlush, modeSwitchAction, pickSessionBackground } from './pipeline/trigger.js';
 import { estimateCalls, groupL0Sessions, RebuildController } from './pipeline/rebuild.js';
+import { BENCH_CONTROL_SERVICE, registerBenchControl } from './bench-control.js';
+import { recordDistillCall, snapshotDistillUsage } from './llm-usage.js';
 import { groupPendingBySession, loadPending, pendingPathFor, savePending } from './store/pending.js';
 import { formatExtractionPrompt, getExtractMemoriesSystemPrompt } from './prompts/l1-extraction.js';
 import { formatBatchConflictPrompt, getConflictDetectionSystemPrompt } from './prompts/l1-dedup.js';
@@ -2842,6 +2844,101 @@ async function main(): Promise<void> {
     } finally {
       await fs.rm(tmp25, { recursive: true, force: true }).catch(() => {});
     }
+  }
+
+  console.log('== 26. bench 控制服务（config 门控，默认关） ==');
+  {
+    const schemaStd = (memorySchema as unknown as { '~standard': { validate: (i: unknown) => Promise<{ value: { benchControl?: boolean } }> } })['~standard'];
+    const cfgDefault = (await schemaStd.validate({})).value;
+    assert(cfgDefault.benchControl === false, 'benchControl 默认 false（生产零表面积）');
+    const cfgOn = (await schemaStd.validate({ benchControl: true })).value;
+    assert(cfgOn.benchControl === true, 'benchControl=true 可解析');
+    // 假 ctx：捕获 provide 注册与注销；假 rebuild：记录调用
+    let providedName: string | undefined;
+    let providedValue: unknown;
+    let disposed = false;
+    const fakeCtx = {
+      provide(name: string, value: unknown) {
+        providedName = name;
+        providedValue = value;
+        return () => {
+          disposed = true;
+        };
+      },
+    };
+    const calls: string[] = [];
+    const fakeRebuild = {
+      start() {
+        calls.push('start');
+        return { running: true, phase: 'preparing' } as never;
+      },
+      getStatus() {
+        calls.push('status');
+        return { running: false, phase: 'idle' } as never;
+      },
+    };
+    const modeCalls: Array<[string, string]> = [];
+    const fakeModes = {
+      set(sid: string, mode: string) {
+        modeCalls.push([sid, mode]);
+      },
+      get(sid: string) {
+        return modeCalls.find(([s]) => s === sid)?.[1] as never;
+      },
+    };
+    const dispose = registerBenchControl(fakeCtx as never, fakeRebuild as never, fakeModes as never, silentLogger);
+    assert(providedName === BENCH_CONTROL_SERVICE, `服务名注册正确（${providedName}）`);
+    const surface = providedValue as { rebuildStart(): unknown; rebuildStatus(): unknown; setSessionMode(s: string, m: string): void; getSessionMode(s: string): string };
+    assert(
+      typeof surface?.rebuildStart === 'function' && typeof surface?.rebuildStatus === 'function'
+        && typeof surface?.setSessionMode === 'function' && typeof surface?.getSessionMode === 'function',
+      '服务面：rebuildStart/rebuildStatus/setSessionMode/getSessionMode',
+    );
+    surface.rebuildStart();
+    surface.rebuildStatus();
+    surface.setSessionMode('bench-x', 'chat');
+    assert(calls.join(',') === 'start,status', '调用透传到 RebuildController');
+    assert(surface.getSessionMode('bench-x') === 'chat' && modeCalls.length === 1, '档位调用透传到 SessionModeStore');
+    dispose();
+    assert(disposed, '注销函数生效');
+  }
+
+  console.log('== 27. 蒸馏用量追踪（llm-usage 计数器 + 服务面） ==');
+  {
+    // 计数器是模块级全局（前面各节跑过真实管线）——断言一律用差分
+    const before = snapshotDistillUsage().layers;
+    const ex0 = before['l1-extract'] ?? { calls: 0, failures: 0, inputChars: 0, outputTokens: 0, reasoningTokens: 0 };
+    const dd0 = before['l1-dedup'] ?? { calls: 0, failures: 0, inputChars: 0, outputTokens: 0, reasoningTokens: 0 };
+    recordDistillCall('l1-extract', 1000, 500, 0, false);
+    recordDistillCall('l1-extract', 2000, 700, 100, false);
+    recordDistillCall('l1-dedup', 800, 60, 0, true);
+    const snap = snapshotDistillUsage();
+    const ex = snap.layers['l1-extract'];
+    assert(
+      ex.calls - ex0.calls === 2 && ex.inputChars - ex0.inputChars === 3000 && ex.outputTokens - ex0.outputTokens === 1200
+        && ex.reasoningTokens - ex0.reasoningTokens === 100 && ex.failures - ex0.failures === 0,
+      `l1-extract 差分正确（+calls=${ex.calls - ex0.calls} +inChars=${ex.inputChars - ex0.inputChars} +outTok=${ex.outputTokens - ex0.outputTokens}）`,
+    );
+    const dd = snap.layers['l1-dedup'];
+    assert(dd.failures - dd0.failures === 1 && dd.calls - dd0.calls === 1, `失败路径计数正确（+calls=${dd.calls - dd0.calls} +failures=${dd.failures - dd0.failures}）`);
+    snap.layers['l1-extract'].calls = 999;
+    assert(snapshotDistillUsage().layers['l1-extract'].calls !== 999, '快照深拷贝（改快照不影响累计器）');
+    // 服务面（fake ctx）
+    let provided2: unknown;
+    const fakeCtx2 = { provide: (_n: string, v: unknown) => { provided2 = v; return () => {}; } };
+    registerBenchControl(fakeCtx2 as never, { start: () => ({}), getStatus: () => ({}) } as never, { set: () => {}, get: () => 'auto' } as never, silentLogger);
+    assert(typeof (provided2 as { getDistillUsage?: unknown })?.getDistillUsage === 'function', '服务面含 getDistillUsage');
+  }
+
+  console.log('== 28. 记录族三级兜底链（auto 档显式 family 修复） ==');
+  {
+    assert(normExtractedFamily('chat') === 'chat' && normExtractedFamily('work') === 'work', 'normExtractedFamily 只认 chat|work');
+    assert(normExtractedFamily('personal') === undefined && normExtractedFamily(undefined) === undefined, '非法/缺省值返回 undefined 交回落');
+    assert(resolveRecordFamily('chat', 'work', 'work_fact') === 'chat', '纯档强制最优先（forcedFamily 覆盖一切）');
+    assert(resolveRecordFamily(undefined, 'work', 'episodic') === 'work', 'auto 抽取显式 family 采信（语境归族压过 type 前缀）');
+    assert(resolveRecordFamily(undefined, 'chat', 'work_method') === 'chat', '个人语境的计划性事实（work_* 形状）不再被吸进 work 族');
+    assert(resolveRecordFamily(undefined, undefined, 'work_fact') === 'work' && resolveRecordFamily(undefined, undefined, 'episodic') === 'chat', '无显式 family 时回落 type 前缀（旧输出兼容）');
+    assert(resolveRecordFamily(undefined, '乱写', 'work_fact') === 'work', '非法 family 字符串回落 type 前缀');
   }
 
   console.log(failures === 0 ? '\n全部通过 ✅' : `\n${failures} 个失败 ❌`);

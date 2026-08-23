@@ -18,7 +18,7 @@ import type {
   MemoryLogger,
   MemoryRecord,
 } from '../types.js';
-import { familyForType } from '../types.js';
+import { familyForType, resolveRecordFamily } from '../types.js';
 
 export interface ExtractionResult {
   stored: number;
@@ -119,6 +119,7 @@ export async function runExtraction(
       system: getExtractMemoriesSystemPrompt(mode),
       user: userPrompt,
       maxTokens: resolveLayerTokens(cfg, 'extract'),
+      layer: 'l1-extract',
       logger,
     });
     const scenes = parseJsonLogged<SceneExtraction[]>(raw, 'L1 抽取', logger);
@@ -133,7 +134,7 @@ export async function runExtraction(
           ...m,
           record_id: newId('mem'),
           scene_name: scene.scene_name,
-          family: forcedFamily ?? familyForType(m.type ?? ''),
+          family: resolveRecordFamily(forcedFamily, m.family, m.type ?? ''),
         });
       }
     }
@@ -158,6 +159,7 @@ export async function runExtraction(
     system: getConflictDetectionSystemPrompt(mode),
     user: dedupPrompt,
     maxTokens: resolveLayerTokens(cfg, 'dedup'),
+    layer: 'l1-dedup',
     logger,
   });
   const decisions = parseJsonLogged<DedupDecision[]>(dedupRaw, 'L1 去重判定', logger);
