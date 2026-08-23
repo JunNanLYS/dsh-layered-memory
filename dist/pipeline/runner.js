@@ -60,6 +60,8 @@ export function effectiveCfg(cfg, live) {
 }
 /** 单桶堆积上限（防无限堆积；重建分块不受限——历史会话需全量入桶蒸馏）。 */
 const PENDING_BUCKET_CAP = 200;
+/** 会话产出记账表容量上限（超出淘汰最久未蒸馏会话；悬浮卡信息区数据源防泄漏）。 */
+const SESSION_PRODUCED_CAP = 400;
 /** 启动补跑延迟：避开宿主启动期忙乱。 */
 const STARTUP_RETRY_DELAY_MS = 20_000;
 /** 闲置扫描 tick 粒度（实际落袋延迟 = idleSeconds + 至多一个 tick）。 */
@@ -80,6 +82,8 @@ export class MemoryRunner {
     warmup = freshWarmup();
     /** 每会话最后活动时间（闲置兜底判定用）。 */
     lastActivity = new Map();
+    /** 每会话累计产出 L1 条数与最近蒸馏时间（session-stats 数据源；LRU 上限防泄漏）。 */
+    sessionProduced = new Map();
     pendingFile;
     /** 分族 checkpoint（init 后可用；重建收尾也从这里读活引用）。 */
     states;
@@ -142,6 +146,60 @@ export class MemoryRunner {
     /** L1 抽取待重试的消息条数（状态面板用）。 */
     get pendingCount() {
         return this.pending.auto.length + this.pending.chat.length + this.pending.work.length;
+    }
+    /**
+     * 会话级蒸馏视图（session-stats 端点数据源；纯内存读，零 I/O）。
+     * pendingSlice = 当前档位桶中该会话的攒批切片条数（threshold 为生效阈值，含 warmup 爬坡）；
+     * parkedSlices = 其余档位桶中的残留切片（换档遗留 / off 档挂起——ADR-0003 挂起语义）。
+     */
+    sessionView(sessionId, mode) {
+        const count = (bucket) => bucket.reduce((n, m) => (m.sessionId === sessionId ? n + 1 : n), 0);
+        const view = {
+            pendingSlice: 0,
+            parkedSlices: 0,
+            threshold: null,
+            producedRecords: 0,
+            lastDistillAt: null,
+        };
+        const prod = this.sessionProduced.get(sessionId);
+        if (prod) {
+            view.producedRecords = prod.count;
+            view.lastDistillAt = prod.lastAt;
+        }
+        const own = PENDING_MODES.includes(mode) ? mode : null;
+        if (own) {
+            view.pendingSlice = count(this.pending[own]);
+            view.threshold = effectiveExtractThreshold(this.warmup[own], this.cfg.extract?.minMessages ?? 0);
+        }
+        for (const m of PENDING_MODES) {
+            if (m !== own)
+                view.parkedSlices += count(this.pending[m]);
+        }
+        return view;
+    }
+    /** 会话产出记账（切片成功消费时调用；LRU 淘汰最久未蒸馏会话防 Map 无界增长）。 */
+    noteSessionDistill(sessionId, produced) {
+        const now = Date.now();
+        const cur = this.sessionProduced.get(sessionId);
+        if (cur) {
+            cur.count += produced;
+            cur.lastAt = now;
+        }
+        else {
+            this.sessionProduced.set(sessionId, { count: produced, lastAt: now });
+        }
+        if (this.sessionProduced.size > SESSION_PRODUCED_CAP) {
+            let oldestKey = null;
+            let oldestAt = Infinity;
+            for (const [sid, v] of this.sessionProduced) {
+                if (v.lastAt < oldestAt) {
+                    oldestAt = v.lastAt;
+                    oldestKey = sid;
+                }
+            }
+            if (oldestKey)
+                this.sessionProduced.delete(oldestKey);
+        }
     }
     /** 管线跑完一轮后的回调（用于召回缓存失效）。 */
     setAfterRun(fn) {
@@ -368,6 +426,8 @@ export class MemoryRunner {
                 // 重建轮（force）不是有机对话，不推进爬坡
                 if (!opts?.force)
                     this.warmup[mode] = advanceWarmupThreshold(this.warmup[mode], cfg.extract.minMessages);
+                // 会话产出记账（成功消费即记——零产出也算"蒸馏过"，lastAt 推进）
+                this.noteSessionDistill(sessionId, result.newRecords.length);
             }
             this.logger.info(`[memory] L1 阶段完成（session=${sessionId}，mode=${mode}，切片 ${slice.length} 条，背景 ${background.length} 条，阈值 ${effectiveThreshold}，${Date.now() - t}ms）`);
             // 缓冲与爬坡每次尝试后立即落盘：进程中途退出不丢待重试/攒阈值状态

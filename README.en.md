@@ -129,6 +129,15 @@ trajectory view):
 - **Control**: the pill next to the mode selector in the input bar (`Memory · Auto`);
   clicking opens a macOS-style sliding picker above — release to snap to the nearest
   mode; adapts to light/dark themes;
+- The lower half of the popover is a **per-session info area**: recall hits
+  (hit/searched turns plus cumulative items), batching progress (this session's
+  slice x/effective threshold; the off mode shows parked slices instead), memories
+  produced for this session, and session message count — plus status lines for
+  anomalies (storage degraded / vector search unavailable) and a global summary
+  (pending distill count, last distill time). Data comes from the
+  `dsh-memory/session-stats` endpoint (in-memory registries + an indexed COUNT,
+  zero file I/O), adaptively polled while open (2s busy / 5s idle) and stopped on
+  close;
 - Each session's choice is persisted by sessionId to `session-modes.json`, surviving
   restarts/session restore; stacks with the global switches (global is the master gate);
   L2/L3 are fully family-isolated — content never leaks across families.

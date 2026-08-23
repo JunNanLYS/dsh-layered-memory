@@ -69,9 +69,36 @@ const MEMORY_TOOLS_GUIDE = `<memory-tools-guide>
 （如 run_code 程序内）使用以上记忆工具。
 </memory-tools-guide>`;
 
+/** 单会话召回统计（悬浮卡信息区数据源；每轮 O(1) 记账，agent/disposed 清理）。
+ *  口径声明：这是"注入统计"而非 bench 的离线 recall@k——运行时没有 ground truth，
+ *  命中率 = hitTurns / injectedTurns（发生过检索的轮次中命中 ≥1 条的占比）。 */
+export interface RecallSessionStats {
+  /** 发生过召回检索的轮次数（含零命中与超时）。 */
+  injectedTurns: number;
+  /** 命中（≥1 条）轮次数。 */
+  hitTurns: number;
+  /** 累计命中条数（预算截断前）。 */
+  totalHits: number;
+  /** 总预算超时跳过次数。 */
+  timeouts: number;
+  /** 最近一轮命中条数（0 = 零命中/超时；工具指南门控沿用此信号）。 */
+  lastHits: number;
+  /** 最近一轮检索耗时 ms。 */
+  lastDurationMs: number;
+  /** 最近一次记账时间（LRU 清理依据）。 */
+  updatedAt: number;
+}
+
+/** 新建零值统计（首次出现的会话）。 */
+export function emptyRecallStats(now = Date.now()): RecallSessionStats {
+  return { injectedTurns: 0, hitTurns: 0, totalHits: 0, timeouts: 0, lastHits: 0, lastDurationMs: 0, updatedAt: now };
+}
+
 export interface RecallHooks {
   /** 管线更新后调用：画像/场景缓存立即失效并异步刷新。 */
   invalidateProfile(): void;
+  /** 会话召回统计只读视图（未发生过检索的会话返回 undefined）。 */
+  stats(sessionId: string): RecallSessionStats | undefined;
 }
 
 export function registerRecall(
@@ -82,8 +109,16 @@ export function registerRecall(
   live: LiveSettingsHandle,
   modes: SessionModeStore,
 ): RecallHooks {
-  /** 每 agent 最近一次注入的命中条数（工具指南门控的"本轮召回命中"信号）。 */
-  const recallHits = new Map<string, number>();
+  /** 每 agent 召回统计（工具指南门控读 lastHits；悬浮卡信息区读全量计数）。 */
+  const recallStats = new Map<string, RecallSessionStats>();
+  const statFor = (id: string): RecallSessionStats => {
+    let s = recallStats.get(id);
+    if (!s) {
+      s = emptyRecallStats();
+      recallStats.set(id, s);
+    }
+    return s;
+  };
   // 画像/场景导航按族缓存（分族隔离：注入时按会话档位选族）
   const profileCache: Record<'chat' | 'work', ProfileParts> = {
     chat: { persona: '', nav: '' },
@@ -114,9 +149,9 @@ export function registerRecall(
     void refreshProfile();
   };
 
-  // agent 销毁时清掉召回信号槽
+  // agent 销毁时清掉召回统计槽
   ctx.on('agent/disposed', (payload) => {
-    recallHits.delete(payload.agent.id);
+    recallStats.delete(payload.agent.id);
   });
 
   // ── 1. pre-step 消息侧注入：记忆先行于每一条新的用户输入（ADR-0001） ──
@@ -137,8 +172,17 @@ export function registerRecall(
           );
           if (!hasNewUserMessage) return decision;
           const query = buildRecallQuery(payload.messages as Array<{ content: unknown }>);
-          recallHits.set(payload.agent.id, 0);
-          if (!query) return decision;
+          // 空查询是退化轮（无用户文本），重置命中信号但不计入统计
+          if (!query) {
+            const degenerate = statFor(payload.agent.id);
+            degenerate.lastHits = 0;
+            return decision;
+          }
+          const st = statFor(payload.agent.id);
+          st.injectedTurns++;
+          st.lastHits = 0;
+          st.updatedAt = Date.now();
+          const searchStart = Date.now();
           const hits = await raceRecallTimeout(
             stores.l1.search(query, cfg.recall.maxResults, {
               scoreThreshold: cfg.recall.scoreThreshold,
@@ -148,11 +192,18 @@ export function registerRecall(
             }),
             cfg.recall.timeoutMs,
           );
+          st.updatedAt = Date.now();
           if (hits === undefined) {
+            st.timeouts++;
             logger.warn('[memory] 召回超时，跳过本轮注入（不阻塞对话）');
             return decision;
           }
-          recallHits.set(payload.agent.id, hits.length);
+          st.lastDurationMs = Date.now() - searchStart;
+          st.lastHits = hits.length;
+          if (hits.length > 0) {
+            st.hitTurns++;
+            st.totalHits += hits.length;
+          }
           if (hits.length === 0) return decision;
           const lines = applyRecallBudget(
             hits.map((h) => `- [${h.scene_name ? `${h.type}|${h.scene_name}` : h.type}] ${h.content}`),
@@ -213,7 +264,7 @@ export function registerRecall(
               mode === 'auto'
                 ? formatProfileAuto(profileCache.chat, profileCache.work)
                 : formatProfileSingle(profileCache[mode]);
-            const hasRecallHit = (recallHits.get(agent.id) ?? 0) > 0;
+            const hasRecallHit = (recallStats.get(agent.id)?.lastHits ?? 0) > 0;
             // 指南三条件门控：工具已注册（cfg.tools）&&（稳定内容 ∥ 本轮召回命中）——
             // 空库用户与关闭工具的用户不付这份固定 token（原版 auto-recall 同款语义）
             if (!cfg.tools) return body;
@@ -244,7 +295,7 @@ export function registerRecall(
     }
   });
 
-  return { invalidateProfile };
+  return { invalidateProfile, stats: (id) => recallStats.get(id) };
 }
 
 /** 单族画像/导航片段（注入侧按档位组装，纯档与 auto 档格式不同）。 */

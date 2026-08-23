@@ -11,12 +11,13 @@ import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { EFFORT_CHOICES, resolveDataDir } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
+import { emptyRecallStats } from './hooks/recall.js';
 import { decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
 import { errDetail } from './util/filelog.js';
 const require = createRequire(import.meta.url);
 export const PLUGIN_VERSION = require('../package.json').version;
 /** 注册状态 RPC（web 侧 connection 服务可选，缺失时跳过，不影响插件主体）。 */
-export function registerMemoryRpc(ctx, cfg, stores, logger, status, live, modes, dataDir, rebuild, embedManager) {
+export function registerMemoryRpc(ctx, cfg, stores, logger, status, live, modes, dataDir, rebuild, embedManager, sessionInfo) {
     /** 当前是否持有一段有效注册（dispose 完成后清空，允许服务重上线时重注册）。 */
     let holding = false;
     /** 当前 handle 绑定的 connection 实例（internal/service 第二参；用于识别实例替换）。 */
@@ -43,6 +44,7 @@ export function registerMemoryRpc(ctx, cfg, stores, logger, status, live, modes,
                     logger,
                     rebuild,
                     embedManager,
+                    sessionInfo,
                 });
                 return { ok: true, value };
             }
@@ -142,7 +144,7 @@ function expectSessionId(v) {
     return v;
 }
 async function handleEndpoint(endpoint, payload, deps) {
-    const { cfg, stores, status, live, modes, dataDir, rebuild, embedManager } = deps;
+    const { cfg, stores, status, live, modes, dataDir, rebuild, embedManager, sessionInfo } = deps;
     switch (endpoint) {
         case 'dsh-memory/stats':
             return buildStats(cfg, stores, status);
@@ -165,6 +167,39 @@ async function handleEndpoint(endpoint, payload, deps) {
             modes.set(sessionId, p.mode);
             deps.logger.info(`[memory] 会话档位设置 session=${sessionId} mode=${p.mode}`);
             return { sessionId, mode: p.mode };
+        }
+        // ── 会话级统计（悬浮卡信息区；热路径端点，见 SessionInfoSource 的零 I/O 硬规则） ──
+        case 'dsh-memory/session-stats': {
+            if (!sessionInfo)
+                return { supported: false };
+            const p = (payload ?? {});
+            const sessionId = expectSessionId(p.sessionId);
+            const mode = modes ? modes.get(sessionId) : 'auto';
+            const caps = sessionInfo.capabilities();
+            const l0Count = await sessionInfo.l0Count(sessionId);
+            const s = live?.get();
+            const recallOn = cfg.recall.enabled && (s?.recall ?? true) && mode !== 'off';
+            const view = sessionInfo.runnerView(sessionId, mode);
+            // lastDistillAt 统一转 ISO（与 global.lastExtractAt 口径一致，client 直接 fmtAgo）
+            const distillView = { ...view, lastDistillAt: view.lastDistillAt ? new Date(view.lastDistillAt).toISOString() : null };
+            const chat = stores.state.forFamily('chat');
+            const work = stores.state.forFamily('work');
+            const lastAt = Math.max(chat.lastExtractAt, work.lastExtractAt);
+            return {
+                supported: true,
+                sessionId,
+                mode,
+                defaultMode: modes?.default ?? cfg.family,
+                recall: { enabled: recallOn, ...(sessionInfo.recallStats(sessionId) ?? emptyRecallStats()) },
+                distill: distillView,
+                l0Count,
+                retrieval: caps.vectorSearch ? (caps.ftsSearch ? 'hybrid' : 'vector') : caps.ftsSearch ? 'keyword' : 'none',
+                global: {
+                    degraded: status?.degraded() ?? false,
+                    pendingTotal: status?.pending() ?? 0,
+                    lastExtractAt: lastAt ? new Date(lastAt).toISOString() : null,
+                },
+            };
         }
         case 'dsh-memory/settings-get': {
             const s = live?.get();

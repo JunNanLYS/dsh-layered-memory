@@ -297,7 +297,14 @@ export async function apply(ctx, config) {
     registerMemoryRpc(ctx, config, stores, logger, {
         degraded: () => !storageOk || db.isDegraded(),
         pending: () => runner.pendingCount,
-    }, live, modes, dataDir, rebuild, embedManager);
+    }, live, modes, dataDir, rebuild, embedManager, 
+    // 悬浮卡信息区数据源（session-stats 热路径端点；全部内存读 + 索引 COUNT，零文件 I/O）
+    {
+        recallStats: (sid) => recall.stats(sid),
+        runnerView: (sid, mode) => runner.sessionView(sid, mode),
+        l0Count: (sid) => stores.l0.countBySession(sid),
+        capabilities: () => db.getCapabilities(),
+    });
     logger.info(`[memory] L0~L3 分层蒸馏记忆插件就绪（L1 记忆 ${storageOk ? stores.l1.size : 0} 条 | 捕获=${storageOk && config.capture.enabled} | 蒸馏=${storageOk && config.extract.enabled} | 召回=${config.recall.enabled}）`);
     // 停机顺序（M7）：置停机标志（后台 embeddings 不再发起）→ 停蒸馏取新任务 →
     // 冲刷 L0 串行链（排队消息先落盘）→ 关库。cordis disposer 为 LIFO 逐个 await，

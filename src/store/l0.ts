@@ -114,6 +114,11 @@ export class L0Store {
     return this.db.countL0Since(new Date(d.getFullYear(), d.getMonth(), d.getDate()).toISOString());
   }
 
+  /** 该会话累计已捕获消息数（session-stats 数据源；索引 COUNT）。 */
+  async countBySession(sessionId: string): Promise<number> {
+    return this.db.countL0BySession(sessionId);
+  }
+
   /** 该会话最近 n 条消息（时间升序；蒸馏背景参考用，按会话现查——ADR-0003）。 */
   async recentBySession(sessionId: string, limit: number): Promise<ConversationMessage[]> {
     return this.db.recentL0BySession(sessionId, limit);

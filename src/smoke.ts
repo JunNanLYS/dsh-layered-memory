@@ -40,7 +40,7 @@ import { StateStore } from './store/state.js';
 import { dayKey } from './store/io.js';
 import { familyForType } from './types.js';
 import { CaptureBuffers, isCaptureRelevant, registerCapture, trimBuffer } from './hooks/capture.js';
-import { buildRecallQuery, registerRecall } from './hooks/recall.js';
+import { buildRecallQuery, registerRecall, type RecallSessionStats } from './hooks/recall.js';
 import { sanitizeText, shouldCaptureL0, stripCodeBlocks } from './util/sanitize.js';
 import { errDetail, SIZE_CHECK_INTERVAL, withFileLog } from './util/filelog.js';
 import { parseJson } from './llm.js';
@@ -501,6 +501,24 @@ async function main(): Promise<void> {
       ]);
       await scenesS.chat.write('偏好设定.md', '# 偏好设定\n\n- emoji 偏好\n\n<!-- META heat=1 updated=2026-08-16T00:00:00Z summary=回复风格偏好 -->');
       await personaS.chat.write('# Team Operating Doctrine\n\n- Nann 喜欢简洁回复\n');
+      // L0 会话消息（session-stats 的 l0Count 索引计数用）
+      await l0s.append('sess-x', [
+        { id: 'rpc-m1', role: 'user', content: 'hello 记忆', timestamp: t },
+        { id: 'rpc-m2', role: 'assistant', content: 'ok', timestamp: t + 1 },
+      ]);
+
+      // session-stats 数据源 stub：召回统计给已知值，runnerView 按 (sess-x, work) 给攒批/挂起视图
+      const recallStatsStub = new Map<string, RecallSessionStats>();
+      recallStatsStub.set('sess-x', { injectedTurns: 4, hitTurns: 3, totalHits: 9, timeouts: 1, lastHits: 2, lastDurationMs: 35, updatedAt: t });
+      const sessionInfoStub = {
+        recallStats: (sid: string) => recallStatsStub.get(sid),
+        runnerView: (sid: string, mode: string) =>
+          sid === 'sess-x' && mode === 'work'
+            ? { pendingSlice: 3, parkedSlices: 1, threshold: 8, producedRecords: 5, lastDistillAt: t }
+            : { pendingSlice: 0, parkedSlices: 0, threshold: null, producedRecords: 0, lastDistillAt: null },
+        l0Count: (sid: string) => l0s.countBySession(sid),
+        capabilities: () => ({ ftsSearch: true, vectorSearch: false }),
+      };
 
       // fake live 开关句柄
       let liveVal = {
@@ -559,6 +577,9 @@ async function main(): Promise<void> {
         live as never,
         modesS,
         tmpRpc,
+        undefined,
+        undefined,
+        sessionInfoStub,
       );
       assert(typeof handler === 'function', 'RPC handler 注册成功');
 
@@ -590,6 +611,34 @@ async function main(): Promise<void> {
       let badMode = false;
       try { await call('dsh-memory/session-mode-set', { sessionId: 'sess-z', mode: 'sleep' }); } catch { badMode = true; }
       assert(badMode, 'session-mode-set 拒绝非法档位');
+
+      // session-stats（悬浮卡信息区热路径端点）：会话档位联动 + 召回统计 + 攒批/挂起视图 + 索引计数
+      const sst = await call('dsh-memory/session-stats', { sessionId: 'sess-x' }) as never as {
+        supported: boolean;
+        mode: string;
+        defaultMode: string;
+        recall: { enabled: boolean; injectedTurns: number; hitTurns: number; totalHits: number; timeouts: number; lastHits: number };
+        distill: { pendingSlice: number; parkedSlices: number; threshold: number; producedRecords: number; lastDistillAt: string };
+        l0Count: number;
+        retrieval: string;
+        global: { degraded: boolean; pendingTotal: number; lastExtractAt: string | null };
+      };
+      assert(sst.supported === true && sst.mode === 'work' && sst.defaultMode === 'auto', 'session-stats：会话档位与默认档');
+      assert(sst.recall.enabled === true && sst.recall.hitTurns === 3 && sst.recall.injectedTurns === 4 && sst.recall.timeouts === 1, 'session-stats：召回注入统计（命中/检索轮次/超时）');
+      assert(sst.distill.pendingSlice === 3 && sst.distill.threshold === 8 && sst.distill.parkedSlices === 1 && sst.distill.producedRecords === 5, 'session-stats：攒批进度与挂起切片视图');
+      assert(sst.distill.lastDistillAt === new Date(t).toISOString(), 'session-stats：lastDistillAt 统一 ISO 口径');
+      assert(sst.l0Count === 2, 'session-stats：L0 会话计数（idx_l0_session_id 索引 COUNT）');
+      assert(sst.retrieval === 'keyword', 'session-stats：向量不可用降级标 keyword');
+      const sstOff = await call('dsh-memory/session-stats', { sessionId: 'sess-y' }) as never as {
+        recall: { enabled: boolean; injectedTurns: number };
+        distill: { threshold: number | null };
+      };
+      assert(sstOff.recall.enabled === false && sstOff.recall.injectedTurns === 0, 'session-stats：off 档召回停用、无统计时零值（emptyRecallStats 兜底）');
+      assert(sstOff.distill.threshold === null, 'session-stats：off 档无攒批阈值');
+      // 数据源缺失（旧装配）走 supported=false：信息区整体隐藏
+      const sst2HandlerPayload: unknown = await handler!('dsh-memory/session-stats', { sessionId: '' });
+      assert((sst2HandlerPayload as { ok: boolean }).ok === false, 'session-stats：空 sessionId 拒绝');
+
 
       const ss = await call('dsh-memory/settings-set', { enabled: false }) as never as { settings: { enabled: boolean } };
       assert(ss.settings.enabled === false && liveVal.enabled === false, 'settings-set 写透到 live 句柄');
@@ -2097,6 +2146,12 @@ async function main(): Promise<void> {
     assert(clientSrc.includes('padding: "14px 16px"'), '浮层上下内边距对称（紧凑尺寸）');
     assert(!clientSrc.includes('38px 16px'), '气泡预留顶部内边距已移除');
     assert(!clientSrc.includes('top: 26'), '滑轨下方档位标签已删除（改拖动气泡）');
+    // 会话信息区（悬浮卡下半部）：session-stats 热路径端点 + 自适应轮询 + 静态 DOM
+    assert(clientSrc.includes('dsh-memory/session-stats'), 'session-stats 端点接线（信息区数据通道）');
+    assert(clientSrc.includes('.dsh-mem-sinfo-grid'), '信息区 2×2 指标网格类');
+    assert(clientSrc.includes('.dsh-mem-sinfo-warn'), '信息区降级警示行类');
+    assert(clientSrc.includes('busyRef.current ? 2000 : 5000'), '自适应轮询（忙 2s / 静 5s）');
+    assert(clientSrc.includes('alive = false'), '轮询随浮层卸载停止（cleanup 置停）');
     // pill：off 档透明化（压掉 UA 按钮默认底/边框，hover 淡底）、其余三档共用流光
     assert(clientSrc.includes('.dsh-mem-pill-off { border: none; background: transparent; }'), 'off 档透明按钮类');
     assert(clientSrc.includes('.dsh-mem-pill-off:hover { background: var(--dsh-mem-bg-hover); }'), 'off 档 hover 淡底');

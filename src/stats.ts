@@ -18,6 +18,7 @@ import type {} from '@deepseek-ai/dsh-llm';
 import type {} from '@deepseek-ai/dsh-agent-default-model';
 import { EFFORT_CHOICES, resolveDataDir, type MemoryConfig } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
+import { emptyRecallStats, type RecallSessionStats } from './hooks/recall.js';
 import { decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
 import type { RebuildController } from './pipeline/rebuild.js';
 import type { LiveSettingsHandle } from './settings.js';
@@ -40,6 +41,26 @@ export interface MemoryStatusSource {
   degraded(): boolean;
   /** L1 抽取待重试的消息条数。 */
   pending(): number;
+}
+
+/**
+ * 会话级统计数据源（悬浮卡信息区；index.ts 注入）。
+ * 硬规则：本端点按"打开期间 2~5s 轮询"设计，实现只允许内存注册表读取与
+ * 索引化 SQL 点查——禁止任何文件读/目录扫描（scenes.list()/persona.read()
+ * 级别的 I/O 会把每次轮询变成数十毫秒的全量读，见 slider-spec 数据策略节）。
+ */
+export interface SessionInfoSource {
+  /** 召回统计（recall.ts 注册表；未发生检索的会话返回 undefined）。 */
+  recallStats(sessionId: string): RecallSessionStats | undefined;
+  /** 蒸馏管线会话视图（runner：攒批进度/挂起切片/会话产出）。 */
+  runnerView(
+    sessionId: string,
+    mode: string,
+  ): { pendingSlice: number; parkedSlices: number; threshold: number | null; producedRecords: number; lastDistillAt: number | null };
+  /** L0 该会话已捕获消息数（索引 COUNT）。 */
+  l0Count(sessionId: string): Promise<number>;
+  /** 检索能力位（hybrid / keyword 降级判定）。 */
+  capabilities(): { ftsSearch: boolean; vectorSearch: boolean };
 }
 
 export interface MemoryStats {
@@ -89,6 +110,7 @@ export function registerMemoryRpc(
   dataDir?: string,
   rebuild?: RebuildController,
   embedManager?: EmbeddingManager,
+  sessionInfo?: SessionInfoSource,
 ): void {
   /** 当前是否持有一段有效注册（dispose 完成后清空，允许服务重上线时重注册）。 */
   let holding = false;
@@ -117,6 +139,7 @@ export function registerMemoryRpc(
             logger,
             rebuild,
             embedManager,
+            sessionInfo,
           });
           return { ok: true, value };
         } catch (err) {
@@ -235,6 +258,7 @@ interface EndpointDeps {
   logger: MemoryLogger;
   rebuild?: RebuildController;
   embedManager?: EmbeddingManager;
+  sessionInfo?: SessionInfoSource;
 }
 
 /** RPC 字符串入参上限校验：防 loopback 面畸形超长载荷
@@ -246,7 +270,7 @@ function expectSessionId(v: unknown): string {
 }
 
 async function handleEndpoint(endpoint: string, payload: unknown, deps: EndpointDeps): Promise<unknown> {
-  const { cfg, stores, status, live, modes, dataDir, rebuild, embedManager } = deps;
+  const { cfg, stores, status, live, modes, dataDir, rebuild, embedManager, sessionInfo } = deps;
   switch (endpoint) {
     case 'dsh-memory/stats':
       return buildStats(cfg, stores, status);
@@ -269,6 +293,39 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       modes.set(sessionId, p.mode as MemoryMode);
       deps.logger.info(`[memory] 会话档位设置 session=${sessionId} mode=${p.mode}`);
       return { sessionId, mode: p.mode };
+    }
+
+    // ── 会话级统计（悬浮卡信息区；热路径端点，见 SessionInfoSource 的零 I/O 硬规则） ──
+    case 'dsh-memory/session-stats': {
+      if (!sessionInfo) return { supported: false };
+      const p = (payload ?? {}) as { sessionId?: string };
+      const sessionId = expectSessionId(p.sessionId);
+      const mode: string = modes ? modes.get(sessionId) : 'auto';
+      const caps = sessionInfo.capabilities();
+      const l0Count = await sessionInfo.l0Count(sessionId);
+      const s = live?.get();
+      const recallOn = cfg.recall.enabled && (s?.recall ?? true) && mode !== 'off';
+      const view = sessionInfo.runnerView(sessionId, mode);
+      // lastDistillAt 统一转 ISO（与 global.lastExtractAt 口径一致，client 直接 fmtAgo）
+      const distillView = { ...view, lastDistillAt: view.lastDistillAt ? new Date(view.lastDistillAt).toISOString() : null };
+      const chat = stores.state.forFamily('chat');
+      const work = stores.state.forFamily('work');
+      const lastAt = Math.max(chat.lastExtractAt, work.lastExtractAt);
+      return {
+        supported: true,
+        sessionId,
+        mode,
+        defaultMode: modes?.default ?? cfg.family,
+        recall: { enabled: recallOn, ...(sessionInfo.recallStats(sessionId) ?? emptyRecallStats()) },
+        distill: distillView,
+        l0Count,
+        retrieval: caps.vectorSearch ? (caps.ftsSearch ? 'hybrid' : 'vector') : caps.ftsSearch ? 'keyword' : 'none',
+        global: {
+          degraded: status?.degraded() ?? false,
+          pendingTotal: status?.pending() ?? 0,
+          lastExtractAt: lastAt ? new Date(lastAt).toISOString() : null,
+        },
+      };
     }
 
     case 'dsh-memory/settings-get': {

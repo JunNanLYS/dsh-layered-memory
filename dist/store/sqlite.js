@@ -989,6 +989,20 @@ export class MemoryDb {
             return 0;
         }
     }
+    /** 统计某会话已捕获消息数（session-stats 数据源；idx_l0_session_id 索引点查）。 */
+    countL0BySession(sessionId) {
+        if (this.degraded)
+            return 0;
+        try {
+            const row = this.db
+                .prepare('SELECT COUNT(*) AS n FROM l0_conversations WHERE session_id = ?')
+                .get(sessionId);
+            return row?.n ?? 0;
+        }
+        catch {
+            return 0;
+        }
+    }
     /** 按会话取最近消息（时间升序返回；走 idx_l0_session_id 索引）。
      *  蒸馏背景参考专用——按会话现查替代全局内存数组（ADR-0003）。 */
     recentL0BySession(sessionId, limit) {

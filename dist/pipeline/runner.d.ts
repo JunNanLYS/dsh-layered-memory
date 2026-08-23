@@ -63,6 +63,8 @@ export declare class MemoryRunner {
     private warmup;
     /** 每会话最后活动时间（闲置兜底判定用）。 */
     private lastActivity;
+    /** 每会话累计产出 L1 条数与最近蒸馏时间（session-stats 数据源；LRU 上限防泄漏）。 */
+    private sessionProduced;
     private readonly pendingFile;
     /** 分族 checkpoint（init 后可用；重建收尾也从这里读活引用）。 */
     states: FamilyStates;
@@ -78,6 +80,20 @@ export declare class MemoryRunner {
     private scheduleStartupRetry;
     /** L1 抽取待重试的消息条数（状态面板用）。 */
     get pendingCount(): number;
+    /**
+     * 会话级蒸馏视图（session-stats 端点数据源；纯内存读，零 I/O）。
+     * pendingSlice = 当前档位桶中该会话的攒批切片条数（threshold 为生效阈值，含 warmup 爬坡）；
+     * parkedSlices = 其余档位桶中的残留切片（换档遗留 / off 档挂起——ADR-0003 挂起语义）。
+     */
+    sessionView(sessionId: string, mode: string): {
+        pendingSlice: number;
+        parkedSlices: number;
+        threshold: number | null;
+        producedRecords: number;
+        lastDistillAt: number | null;
+    };
+    /** 会话产出记账（切片成功消费时调用；LRU 淘汰最久未蒸馏会话防 Map 无界增长）。 */
+    private noteSessionDistill;
     /** 管线跑完一轮后的回调（用于召回缓存失效）。 */
     setAfterRun(fn: () => void): void;
     /** 一轮对话结束后入队（L0 落盘由 capture 在 turn/end 即时完成，不排蒸馏队列）。 */

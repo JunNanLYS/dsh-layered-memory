@@ -244,6 +244,23 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** 相对时间（悬浮卡摘要行用）：刚刚 / N 分钟前 / N 小时前 / N 天前；无效返回 null。 */
+    function fmtAgo(iso) {
+      if (!iso) return null;
+      try {
+        var t = new Date(iso).getTime();
+        if (!t) return null;
+        var s = Math.floor((Date.now() - t) / 1000);
+        if (s < 0) s = 0;
+        if (s < 45) return "刚刚";
+        if (s < 3600) return Math.floor(s / 60) + " 分钟前";
+        if (s < 86400) return Math.floor(s / 3600) + " 小时前";
+        return Math.floor(s / 86400) + " 天前";
+      } catch (e) {
+        return null;
+      }
+    }
+
     // ── Switch 组件 ──
     function Switch(props) {
       var on = !!props.checked;
@@ -673,6 +690,151 @@ window.__ModuleLoader__.load({
           props.error
             ? react.createElement("div", { style: { fontSize: 11, color: "var(--dsh-mem-danger)", marginTop: 10, whiteSpace: "nowrap" } }, props.error)
             : null,
+          // 会话信息区（分隔线 + 2×2 指标 + 状态行）：session-stats 热路径端点，
+          // 宿主不支持 / 数据缺失时整体不渲染（best-effort 增强，不占位）
+          props.rpc && props.sessionId
+            ? react.createElement(SessionInfoArea, { rpc: props.rpc, sessionId: props.sessionId })
+            : null,
+        ),
+      );
+    }
+
+    // ── 会话信息区：悬浮卡下半部（召回命中 / 攒批进度 / 会话产出 / 会话消息） ──
+    // 数据通道 dsh-memory/session-stats（宿主侧零文件 I/O：内存注册表 + 索引 COUNT，
+    // 见 slider-spec 数据策略节）；自适应轮询：忙时（攒批/挂起/全局待蒸馏）2s，静默 5s，
+    // 浮层卸载即停（ModeSlider 只在 pill 展开期间挂载）。
+    function sinfoCell(val, label, title) {
+      return react.createElement(
+        "div",
+        { title: title || null },
+        react.createElement("div", { className: "dsh-mem-sinfo-val" }, val),
+        react.createElement("div", { className: "dsh-mem-sinfo-label" }, label),
+      );
+    }
+
+    function SessionInfoArea(props) {
+      var rpc = props.rpc;
+      var sessionId = props.sessionId;
+      // undefined=首帧加载中；null=宿主不支持（整体隐藏）；对象=最新快照
+      var stState = react.useState(undefined);
+      var stats = stState[0];
+      var setStats = stState[1];
+      var busyRef = react.useRef(false);
+
+      react.useEffect(function () {
+        if (!rpc || !sessionId) return undefined;
+        var alive = true;
+        var timer = null;
+        var seq = 0;
+        var tick = function () {
+          var token = ++seq;
+          rpc("dsh-memory/session-stats", { sessionId: sessionId })
+            .then(function (r) {
+              if (!alive || token !== seq) return;
+              if (r && r.ok && r.value && r.value.supported === false) {
+                setStats(null); // 宿主无数据源：整体隐藏
+              } else if (r && r.ok && r.value) {
+                setStats(r.value);
+                var d = r.value.distill || {};
+                var g = r.value.global || {};
+                busyRef.current = (d.pendingSlice || 0) > 0 || (d.parkedSlices || 0) > 0 || (g.pendingTotal || 0) > 0;
+              }
+              // RPC 失败：保持旧快照（信息区不因瞬时错误闪没）
+            })
+            .catch(function () {})
+            .then(function () {
+              if (alive) timer = setTimeout(tick, busyRef.current ? 2000 : 5000);
+            });
+        };
+        tick();
+        return function () {
+          alive = false;
+          if (timer) clearTimeout(timer);
+        };
+      }, [rpc, sessionId]);
+
+      // 首帧占位骨架（防内容跳变）；宿主不支持则整体隐藏
+      if (stats === null) return null;
+      if (stats === undefined) {
+        return react.createElement(
+          "div",
+          { className: "dsh-mem-sinfo" },
+          react.createElement(
+            "div",
+            { className: "dsh-mem-sinfo-grid" },
+            sinfoCell("…", "召回命中"),
+            sinfoCell("…", "攒批进度"),
+            sinfoCell("…", "本会话记忆"),
+            sinfoCell("…", "会话消息"),
+          ),
+        );
+      }
+
+      var rc = stats.recall || {};
+      var di = stats.distill || {};
+      var gl = stats.global || {};
+      var isOff = stats.mode === "off";
+
+      // 召回命中：口径是"注入统计"（命中轮次/检索轮次），停用时显示状态而非误导性 0/0
+      var rcVal;
+      var rcLabel;
+      var rcTitle;
+      if (rc.enabled === false) {
+        rcVal = "停用";
+        rcLabel = "召回命中";
+        rcTitle = "召回已停用（开关关闭 / 档位关闭 / 部署未启用）";
+      } else {
+        rcVal = (rc.hitTurns || 0) + "/" + (rc.injectedTurns || 0);
+        rcLabel = "召回命中 · " + (rc.totalHits || 0) + " 条";
+        rcTitle =
+          "最近一轮命中 " + (rc.lastHits || 0) + " 条，耗时 " + (rc.lastDurationMs || 0) + "ms" +
+          ((rc.timeouts || 0) > 0 ? "，超时跳过 " + rc.timeouts + " 次" : "");
+      }
+
+      // 攒批进度（x/生效阈值，含 warmup 爬坡）；off 档显示挂起切片数
+      var dVal;
+      var dLabel;
+      var dTitle;
+      if (isOff) {
+        dVal = String(di.parkedSlices || 0);
+        dLabel = "挂起切片";
+        dTitle = "档位关闭：未蒸馏切片挂起，切回档位后继续";
+      } else {
+        dVal = (di.pendingSlice || 0) + "/" + (di.threshold != null ? di.threshold : "-");
+        dLabel = (di.parkedSlices || 0) > 0 ? "攒批 · 挂起 " + di.parkedSlices : "攒批进度";
+        dTitle = "达到阈值后自动蒸馏（阈值随使用渐进爬坡到稳态）";
+      }
+
+      var pTitle = di.lastDistillAt ? "最近蒸馏 " + fmtTime(di.lastDistillAt) : "本会话尚未蒸馏";
+      var warn = gl.degraded ? "⚠ 存储不可用，记忆功能已停用" : null;
+      var note = null;
+      if (!gl.degraded) {
+        if (stats.retrieval === "keyword" && !isOff) note = "检索降级：纯关键词（向量不可用）";
+        else if (stats.retrieval === "none") note = "检索不可用（FTS 与向量均失效）";
+      }
+      var ago = fmtAgo(gl.lastExtractAt);
+
+      return react.createElement(
+        "div",
+        { className: "dsh-mem-sinfo" },
+        warn
+          ? react.createElement("div", { className: "dsh-mem-sinfo-warn" }, warn)
+          : null,
+        react.createElement(
+          "div",
+          { className: "dsh-mem-sinfo-grid" },
+          sinfoCell(rcVal, rcLabel, rcTitle),
+          sinfoCell(dVal, dLabel, dTitle),
+          sinfoCell(String(di.producedRecords || 0), "本会话记忆", pTitle),
+          sinfoCell(stats.l0Count != null ? String(stats.l0Count) : "…", "会话消息"),
+        ),
+        note
+          ? react.createElement("div", { className: "dsh-mem-sinfo-note" }, note)
+          : null,
+        react.createElement(
+          "div",
+          { className: "dsh-mem-sinfo-sum" },
+          "待蒸馏 " + (gl.pendingTotal || 0) + " · 上次蒸馏 " + (ago || "尚未蒸馏"),
         ),
       );
     }
@@ -930,6 +1092,15 @@ window.__ModuleLoader__.load({
         "  box-shadow: 0 16px 48px rgba(0,0,0,0.24); }",
         "body[data-ds-dark-theme] .dsh-mem-rb-modal { box-shadow: 0 16px 48px rgba(0,0,0,0.6); }",
         ".dsh-mem-rb-muted { font-size: 12px; color: var(--dsh-mem-text-3); }",
+        // ── 会话信息区（悬浮卡下半部）：分隔线 + 2×2 指标 + 状态行；纯静态 DOM，
+        // 不进粒子层 rAF 循环，轮询数据到达才触发本组件小树 re-render ──
+        ".dsh-mem-sinfo { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--dsh-mem-border); }",
+        ".dsh-mem-sinfo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }",
+        ".dsh-mem-sinfo-val { font-size: 13px; font-weight: 600; color: var(--dsh-mem-text-1); line-height: 18px; font-variant-numeric: tabular-nums; }",
+        ".dsh-mem-sinfo-label { font-size: 11px; color: var(--dsh-mem-text-3); line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
+        ".dsh-mem-sinfo-warn { font-size: 11px; color: var(--dsh-mem-danger); line-height: 16px; margin-bottom: 6px; }",
+        ".dsh-mem-sinfo-note { font-size: 11px; color: var(--dsh-mem-text-3); line-height: 16px; margin-top: 8px; }",
+        ".dsh-mem-sinfo-sum { font-size: 11px; color: var(--dsh-mem-text-3); line-height: 16px; margin-top: 8px; }",
         // reduced-motion 兜底放样式表末尾：同特异性下后置声明才能压过上面的组件类
         "@media (prefers-reduced-motion: reduce) {",
         "  .dsh-mem-root, .dsh-mem-root *, .dsh-mem-btn, .dsh-mem-input, .dsh-mem-select, .dsh-mem-rb-fill, .dsh-mem-scene-chev, .dsh-mem-sel-chev { transition: none; }",
@@ -1066,6 +1237,8 @@ window.__ModuleLoader__.load({
               mode: mode || "auto",
               onCommit: commit,
               error: error,
+              rpc: rpc,
+              sessionId: sessionId,
             })
           : null,
       );

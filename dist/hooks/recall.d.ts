@@ -30,9 +30,32 @@ import type { MemoryLogger } from '../types.js';
 export declare function buildRecallQuery(messages: Array<{
     content: unknown;
 }>, tailMessages?: number, maxChars?: number): string;
+/** 单会话召回统计（悬浮卡信息区数据源；每轮 O(1) 记账，agent/disposed 清理）。
+ *  口径声明：这是"注入统计"而非 bench 的离线 recall@k——运行时没有 ground truth，
+ *  命中率 = hitTurns / injectedTurns（发生过检索的轮次中命中 ≥1 条的占比）。 */
+export interface RecallSessionStats {
+    /** 发生过召回检索的轮次数（含零命中与超时）。 */
+    injectedTurns: number;
+    /** 命中（≥1 条）轮次数。 */
+    hitTurns: number;
+    /** 累计命中条数（预算截断前）。 */
+    totalHits: number;
+    /** 总预算超时跳过次数。 */
+    timeouts: number;
+    /** 最近一轮命中条数（0 = 零命中/超时；工具指南门控沿用此信号）。 */
+    lastHits: number;
+    /** 最近一轮检索耗时 ms。 */
+    lastDurationMs: number;
+    /** 最近一次记账时间（LRU 清理依据）。 */
+    updatedAt: number;
+}
+/** 新建零值统计（首次出现的会话）。 */
+export declare function emptyRecallStats(now?: number): RecallSessionStats;
 export interface RecallHooks {
     /** 管线更新后调用：画像/场景缓存立即失效并异步刷新。 */
     invalidateProfile(): void;
+    /** 会话召回统计只读视图（未发生过检索的会话返回 undefined）。 */
+    stats(sessionId: string): RecallSessionStats | undefined;
 }
 export declare function registerRecall(ctx: Context, cfg: MemoryConfig, stores: {
     l1: L1Store;

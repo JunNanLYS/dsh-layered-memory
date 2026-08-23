@@ -35,9 +35,21 @@ const MEMORY_TOOLS_GUIDE = `<memory-tools-guide>
 注：若当前环境限制直接调用工具（如仅允许代码执行入口），请经由该环境的工具调用机制
 （如 run_code 程序内）使用以上记忆工具。
 </memory-tools-guide>`;
+/** 新建零值统计（首次出现的会话）。 */
+export function emptyRecallStats(now = Date.now()) {
+    return { injectedTurns: 0, hitTurns: 0, totalHits: 0, timeouts: 0, lastHits: 0, lastDurationMs: 0, updatedAt: now };
+}
 export function registerRecall(ctx, cfg, stores, logger, live, modes) {
-    /** 每 agent 最近一次注入的命中条数（工具指南门控的"本轮召回命中"信号）。 */
-    const recallHits = new Map();
+    /** 每 agent 召回统计（工具指南门控读 lastHits；悬浮卡信息区读全量计数）。 */
+    const recallStats = new Map();
+    const statFor = (id) => {
+        let s = recallStats.get(id);
+        if (!s) {
+            s = emptyRecallStats();
+            recallStats.set(id, s);
+        }
+        return s;
+    };
     // 画像/场景导航按族缓存（分族隔离：注入时按会话档位选族）
     const profileCache = {
         chat: { persona: '', nav: '' },
@@ -65,9 +77,9 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
     const invalidateProfile = () => {
         void refreshProfile();
     };
-    // agent 销毁时清掉召回信号槽
+    // agent 销毁时清掉召回统计槽
     ctx.on('agent/disposed', (payload) => {
-        recallHits.delete(payload.agent.id);
+        recallStats.delete(payload.agent.id);
     });
     // ── 1. pre-step 消息侧注入：记忆先行于每一条新的用户输入（ADR-0001） ──
     // prepend 注册 + 先 next() 再改写：不劫持其他监听器（dsh-time-context 官方范式）。
@@ -86,20 +98,35 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
                 if (!hasNewUserMessage)
                     return decision;
                 const query = buildRecallQuery(payload.messages);
-                recallHits.set(payload.agent.id, 0);
-                if (!query)
+                // 空查询是退化轮（无用户文本），重置命中信号但不计入统计
+                if (!query) {
+                    const degenerate = statFor(payload.agent.id);
+                    degenerate.lastHits = 0;
                     return decision;
+                }
+                const st = statFor(payload.agent.id);
+                st.injectedTurns++;
+                st.lastHits = 0;
+                st.updatedAt = Date.now();
+                const searchStart = Date.now();
                 const hits = await raceRecallTimeout(stores.l1.search(query, cfg.recall.maxResults, {
                     scoreThreshold: cfg.recall.scoreThreshold,
                     family: mode === 'auto' ? undefined : mode,
                     // 远程嵌入 fetch 内层钳制：给 FTS 降级留出总预算内的时间（本地推理不钳）
                     embeddingTimeoutMs: RECALL_EMBED_CAP_MS,
                 }), cfg.recall.timeoutMs);
+                st.updatedAt = Date.now();
                 if (hits === undefined) {
+                    st.timeouts++;
                     logger.warn('[memory] 召回超时，跳过本轮注入（不阻塞对话）');
                     return decision;
                 }
-                recallHits.set(payload.agent.id, hits.length);
+                st.lastDurationMs = Date.now() - searchStart;
+                st.lastHits = hits.length;
+                if (hits.length > 0) {
+                    st.hitTurns++;
+                    st.totalHits += hits.length;
+                }
                 if (hits.length === 0)
                     return decision;
                 const lines = applyRecallBudget(hits.map((h) => `- [${h.scene_name ? `${h.type}|${h.scene_name}` : h.type}] ${h.content}`), { maxCharsPerMemory: cfg.recall.maxCharsPerMemory, maxTotalRecallChars: cfg.recall.maxTotalRecallChars });
@@ -156,7 +183,7 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
                     const body = mode === 'auto'
                         ? formatProfileAuto(profileCache.chat, profileCache.work)
                         : formatProfileSingle(profileCache[mode]);
-                    const hasRecallHit = (recallHits.get(agent.id) ?? 0) > 0;
+                    const hasRecallHit = (recallStats.get(agent.id)?.lastHits ?? 0) > 0;
                     // 指南三条件门控：工具已注册（cfg.tools）&&（稳定内容 ∥ 本轮召回命中）——
                     // 空库用户与关闭工具的用户不付这份固定 token（原版 auto-recall 同款语义）
                     if (!cfg.tools)
@@ -189,7 +216,7 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
             }
         }
     });
-    return { invalidateProfile };
+    return { invalidateProfile, stats: (id) => recallStats.get(id) };
 }
 /** auto 档 <user-persona> 内的域说明：让模型理解分块结构与两域的独立性。 */
 const DOMAIN_HINT = '以下内容按记忆域分块：chat=用户个人画像（User Narrative Profile），work=团队工作准则（Team Operating Doctrine）。' +

@@ -1,7 +1,8 @@
 # slider-spec — 悬浮板滑动选择器
 
-组件：`ModeSlider`（点击记忆 pill 展开的档位滑动选择浮层，macOS 滑动器交互参考）。
-全局令牌与守则见 `global-spec.md`；档位定义见 `pill-spec.md`。
+组件：`ModeSlider`（点击记忆 pill 展开的档位滑动选择浮层，macOS 滑动器交互参考）
+及其下半部的 `SessionInfoArea` 会话信息区。全局令牌与守则见 `global-spec.md`；
+档位定义见 `pill-spec.md`。
 
 ## 浮层（.dsh-mem-popover）
 
@@ -111,3 +112,49 @@
 ## 错误显示
 
 `props.error` 在滑轨下方 11px danger 色一行（`whiteSpace: nowrap`）。
+
+## 会话信息区（SessionInfoArea，滑轨下方）
+
+浮层下半部：分隔线（1px `--dsh-mem-border`，上 12px 下 10px）+ 2×2 指标网格 +
+可选状态行 + 全局摘要行。宿主不支持 / 未传 `rpc`/`sessionId` 时整体不渲染
+（best-effort 增强，不占位）。
+
+### 数据策略（性能契约）
+
+- **唯一数据通道**：`dsh-memory/session-stats` 端点。热路径设计——宿主侧只允许
+  内存注册表读取（recall 统计 / runner 会话视图 / live 开关 / 档位 Map）与
+  索引化 SQL 点查（`countL0BySession` 走 `idx_l0_session_id`），
+  **禁止任何文件读/目录扫描**（`scenes.list()` / `persona.read()` 级别的 I/O
+  会把每次轮询变成数十毫秒全量读；`stats.ts` 的 `SessionInfoSource` 注释为
+  实现侧硬规则）。全局慢变字段（degraded / pendingTotal / lastExtractAt）取
+  内存态随车下发，不另拉 `dsh-memory/stats`。
+- **自适应轮询**：打开期间 `setTimeout` 链轮询，攒批/挂起/全局待蒸馏任一 >0 →
+  2000ms，静默 5000ms（对齐嵌入态 `busy?1200:5000` 的既有模式）；
+  浮层卸载（ModeSlider 随 pill 关闭卸载）→ cleanup 置 `alive = false` + 清定时器。
+- **容错**：RPC 失败保持旧快照（信息区不因瞬时错误闪没）；响应
+  `supported === false`（旧宿主无数据源）整体隐藏；首次加载渲染占位骨架
+  （四格 `…`）防内容跳变。
+- **渲染成本**：纯静态 DOM，不进粒子层 rAF 循环；轮询数据到达才触发本组件
+  小树 re-render（状态局部于 SessionInfoArea，拖拽滑块不触发重取——effect 依赖
+  只有 `[rpc, sessionId]`）。
+
+### 指标口径
+
+| 格 | 值 | 标签 | 说明 |
+|---|---|---|---|
+| 召回命中 | `hitTurns/injectedTurns`；停用时显示"停用" | `召回命中 · N 条`（累计命中） | **注入统计**而非 bench 的离线 recall@k（运行时无 ground truth）；hover title 显示最近一轮命中数/耗时/超时次数 |
+| 攒批进度 | `pendingSlice/threshold`；off 档显示挂起数 | `攒批进度`（有挂起时 `攒批 · 挂起 N`） | threshold 含 warmup 爬坡；off 档标签"挂起切片"（ADR-0003 挂起语义） |
+| 本会话记忆 | 累计产出 L1 条数 | `本会话记忆` | hover title 显示最近蒸馏时间 |
+| 会话消息 | L0 已捕获条数 | `会话消息` | 索引 COUNT |
+
+状态行（异常才出现）：degraded → danger 色"⚠ 存储不可用，记忆功能已停用"；
+向量不可用且非 off 档 → muted"检索降级：纯关键词（向量不可用）"；
+FTS+向量全失效 → "检索不可用（FTS 与向量均失效）"。
+摘要行：`待蒸馏 N · 上次蒸馏 <相对时间>`（fmtAgo：刚刚 / N 分钟前 / N 小时前 / N 天前）。
+
+### 样式类
+
+`.dsh-mem-sinfo`（分隔线容器）/ `-grid`（`1fr 1fr`，gap `8px 10px`）/
+`-val`（13px/600 text-1，`tabular-nums`）/ `-label`（11px text-3，nowrap +
+ellipsis 防溢出）/ `-warn`（11px danger）/ `-note`、`-sum`（11px text-3）。
+无 transition、无圆角（不涉及 reduced-motion 名单与圆角集合）。

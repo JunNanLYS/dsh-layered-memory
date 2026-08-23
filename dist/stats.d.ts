@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { type MemoryConfig } from './config.js';
+import { type RecallSessionStats } from './hooks/recall.js';
 import type { RebuildController } from './pipeline/rebuild.js';
 import type { LiveSettingsHandle } from './settings.js';
 import type { L0Store } from './store/l0.js';
@@ -17,6 +18,31 @@ export interface MemoryStatusSource {
     degraded(): boolean;
     /** L1 抽取待重试的消息条数。 */
     pending(): number;
+}
+/**
+ * 会话级统计数据源（悬浮卡信息区；index.ts 注入）。
+ * 硬规则：本端点按"打开期间 2~5s 轮询"设计，实现只允许内存注册表读取与
+ * 索引化 SQL 点查——禁止任何文件读/目录扫描（scenes.list()/persona.read()
+ * 级别的 I/O 会把每次轮询变成数十毫秒的全量读，见 slider-spec 数据策略节）。
+ */
+export interface SessionInfoSource {
+    /** 召回统计（recall.ts 注册表；未发生检索的会话返回 undefined）。 */
+    recallStats(sessionId: string): RecallSessionStats | undefined;
+    /** 蒸馏管线会话视图（runner：攒批进度/挂起切片/会话产出）。 */
+    runnerView(sessionId: string, mode: string): {
+        pendingSlice: number;
+        parkedSlices: number;
+        threshold: number | null;
+        producedRecords: number;
+        lastDistillAt: number | null;
+    };
+    /** L0 该会话已捕获消息数（索引 COUNT）。 */
+    l0Count(sessionId: string): Promise<number>;
+    /** 检索能力位（hybrid / keyword 降级判定）。 */
+    capabilities(): {
+        ftsSearch: boolean;
+        vectorSearch: boolean;
+    };
 }
 export interface MemoryStats {
     ok: boolean;
@@ -50,4 +76,4 @@ export declare function registerMemoryRpc(ctx: Context, cfg: MemoryConfig, store
     scenes: Record<MemoryFamily, SceneStore>;
     persona: Record<MemoryFamily, PersonaStore>;
     state: StateStore;
-}, logger: MemoryLogger, status?: MemoryStatusSource, live?: LiveSettingsHandle, modes?: SessionModeStore, dataDir?: string, rebuild?: RebuildController, embedManager?: EmbeddingManager): void;
+}, logger: MemoryLogger, status?: MemoryStatusSource, live?: LiveSettingsHandle, modes?: SessionModeStore, dataDir?: string, rebuild?: RebuildController, embedManager?: EmbeddingManager, sessionInfo?: SessionInfoSource): void;

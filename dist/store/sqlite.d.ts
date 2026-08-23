@@ -148,6 +148,8 @@ export declare class MemoryDb {
     countL0(): number;
     /** 统计 recorded_at >= iso 的消息数（状态面板"今日捕获"用）。 */
     countL0Since(iso: string): number;
+    /** 统计某会话已捕获消息数（session-stats 数据源；idx_l0_session_id 索引点查）。 */
+    countL0BySession(sessionId: string): number;
     /** 按会话取最近消息（时间升序返回；走 idx_l0_session_id 索引）。
      *  蒸馏背景参考专用——按会话现查替代全局内存数组（ADR-0003）。 */
     recentL0BySession(sessionId: string, limit: number): L0MessageRecord[];
