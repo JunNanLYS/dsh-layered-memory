@@ -1,10 +1,15 @@
 // DSH-MemBench 运行包装：组装环境变量并启动 dsh bench profile。
 //
 // 用法：node bench/harness/run.mjs --arm A|B|AB [选项]
-//   --track <dialog|workflow>  赛道（缺省 dialog；dialog 只允许 A 组——B 组会话独立
-//                              无记忆必然失败，对照无信息量，已下线）
+//   --track <dialog|workflow|lifecycle>  赛道（缺省 dialog；dialog/lifecycle 只允许 A 组
+//                              ——B 组会话独立无记忆必然失败，对照无信息量，已下线；
+//                              lifecycle 在教学+探针后追加：分族门控/off 档捕获/
+//                              rebuild 保真/遗忘请求，场景库同 dialog）
 //   --arm AB                   双组并行：两个子进程分别跑 A/B（互不依赖），父进程收尾出联合报告
 //   --scenarios <dir>          场景库目录（缺省按赛道取 bench/scenarios[-workflow]）
+//   --noise <k>                对话赛道噪声填充：每场景探针后插入 k 个合成闲聊会话
+//                              （bench/harness/fillers.json 轮转），记忆库加速膨胀——
+//                              配合 report 的规模位置分析测退化；默认 0
 //   --out <dir>                输出根目录（缺省 bench/results/run-<arm>-<时间戳>；AB 模式不支持）
 //   --provider <p>             被测 Agent 模型 provider
 //   --model <m>                被测 Agent 模型名
@@ -45,19 +50,19 @@ function arg(name, fallback) {
 }
 
 const track = String(arg('track', 'dialog'));
-if (track !== 'dialog' && track !== 'workflow') {
-  console.error(`--track 只支持 dialog 或 workflow，收到「${track}」`);
+if (track !== 'dialog' && track !== 'workflow' && track !== 'lifecycle') {
+  console.error(`--track 只支持 dialog / workflow / lifecycle，收到「${track}」`);
   process.exit(2);
 }
 let arm = String(arg('arm'));
-// 对话赛道 B 组下线：Harness 会话彼此独立，无记忆的 B 组必然失败，对照无信息量；
+// 对话/生命周期赛道 B 组下线：Harness 会话彼此独立，无记忆的 B 组必然失败，对照无信息量；
 // 工作流赛道保留 B 组（重新探索/反问的代价是有效测量目标）。
-if (track === 'dialog' && arm === 'B') {
-  console.error('对话赛道不再运行 B 组（会话独立无记忆必然失败，对照无信息量）；只跑 A 组即可。');
+if ((track === 'dialog' || track === 'lifecycle') && arm === 'B') {
+  console.error('该赛道不运行 B 组（会话独立无记忆必然失败，对照无信息量）；只跑 A 组即可。');
   process.exit(2);
 }
-if (track === 'dialog' && arm === 'AB') {
-  console.error('[run] 对话赛道无 B 组，AB 并行模式退化为 A 单组');
+if ((track === 'dialog' || track === 'lifecycle') && arm === 'AB') {
+  console.error('[run] 该赛道无 B 组，AB 并行模式退化为 A 单组');
   arm = 'A';
 }
 if (!['A', 'B', 'AB'].includes(arm)) {
@@ -77,6 +82,12 @@ if (mc.problems.length) {
 }
 const { provider, model, judgeProvider, judgeModel, distillProvider, distillModel, effort, judgeEffort, distillEffort, gw } = mc;
 const scenarios = path.resolve(String(arg('scenarios', path.join(repoRoot, 'bench', track === 'workflow' ? 'scenarios-workflow' : 'scenarios'))));
+// 噪声填充：只作用于对话赛道（lifecycle 的库容形态由赛道阶段自身控制，工作流有沙箱语义）
+const noise = Math.max(0, Number(arg('noise', 0)) || 0);
+if (noise > 0 && track !== 'dialog') {
+  console.error('--noise 只作用于对话赛道（--track dialog）');
+  process.exit(2);
+}
 let repeats = Math.max(1, Number(arg('repeats', 1)) || 1);
 // B 组成本护栏：记忆关的长任务每场景要吞数倍 token（2026-08-22 实测 1.81M 输入/场景），
 // 固定只跑 1 次；--repeats 只作用于 A 组。
@@ -111,6 +122,13 @@ if (!dshBin) {
       const link = path.join(profileDir, 'node_modules', name);
       let real = null;
       try { real = fs.realpathSync(link); } catch { /* 链接缺失交给 dsh 启动报错 */ }
+      // 主树之下的兄弟 worktree（.worktree/…）也在 repoRoot 前缀内但代码是旧的——
+      // 2026-08-23 实测被咬（链接指向 .worktree/dev，旧 runner 静默跑完全程）
+      if (real && /[\\/]\.worktree[\\/]/i.test(real)) {
+        console.error(`[run] ✗ bench profile 的 ${name} 链接指向兄弟工作树 ${real}（代码与被测主树不同源）。\n` +
+          '  重链到本仓库：dsh plugin --profile bench add <本仓库路径> 与 ...\\bench\\harness\\dsh-bench-runner');
+        process.exit(2);
+      }
       if (real && real.toLowerCase() !== rootNorm && !real.toLowerCase().startsWith(rootNorm + path.sep)) {
         console.error(`[run] ✗ bench profile 的 ${name} 链接指向 ${real}，不在被测仓库 ${repoRoot} 内。\n` +
           '  旧工作树代码会静默污染结果（结果头的版本号不反映实跑代码）。\n' +
@@ -152,7 +170,7 @@ function purgeStaleBenchState() {
 if (process.env.DSH_BENCH_SKIP_PURGE !== '1') purgeStaleBenchState();
 
 const stamp = stampNow();
-const wfPrefix = track === 'workflow' ? 'run-wf-' : 'run-';
+const wfPrefix = track === 'workflow' ? 'run-wf-' : track === 'lifecycle' ? 'run-lc-' : 'run-';
 const outRootOf = (a) => path.resolve(String(arg('out', path.join(repoRoot, 'bench', 'results', `${wfPrefix}${a}-${stamp}`))));
 const pluginVersion = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version;
 
@@ -243,6 +261,8 @@ function runSingleArm(a, outRoot) {
       DSH_BENCH_OUT: outDir,
       DSH_BENCH_WORKSPACE: workspace,
       DSH_BENCH_DATA_DIR: a === 'A' ? path.join(outDir, 'memory') : '',
+      DSH_BENCH_TRACK: track,
+      DSH_BENCH_NOISE: String(noise),
       DSH_BENCH_PLUGIN_VERSION: pluginVersion,
       DSH_BENCH_DISTILL_TIMEOUT_MS: distillTimeout,
       DSH_BENCH_GIT_SHA: gitSha,
@@ -271,13 +291,15 @@ function runSingleArm(a, outRoot) {
 }
 
 function patchFileOf(a) {
+  // lifecycle = arm-on 语义 + benchControl（进程内控制服务：rebuild 触发/会话档位）
+  if (track === 'lifecycle') return path.join(here, 'patch-arm-lifecycle.yml');
   return path.join(here, `${track === 'workflow' ? 'patch-wf-' : 'patch-'}arm-${a === 'A' ? 'on' : 'off'}.yml`);
 }
 
 // ── AB 并行：两组互不依赖，双进程并发跑，父进程等齐后出联合报告 ──
 if (arm === 'AB') {
   const passThrough = [];
-  for (const opt of ['scenarios', 'provider', 'model', 'effort', 'judge-provider', 'judge-model', 'judge-effort', 'distill-provider', 'distill-model', 'distill-effort', 'repeats', 'distill-timeout']) {
+  for (const opt of ['scenarios', 'provider', 'model', 'effort', 'judge-provider', 'judge-model', 'judge-effort', 'distill-provider', 'distill-model', 'distill-effort', 'repeats', 'distill-timeout', 'noise']) {
     const v = arg(opt, undefined);
     if (typeof v === 'string') passThrough.push(`--${opt}`, v);
   }

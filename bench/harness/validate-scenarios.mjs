@@ -1,6 +1,7 @@
 // 场景库结构校验：node bench/harness/validate-scenarios.mjs [目录]
-// 对话场景：id/family 合法、teach+change 会话存在且非空、恰好 6 题且六类型齐备、
-// 判分方式与 gold/stale 的搭配合法。
+// 对话场景：id/family 合法、teach+change 会话存在且非空（reinforce 补强会话可选、
+// 最多 2 个、须位于两者之间）、探题 6~10 道（六核心题型各恰 1 题 + 扩展题型各至多
+// 1 题：accretive/update-chain/ordering/paraphrase）、判分方式与 gold/stale 搭配合法。
 // 工作流场景：teach/probe 会话存在、可选 change 会话（流程更新题）、teach/change/probeChecks
 // 每条恰一种判据（contains / notContains / absent / exists）、marker 出现在教学文本中。
 // 退出码非 0 即校验失败（可挂 CI）。
@@ -11,6 +12,7 @@ import { checkShapeProblem } from './dsh-bench-runner/src/checks.js';
 
 const dir = path.resolve(process.argv[2] || new URL('../scenarios', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 const REQUIRED_TYPES = ['extraction', 'multihop', 'temporal', 'update', 'scene', 'abstention'];
+const EXTENDED_TYPES = ['accretive', 'update-chain', 'ordering', 'paraphrase'];
 const JUDGES = new Set(['contains-all', 'llm', 'abstain-llm']);
 
 let failed = 0;
@@ -67,6 +69,7 @@ for (const f of files) {
     const probe = sc.sessions?.find((s) => s.kind === 'probe');
     const kinds = (sc.sessions ?? []).map((s) => s.kind);
     for (const k of new Set(kinds)) {
+      if (!['teach', 'change', 'probe'].includes(k)) problems.push(`未知会话 kind：${k}（工作流场景只支持 teach/change/probe）`);
       if (kinds.filter((x) => x === k).length > 1) problems.push(`kind=${k} 的会话出现多次（执行器只取第一个，多余的是笔误）`);
     }
     if (!teach?.messages?.length) problems.push('缺 teach 会话或消息为空');
@@ -111,13 +114,37 @@ for (const f of files) {
   const change = sc.sessions?.find((s) => s.kind === 'change');
   if (!teach?.messages?.length) problems.push('缺 teach 会话或消息为空');
   if (!change?.messages?.length) problems.push('缺 change 会话或消息为空');
-  if (sc.extraSessions) problems.push('意外的 extraSessions 字段（当前只支持 teach+change）');
+  // reinforce 补强会话（增量积累/连锁更新等题型的碎片载体）：最多 2 个、消息非空、
+  // 须位于 teach 与 change 之间——碎片次序是题型语义的一部分（v1→v2→v3 讲反了题就废了）
+  const kinds = (sc.sessions ?? []).map((s) => s.kind);
+  for (const k of new Set(kinds)) {
+    if (!['teach', 'reinforce', 'change'].includes(k)) problems.push(`未知会话 kind：${k}（对话场景只支持 teach/reinforce/change）`);
+  }
+  const reinforces = (sc.sessions ?? []).filter((s) => s.kind === 'reinforce');
+  if (reinforces.length > 2) problems.push(`reinforce 会话最多 2 个，实际 ${reinforces.length}`);
+  for (const [i, s] of reinforces.entries()) {
+    if (!s.messages?.length) problems.push(`reinforce 会话 ${i + 1} 消息为空`);
+  }
+  const idxTeach = kinds.indexOf('teach');
+  const idxChange = kinds.indexOf('change');
+  for (const [i, k] of kinds.entries()) {
+    if (k === 'reinforce' && idxTeach !== -1 && idxChange !== -1 && !(i > idxTeach && i < idxChange)) {
+      problems.push('reinforce 会话须位于 teach 与 change 之间');
+    }
+  }
 
   const probes = sc.probes ?? [];
-  if (probes.length !== 6) problems.push(`探题数应为 6，实际 ${probes.length}`);
-  const types = probes.map((p) => p.type).sort();
+  if (probes.length < 6 || probes.length > 10) problems.push(`探题数应为 6~10（六核心 + 可选扩展），实际 ${probes.length}`);
+  const typeCounts = {};
+  for (const p of probes) typeCounts[p.type] = (typeCounts[p.type] ?? 0) + 1;
   for (const t of REQUIRED_TYPES) {
-    if (!types.includes(t)) problems.push(`缺题型：${t}`);
+    if ((typeCounts[t] ?? 0) !== 1) problems.push(`核心题型 ${t} 应恰 1 题，实际 ${typeCounts[t] ?? 0}`);
+  }
+  for (const t of EXTENDED_TYPES) {
+    if ((typeCounts[t] ?? 0) > 1) problems.push(`扩展题型 ${t} 每场景至多 1 题，实际 ${typeCounts[t]}`);
+  }
+  for (const t of Object.keys(typeCounts)) {
+    if (![...REQUIRED_TYPES, ...EXTENDED_TYPES].includes(t)) problems.push(`未知题型：${t}`);
   }
   for (const [i, p] of probes.entries()) {
     const tag = `第${i + 1}题(${p.type})`;
@@ -136,15 +163,15 @@ for (const f of files) {
     } else if (!Array.isArray(p.gold) || p.gold.length === 0 || p.gold.some((g) => typeof g !== 'string' || !g)) {
       problems.push(`${tag} 缺 gold 或 gold 含空项`);
     }
-    if (p.type === 'update' && (!Array.isArray(p.stale) || p.stale.length === 0)) {
-      problems.push(`${tag} 更新题必须有 stale（已作废旧信息）`);
+    if ((p.type === 'update' || p.type === 'update-chain') && (!Array.isArray(p.stale) || p.stale.length === 0)) {
+      problems.push(`${tag} 更新题（update/update-chain）必须有 stale（已作废旧信息）`);
     }
   }
   if (problems.length) {
     console.error(`✗ ${f}（${sc.id ?? '?'}）：\n    - ${problems.join('\n    - ')}`);
     failed++;
   } else {
-    console.log(`✓ ${f}（${sc.id}，${sc.family} 族，6 题齐备）`);
+    console.log(`✓ ${f}（${sc.id}，${sc.family} 族，${(sc.probes ?? []).length} 题齐备${reinforces.length ? `，reinforce ×${reinforces.length}` : ''}）`);
   }
 }
 console.log(failed === 0 ? `\n全部通过：${files.length} 个场景` : `\n${failed}/${files.length} 个场景未通过`);

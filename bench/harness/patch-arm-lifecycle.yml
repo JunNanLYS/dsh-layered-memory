@@ -1,11 +1,10 @@
-# A 组（记忆开）：记忆数据目录指向本次运行专属目录 + 蒸馏提速（缩短基准等待）。
-# 模型钉死不在这里——settings.yaml 用户层会热替换默认模型，改由 runner 侧
-# DSH_BENCH_PROVIDER / DSH_BENCH_MODEL 环境变量直接进 agentOptions（见 src/index.js）。
-# dataDir 未设置时直接启动失败（防误写日常记忆库）。
+# lifecycle 赛道（A 组语义 + bench 控制服务）：在 patch-arm-on.yml 的基础上打开
+# benchControl——插件注册进程内服务 dsh-memory-bench（rebuild 触发/状态轮询/会话
+# 档位设置），供 bench-runner 的生命周期阶段使用（宿主侧 connection.rpc 无 call()，
+# 进程内 cordis 服务是唯一干净通道；生产部署不开此配置，零表面积）。
 - id: dsh-memory
   config:
     dataDir: !!js (() => { const v = process.env.DSH_BENCH_DATA_DIR; if (!v) throw new Error('A 组运行必须设置 DSH_BENCH_DATA_DIR'); return v; })()
-    # bench 控制服务（蒸馏用量记账 getDistillUsage——「记忆开销」效率三角指标）
     benchControl: true
     extract:
       minMessages: 1

@@ -1,0 +1,39 @@
+{
+  "id": "wf-preflight",
+  "family": "work",
+  "kind": "workflow",
+  "marker": "预检",
+  "sandboxFiles": {
+    "tools/sum.sh": "#!/usr/bin/env bash\n# sum：客服组周度汇总工具。用法: tools/sum.sh <csv路径>\n# 输出「合计 <总量>」（千分位）——数量一律以本工具输出为准，不要手算。\n[ -f \"$1\" ] || { echo '数据文件不存在' >&2; exit 2; }\nraw=$(awk -F, 'NR>1 { s += $2 } END { print s }' \"$1\")\ngrouped=$(printf '%s' \"$raw\" | sed -E 's/([0-9]+)([0-9]{3})$/\\1,\\2/')\necho \"合计 ${grouped}\"\n",
+    "data/support-0902.csv": "date,cases\n09-01,320\n09-02,280\n09-03,150\n",
+    "data/support-0909.csv": "date,cases\n09-07,410\n09-08,390\n09-09,260\n"
+  },
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "客服组周度汇总的固定做法，每期都一样，记牢：数据在 data/ 下的 csv（每天一行 date,cases）；总量一律用 tools/sum.sh <csv> 汇总，以它的输出为准（自带千分位），不要手算。汇总文件写到 out/weekly-<期号>.md，期号取数据文件名里的日期（support-0902.csv 就是 0902）。格式三条：1) 第一行标题「# 周度汇总 <期号>」；2) 正文必须有「## 摘要」和「## 数据」两节；3) 文件最后一行固定页脚「—— 客服组·周度数据」。另外有个雷打不动的动作：每次动手生成之前，先写 out/preflight-<期号>.txt 预检文件，固定三行：1) 数据文件:<文件名>；2) 收件人:cs-lead@corp；3) 输出文件:<汇总文件名>——三行齐了再生成汇总，这是防发错期的保险，别跳过。现在把 0902 这期出了（数据 support-0902.csv）。"
+      ],
+      "reteach": "周度汇总约定重述：数据 data/ 下的 csv；总量用 tools/sum.sh 汇总（千分位，以工具输出为准）；文件 out/weekly-<期号>.md（期号取 csv 文件名里的日期）；标题「# 周度汇总 <期号>」；「## 摘要」+「## 数据」两节；末行页脚「—— 客服组·周度数据」。本期数据 data/support-0902.csv（期号 0902）。"
+    },
+    {
+      "kind": "probe",
+      "messages": [
+        "下一期数据到了，把周度汇总出了。"
+      ],
+      "reteach": "周度汇总约定重述：数据 data/ 下的 csv；总量用 tools/sum.sh 汇总（千分位，以工具输出为准）；文件 out/weekly-<期号>.md（期号取 csv 文件名里的日期）；标题「# 周度汇总 <期号>」；「## 摘要」+「## 数据」两节；末行页脚「—— 客服组·周度数据」。本期新数据是 data/support-0909.csv（期号 0909）。",
+      "maxExchanges": 2
+    }
+  ],
+  "teachChecks": [
+    { "file": "out/preflight-0902.txt", "contains": ["数据文件", "收件人", "输出文件"] },
+    { "file": "out/weekly-0902.md", "contains": ["# 周度汇总 0902", "## 摘要", "## 数据"] },
+    { "file": "out/weekly-0902.md", "contains": ["750", "—— 客服组·周度数据"] }
+  ],
+  "probeChecks": [
+    { "file": "out/preflight-0909.txt", "contains": ["数据文件", "cs-lead@corp", "输出文件"] },
+    { "file": "out/preflight-0909.txt", "contains": ["0909"] },
+    { "file": "out/weekly-0909.md", "contains": ["# 周度汇总 0909", "1,060"] },
+    { "file": "out/weekly-0909.md", "contains": ["—— 客服组·周度数据"] }
+  ]
+}

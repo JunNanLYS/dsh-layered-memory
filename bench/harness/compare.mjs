@@ -10,8 +10,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const TYPES = ['extraction', 'multihop', 'temporal', 'update', 'scene', 'abstention'];
-const TYPE_LABEL = { extraction: '抽取', multihop: '多跳', temporal: '时序', update: '更新', scene: '场景', abstention: '拒答' };
+const TYPES = ['extraction', 'multihop', 'temporal', 'update', 'scene', 'abstention', 'accretive', 'update-chain', 'ordering', 'paraphrase'];
+const TYPE_LABEL = {
+  extraction: '抽取', multihop: '多跳', temporal: '时序', update: '更新', scene: '场景', abstention: '拒答',
+  accretive: '增量积累', 'update-chain': '连锁更新', ordering: '事件排序', paraphrase: '同义改写',
+};
 const NOISE_BAND = 0.05;
 
 function arg(name) {
@@ -42,6 +45,16 @@ const oldA = loadRuns(dirs[0]);
 const newA = loadRuns(dirs[1]);
 let oldB = null, newB = null;
 if (dirs.length >= 4) { oldB = loadRuns(dirs[2]); newB = loadRuns(dirs[3]); }
+
+// 检索层指标（best-effort）：A 组新旧运行目录各有 memory/memory.db 时对比
+// recall@5 / 注入精度——检索层改动（分词/阈值/融合）在这层先翻牌，比端到端钝器敏感。
+let retro = null;
+try {
+  const mod = await import('./retrieval-metrics.mjs');
+  retro = { old: mod.retrievalMetricsForRun(dirs[0]), new: mod.retrievalMetricsForRun(dirs[1]) };
+} catch (err) {
+  console.error(`[compare] 检索层指标不可用（跳过）：${err?.message ?? err}`);
+}
 
 function envKey(e) { return `${e.provider}/${e.model}|${e.judgeProvider}/${e.judgeModel}|${(e.scenarioFiles ?? []).join(',')}`; }
 const envConsistent = envKey(oldA.env) === envKey(newA.env)
@@ -79,6 +92,30 @@ else if (delta > NOISE_BAND && TYPES.every((t) => (newA.byType[t].hit / Math.max
 else if (delta < -NOISE_BAND) verdict = `**负向**：总准确率下降 ${pp(delta)}，重点看分题型定位回归层。`;
 else verdict = `**无显著变化**（差值 ${pp(delta)} 在噪声带 ±${NOISE_BAND * 100}pp 内）。`;
 lines.push(`判定：${verdict}`);
+
+if (retro && (retro.old.dbReps > 0 || retro.new.dbReps > 0)) {
+  const overall = (m) => {
+    let hit = 0, total = 0, cov = 0, mrr = 0;
+    for (const b of m.byType.values()) { hit += b.hit; total += b.total; cov += b.coverage; mrr += b.mrr; }
+    return { recall: total ? hit / total : null, coverage: total ? cov / total : null, mrr: total ? mrr / total : null };
+  };
+  const o = overall(retro.old), n = overall(retro.new);
+  const injPct = (m) => (m.injection.linesTotal > 0 ? m.injection.goldLines / m.injection.linesTotal : null);
+  const fmt = (v) => (v == null ? '-' : pct(v));
+  const fmtD = (a, b) => (a == null || b == null ? '-' : pp(b - a));
+  lines.push('');
+  lines.push('## 检索层指标对比（A 组，离线确定性；db 缺失的一侧打 `-`）');
+  lines.push('');
+  lines.push('| 指标 | 基线 | 新跑 | 变化 |');
+  lines.push('|---|---|---|---|');
+  lines.push(`| recall@5 | ${fmt(o.recall)} | ${fmt(n.recall)} | ${fmtD(o.recall, n.recall)} |`);
+  lines.push(`| gold 覆盖 | ${fmt(o.coverage)} | ${fmt(n.coverage)} | ${fmtD(o.coverage, n.coverage)} |`);
+  lines.push(`| MRR | ${o.mrr == null ? '-' : o.mrr.toFixed(2)} | ${n.mrr == null ? '-' : n.mrr.toFixed(2)} | ${o.mrr == null || n.mrr == null ? '-' : (n.mrr - o.mrr >= 0 ? '+' : '') + (n.mrr - o.mrr).toFixed(2)} |`);
+  lines.push(`| 注入精度（行级） | ${fmt(injPct(retro.old))} | ${fmt(injPct(retro.new))} | ${fmtD(injPct(retro.old), injPct(retro.new))} |`);
+  lines.push(`| 注入含已作废信息 | ${retro.old.injection.staleLeak} 题 | ${retro.new.injection.staleLeak} 题 | - |`);
+  lines.push('');
+  lines.push('> 检索层指标不依赖判卷与被测模型采样，是检索/注入管线改动的直接信号：分题型 recall@5 详见两侧 report。');
+}
 
 if (oldB && newB) {
   lines.push('');

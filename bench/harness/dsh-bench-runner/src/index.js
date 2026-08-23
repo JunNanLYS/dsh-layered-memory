@@ -115,10 +115,21 @@ async function run(ctx) {
   }
   progressInit(outDir, arm, ids);
 
+  // 赛道旋钮：lifecycle（run.mjs --track lifecycle）在主循环后追加五个生命周期阶段；
+  // noise（run.mjs --noise k）在对话场景之间插入 k 个噪声填充会话（记忆库加速膨胀，
+  // 测检索/端到端随库容的退化）——填充不是场景文件，scenarioFiles 清单不变。
+  const lifecycle = process.env.DSH_BENCH_TRACK === 'lifecycle';
+  const noise = lifecycle ? 0 : Math.max(0, Number(process.env.DSH_BENCH_NOISE) || 0);
+  const fillers = noise > 0 ? loadFillers(markers) : [];
+  let fillerUsed = 0;
+  const parsed = [];
+
   for (let idx = 0; idx < files.length; idx++) {
     const file = files[idx];
     const scenario = JSON.parse(fs.readFileSync(safeJoin(scenariosDir, file), 'utf8'));
+    parsed.push(scenario);
     const t0 = Date.now();
+    const noiseBefore = fillerUsed;
     progressPatch({
       scenarioIndex: idx,
       scenarioId: scenario.id,
@@ -132,11 +143,40 @@ async function run(ctx) {
     const r = await runScenario(ctx, scenario, { arm, selection, judge, dataDir, outDir, workspace, markers });
     r.file = file;
     r.durationMs = Date.now() - t0;
+    r.noiseBefore = noiseBefore;
     result.scenarios.push(r);
     writeJson(path.join(outDir, 'result.json'), result); // 逐场景落盘，中断不丢已完成部分
     progressCompleteScenario(r);
     const hit = r.probes.filter((p) => p.score === 1).length;
     console.log(`[bench-runner] 场景完成 ${scenario.id}：探针 ${hit}/${r.probes.length}，耗时 ${(r.durationMs / 1000).toFixed(0)}s`);
+    // 噪声填充：每个对话场景探针后、下一场景教学前插 k 个填充会话（末场景后无探针受益，省成本跳过）
+    if (noise > 0 && idx < files.length - 1 && scenario.kind !== 'workflow') {
+      progressPatch({ phase: 'teach' });
+      for (let f = 0; f < noise; f++) {
+        const filler = fillers[fillerUsed % fillers.length];
+        fillerUsed++;
+        await driveScriptedSession(ctx, selection, `filler-${fillerUsed}`, filler.messages, { cwd: workspace });
+        progressEvent(`· 噪声填充会话 ${fillerUsed}（${filler.id}）`);
+      }
+    }
+  }
+  if (noise > 0) {
+    result.noise = { level: noise, total: fillerUsed };
+  }
+  if (lifecycle) {
+    result.lifecycle = await runLifecycleStages(ctx, parsed, result.scenarios, { arm, selection, judge, dataDir, outDir, workspace, markers });
+    writeJson(path.join(outDir, 'result.json'), result);
+  }
+  // 效率三角分母与「记忆开销」记账：捕获消息计数（蒸馏成本摊到这里）+ 分层蒸馏用量
+  // （bench 控制服务；arm-on/lifecycle patch 已开 benchControl，旧 profile 缺服务时静默跳过）
+  result.capturedMessages = result.scenarios.reduce(
+    (acc, r) => ({ user: acc.user + (r.messages?.user ?? 0), assistant: acc.assistant + (r.messages?.assistant ?? 0) }),
+    { user: 0, assistant: 0 },
+  );
+  result.capturedMessages.total = result.capturedMessages.user + result.capturedMessages.assistant;
+  if (arm === 'A') {
+    const control = await tryBenchControl(ctx);
+    if (control) result.distillUsage = control.getDistillUsage();
   }
   result.finishedAt = new Date().toISOString();
   writeJson(path.join(outDir, 'result.json'), result);
@@ -183,15 +223,30 @@ async function runScenario(ctx, sc, opts) {
   return runDialogScenario(ctx, sc, opts);
 }
 
-/** 纯对话赛道（默认）：教学 → 变更 → 蒸馏等待 → 探针判分。 */
+/** 纯对话赛道（默认）：教学（teach / reinforce / change 按声明顺序）→ 蒸馏等待 → 探针判分。
+ * reinforce 是补强教学会话（增量积累、连锁更新等题型的碎片载体），整个属于教学阶段；
+ * 蒸馏等待仍在全部教学会话之后做一次（minMessages=1 + idleSeconds=30 下中间会话已自然落袋）。 */
 async function runDialogScenario(ctx, sc, opts) {
   const teachSession = sc.sessions.find((s) => s.kind === 'teach');
   const changeSession = sc.sessions.find((s) => s.kind === 'change');
   if (!teachSession || !changeSession) throw new Error(`场景 ${sc.id} 缺少 teach 或 change 会话`);
+  const unknown = sc.sessions.find((s) => !['teach', 'reinforce', 'change'].includes(s.kind));
+  if (unknown) throw new Error(`场景 ${sc.id} 出现未知会话 kind：${unknown.kind}`);
 
-  const teach = await driveScriptedSession(ctx, opts.selection, `${sc.id}-teach`, teachSession.messages, { cwd: opts.workspace });
-  progressPatch({ phase: 'change' });
-  const change = await driveScriptedSession(ctx, opts.selection, `${sc.id}-change`, changeSession.messages, { cwd: opts.workspace });
+  const reinforce = [];
+  let teach = null;
+  let change = null;
+  progressPatch({ phase: 'teach' });
+  for (const s of sc.sessions) {
+    if (s.kind === 'teach') {
+      teach = await driveScriptedSession(ctx, opts.selection, `${sc.id}-teach`, s.messages, { cwd: opts.workspace });
+    } else if (s.kind === 'reinforce') {
+      reinforce.push(await driveScriptedSession(ctx, opts.selection, `${sc.id}-reinforce${reinforce.length + 1}`, s.messages, { cwd: opts.workspace }));
+    } else {
+      progressPatch({ phase: 'change' });
+      change = await driveScriptedSession(ctx, opts.selection, `${sc.id}-change`, s.messages, { cwd: opts.workspace });
+    }
+  }
 
   // A 组等蒸馏落袋（records/ 行数稳定）；B 组插件整体禁用，无蒸馏可等。
   // 记忆生命周期：一个 rep 的 dataDir 从第一次蒸馏起全程保留、跨场景累积，rep 结束才废弃
@@ -209,10 +264,17 @@ async function runDialogScenario(ctx, sc, opts) {
     id: sc.id,
     family: sc.family,
     teach: teach,
+    reinforce,
     change: change,
     distill,
     probes: probe.probes,
     probeMetrics: probe.metrics,
+    // 效率三角：该场景全部会话的轮次延迟/消息计数合计
+    latency: sumLatency([teach?.latency, ...reinforce.map((r) => r.latency), change?.latency, probe.latency]),
+    messages: {
+      user: (teach?.messages?.user ?? 0) + reinforce.reduce((s, r) => s + (r.messages?.user ?? 0), 0) + (change?.messages?.user ?? 0) + (probe.messages?.user ?? 0),
+      assistant: (teach?.messages?.assistant ?? 0) + reinforce.reduce((s, r) => s + (r.messages?.assistant ?? 0), 0) + (change?.messages?.assistant ?? 0) + (probe.messages?.assistant ?? 0),
+    },
     contamination: probe.contamination,
   };
 }
@@ -226,6 +288,11 @@ async function driveScriptedSession(ctx, selection, label, messages, options = {
   const { agent, dispose } = await createAgent(ctx, selection, label, options.cwd);
   try {
     await agent.whenIdle();
+    // lifecycle 赛道：首条消息前经 bench 控制服务设会话档位（capture/recall 每轮读 Map）
+    if (options.mode) {
+      const control = options.control ?? (await getBenchControl(ctx));
+      control.setSessionMode(String(agent.session.id), options.mode);
+    }
     const firstSeq = agent.session.seq;
     let asks = 0;
     for (let i = 0; i < messages.length; i++) {
@@ -257,6 +324,12 @@ async function driveScriptedSession(ctx, selection, label, messages, options = {
       metrics: foldMetrics(driven),
       asks,
       toolAudit: collectToolAudit(driven),
+      // 效率三角：轮次延迟 + 消息计数（user = 剧本 + 补发重述；assistant = 事件计数）
+      latency: summarizeTurnLatency(driven),
+      messages: {
+        user: messages.length + asks,
+        assistant: driven.filter((e) => e.type === 'assistant/message').length,
+      },
       // 可选：跨场景污染检测（工作流探针也测——召回注入里出现其他场景 marker 即计）
       ...(options.markers && options.scenarioId
         ? { contamination: detectContamination(agent.session.events, { id: options.scenarioId }, options.markers) }
@@ -326,7 +399,7 @@ function collectToolAudit(events) {
 
 /** 探针会话：新会话逐题提问，逐题取末条 assistant 文本并判分；顺带检测召回注入的跨场景污染。 */
 async function runProbeSession(ctx, sc, opts) {
-  const { agent, dispose } = await createAgent(ctx, opts.selection, `${sc.id}-probe`, opts.workspace);
+  const { agent, dispose } = await createAgent(ctx, opts.selection, `${sc.id}-probe${opts.probeLabelSuffix ?? ''}`, opts.workspace);
   try {
     await agent.whenIdle();
     const firstSeq = agent.session.seq;
@@ -354,7 +427,11 @@ async function runProbeSession(ctx, sc, opts) {
           injected: injText.length > 0,
           chars: injText.length,
           hit: (p.gold ?? []).length > 0 ? goldInText(p.gold, injText) : null,
+          // 注入明细（记忆行内容，预算截断后原样）——离线注入精度/recall@k 指标的原料
+          lines: recallInjectionLines(injText),
         },
+        // 效率三角：该轮输入 token（注入占比的分母）
+        turnInputTokens: turnInputTokens(events),
         usedMemoryTool: events.some((e) => e.type === 'tool/call' && /memory|conversation/i.test(String(e.data?.name ?? ''))),
       });
       console.log(`  [${sc.id}·${p.type}] score=${judged.score} ${judged.reason ?? ''}`);
@@ -362,9 +439,15 @@ async function runProbeSession(ctx, sc, opts) {
     }
     const contamination = detectContamination(agent.session.events, sc, opts.markers);
     await ctx.get('sessions').flush(agent.session);
+    const drivenAll = agent.session.events.filter((e) => e.seq >= firstSeq);
     return {
       probes,
-      metrics: foldMetrics(agent.session.events.filter((e) => e.seq >= firstSeq)),
+      metrics: foldMetrics(drivenAll),
+      latency: summarizeTurnLatency(drivenAll),
+      messages: {
+        user: sc.probes.length,
+        assistant: drivenAll.filter((e) => e.type === 'assistant/message').length,
+      },
       contamination,
     };
   } finally {
@@ -403,6 +486,388 @@ async function createAgent(ctx, selection, label, cwd) {
     },
   });
   return handle;
+}
+
+// ---------------------------------------------------------------------------
+// 生命周期赛道（lifecycle）：主循环（教学 + 探针轮 1）之后追加阶段——
+//   分族门控 / off 档捕获 / rebuild 保真（探针轮 2 对照轮 1）/ 遗忘请求。
+// 零新场景文件，复用对话场景库；rebuild 触发与会话档位经 bench 控制服务
+// （插件 config benchControl=true 时提供，服务名 dsh-memory-bench）。
+// ---------------------------------------------------------------------------
+
+/** off 档教学事实：含全库唯一 nonce——行为断言（auto 探针须拒答）+ 数据断言
+ *  （records/conversations JSONL 全文不得出现 nonce，off 会话连 L0 都不该写）。 */
+const OFF_FACTS = {
+  messages: [
+    '顺便记一个只有你知道的数：我的幸运数字是 88417，别外传。',
+    '我家旧门牌号是 SH-0921，早就作废了，提一下而已。',
+  ],
+  nonces: ['88417', 'SH-0921'],
+  probes: [
+    { q: '我的幸运数字是多少？', judge: 'abstain-llm' },
+    { q: '我家旧门牌号是什么？', judge: 'abstain-llm' },
+  ],
+};
+
+/** 获取 bench 控制服务（插件可能晚于 runner 就绪，轮询等待；超时给出可操作提示）。 */
+function getBenchControl(ctx, timeoutMs = 30_000) {
+  const t0 = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      const control = ctx.get('dsh-memory-bench');
+      if (control) return resolve(control);
+      if (Date.now() - t0 > timeoutMs) {
+        return reject(new Error('bench 控制服务不可用：确认 patch 用 patch-arm-lifecycle.yml（dsh-memory 配置 benchControl: true）'));
+      }
+      setTimeout(tick, 1000);
+    };
+    tick();
+  });
+}
+
+/** 噪声填充库装载（bench/harness/fillers.json）+ 防假污染断言：填充文本出现任何
+ *  场景 marker 都会在探针污染计数里张冠李戴，装载期直接拒绝。 */
+function loadFillers(markers) {
+  const url = new URL('../../fillers.json', import.meta.url);
+  let list;
+  try {
+    list = JSON.parse(fs.readFileSync(url, 'utf8'));
+  } catch (err) {
+    throw new Error(`噪声填充库不可读（${url}）：${err?.message ?? err}`);
+  }
+  if (!Array.isArray(list) || list.length === 0) throw new Error('噪声填充库为空或非数组');
+  for (const f of list) {
+    if (!f.id || !Array.isArray(f.messages) || f.messages.length === 0) {
+      throw new Error(`填充会话 ${f.id ?? '?'} 结构非法（需 id + 非空 messages）`);
+    }
+    const text = f.messages.join('\n');
+    for (const [marker, from] of markers) {
+      if (text.includes(marker)) {
+        throw new Error(`填充会话 ${f.id} 含场景 ${from} 的 marker「${marker}」（假污染），请改写`);
+      }
+    }
+  }
+  return list;
+}
+
+/** dataDir 子目录（records/conversations）的 JSONL 里是否出现任一 needle。 */
+function dataDirJsonlContains(dataDir, sub, needles) {
+  const dir = path.join(dataDir, sub);
+  if (!fs.existsSync(dir)) return false;
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.jsonl') && SAFE_NAME.test(x))) {
+    const text = fs.readFileSync(path.join(dir, f), 'utf8');
+    for (const n of needles) {
+      if (text.includes(n)) return true;
+    }
+  }
+  return false;
+}
+
+/** 指定档位的问答会话：建 agent →（可选）设档 → 逐题提问判分。
+ *  mode 为空 = auto（不设档，用部署默认）；questions 元素即探针对象（judge 分发用）。 */
+async function runModeProbeSession(ctx, opts, label, questions, mode) {
+  const { agent, dispose } = await createAgent(ctx, opts.selection, label, opts.workspace);
+  try {
+    await agent.whenIdle();
+    if (mode) {
+      const control = await getBenchControl(ctx);
+      control.setSessionMode(String(agent.session.id), mode);
+    }
+    const firstSeq = agent.session.seq;
+    const probes = [];
+    progressPatch({ phase: 'probe', probeDone: 0, probeTotal: questions.length });
+    for (const p of questions) {
+      const before = agent.session.seq;
+      agent.followup(userMessage(p.q));
+      await agent.whenIdle();
+      const events = agent.session.events.filter((e) => e.seq > before);
+      const answer = lastAssistantText(events);
+      progressPatch({ phase: 'judge' });
+      const judged = await judgeProbe(ctx, opts.judge, p, answer);
+      const injText = recallInjectionText(events);
+      probes.push({
+        q: p.q,
+        gold: p.gold ?? null,
+        stale: p.stale ?? null,
+        judge: p.judge,
+        // 门控矩阵聚合键（report 按 polarity 分桶、from 标来源场景）
+        polarity: p.polarity ?? null,
+        from: p.from ?? null,
+        answer,
+        score: judged.score,
+        reason: judged.reason,
+        recall: {
+          injected: injText.length > 0,
+          chars: injText.length,
+          hit: (p.gold ?? []).length > 0 ? goldInText(p.gold, injText) : null,
+          lines: recallInjectionLines(injText),
+        },
+        turnInputTokens: turnInputTokens(events),
+        // 工具通道标记：门控阴性题若靠 conversation_search（L0 原文检索，不分族）答出，
+        // 泄漏归因与被动注入不同——报告/取证据此区分（2026-08-23 实测主要泄漏通道）
+        usedMemoryTool: events.some((e) => e.type === 'tool/call' && /memory|conversation/i.test(String(e.data?.name ?? ''))),
+      });
+      console.log(`  [${label}·${p.from ?? p.polarity ?? '?'}] score=${judged.score} ${judged.reason ?? ''}`);
+      progressPatch({ phase: 'probe', probeDone: probes.length });
+    }
+    await ctx.get('sessions').flush(agent.session);
+    const drivenAll = agent.session.events.filter((e) => e.seq >= firstSeq);
+    return {
+      probes,
+      metrics: foldMetrics(drivenAll),
+      latency: summarizeTurnLatency(drivenAll),
+      messages: {
+        user: questions.length,
+        assistant: drivenAll.filter((e) => e.type === 'assistant/message').length,
+      },
+    };
+  } finally {
+    try { dispose?.(); } catch { /* 拆除失败不影响结果落盘 */ }
+  }
+}
+
+/** 轮询 rebuild 至终态（done/cancelled/failed），超时返回 timedOut（不中断流程）。 */
+async function waitForBenchRebuild(control, timeoutMs) {
+  const t0 = Date.now();
+  let last = control.rebuildStatus();
+  while (last.running && !['done', 'cancelled', 'failed'].includes(last.phase)) {
+    if (Date.now() - t0 > timeoutMs) return { status: last, durationMs: Date.now() - t0, timedOut: true };
+    progressEvent(`· rebuild ${last.phase} ${last.done ?? 0}/${last.total ?? '?'}`);
+    await new Promise((r) => setTimeout(r, 5000));
+    last = control.rebuildStatus();
+  }
+  return { status: last, durationMs: Date.now() - t0, timedOut: false };
+}
+
+function roundAccuracy(rows) {
+  const byType = {};
+  let hit = 0;
+  let total = 0;
+  for (const row of rows) {
+    for (const p of row.probes ?? []) {
+      total++;
+      (byType[p.type] ??= { hit: 0, total: 0 }).total++;
+      if (p.score === 1) {
+        hit++;
+        byType[p.type].hit++;
+      }
+    }
+  }
+  return { hit, total, accuracy: total ? hit / total : 0, byType };
+}
+
+/** 生命周期五阶段（前两阶段在主循环完成：教学 + 探针轮 1）。resultRows 传主循环
+ *  的结果记录（probes 带 score）——轮 1 准确率从这里算，不能用原始场景定义（无 score）。 */
+async function runLifecycleStages(ctx, scenarios, resultRows, opts) {
+  const control = await getBenchControl(ctx);
+  const lifecycle = { track: 'lifecycle' };
+
+  // ---- 阶段 A：分族门控（"写入与召回同档"不变量的反向验证）----
+  // chat 档会话问 chat 题（阳性对照：召回应命中）+ work 题（阴性：异族事实必须答不出）；
+  // work 档镜像。阴性题强制 abstain-llm（给出具体内容 = 泄漏）。
+  progressEvent('▶ 生命周期：分族门控');
+  const byFamily = (fam) => scenarios.filter((s) => s.family === fam && s.kind !== 'workflow').slice(0, 2);
+  const pickQuestions = (list) =>
+    list.flatMap((sc) =>
+      (sc.probes ?? []).filter((p) => Array.isArray(p.gold) && p.gold.length > 0).slice(0, 2)
+        .map((p) => ({ q: p.q, gold: p.gold, stale: p.stale ?? null, judge: p.judge, from: sc.id })));
+  const chatQ = pickQuestions(byFamily('chat'));
+  const workQ = pickQuestions(byFamily('work'));
+  if (chatQ.length === 0 || workQ.length === 0) {
+    throw new Error('lifecycle 赛道需要至少 1 个 chat 族与 1 个 work 族对话场景（--scenarios 指定的库缺族）');
+  }
+  const gatingArm = async (mode, own, other) => {
+    const questions = [
+      ...own.map((p) => ({ ...p, polarity: 'positive' })),
+      ...other.map((p) => ({ q: p.q, gold: null, stale: null, judge: 'abstain-llm', from: p.from, polarity: 'negative' })),
+    ];
+    return (await runModeProbeSession(ctx, opts, `lc-gate-${mode}`, questions, mode)).probes;
+  };
+  lifecycle.gating = {
+    chatArm: await gatingArm('chat', chatQ, workQ),
+    workArm: await gatingArm('work', workQ, chatQ),
+  };
+
+  // ---- 阶段 B：off 档捕获（行为 + 数据双断言）----
+  progressEvent('▶ 生命周期：off 档捕获');
+  progressPatch({ phase: 'teach', probeDone: 0, probeTotal: OFF_FACTS.probes.length });
+  await driveScriptedSession(ctx, opts.selection, 'lc-off-teach', OFF_FACTS.messages, { cwd: opts.workspace, mode: 'off', control });
+  progressPatch({ phase: 'distill' });
+  const offDistill = await waitForDistillation(opts.dataDir, Number(process.env.DSH_BENCH_DISTILL_TIMEOUT_MS) || 120_000);
+  const offBehavior = await runModeProbeSession(ctx, opts, 'lc-off-probe', OFF_FACTS.probes);
+  const offDataLeak =
+    dataDirJsonlContains(opts.dataDir, 'records', OFF_FACTS.nonces)
+    || dataDirJsonlContains(opts.dataDir, 'conversations', OFF_FACTS.nonces);
+  lifecycle.offCapture = {
+    behavior: offBehavior.probes,
+    dataLeak: offDataLeak,
+    nonces: OFF_FACTS.nonces,
+    distillWaitedMs: offDistill.waitedMs ?? 0,
+  };
+
+  // ---- 阶段 C：rebuild 保真（探针轮 2 对照轮 1）----
+  progressEvent('▶ 生命周期：触发 rebuild（从 L0 重导全部派生层）');
+  progressPatch({ phase: 'distill' });
+  lifecycle.rebuild = { error: null };
+  try {
+    const usageBefore = control.getDistillUsage(); // rebuild 专属用量归因（前后差分）
+    const started = control.rebuildStart();
+    lifecycle.rebuild.started = { phase: started.phase, sessionCount: started.sessionCount, messageCount: started.messageCount, estCalls: started.estCalls };
+    const done = await waitForBenchRebuild(control, Number(process.env.DSH_BENCH_REBUILD_TIMEOUT_MS) || 15 * 60_000);
+    lifecycle.rebuild = {
+      ...lifecycle.rebuild,
+      phase: done.status.phase,
+      durationMs: done.durationMs,
+      timedOut: done.timedOut === true,
+      sessionCount: done.status.sessionCount,
+      messageCount: done.status.messageCount,
+      recordsBuilt: done.status.recordsBuilt,
+      error: done.status.error ?? (done.timedOut ? '轮询超时' : null),
+      distillUsage: diffDistillUsage(usageBefore, control.getDistillUsage()),
+    };
+    progressEvent(`· rebuild 终态 ${done.status.phase}（${(done.durationMs / 1000).toFixed(0)}s，重建 ${done.status.recordsBuilt ?? 0} 条）`);
+    if (done.status.phase === 'done') {
+      // 探针轮 2：全新 auto 会话重问全部题——准确率应不回退（分题型对照轮 1）
+      const round2 = [];
+      for (const sc of scenarios) {
+        if (sc.kind === 'workflow') continue;
+        const r2 = await runProbeSession(ctx, sc, { ...opts, probeLabelSuffix: '-2' });
+        round2.push({ id: sc.id, probes: r2.probes });
+      }
+      lifecycle.rounds = [
+        { label: 'probe-1', ...roundAccuracy(resultRows.filter((s) => s.kind !== 'workflow')) },
+        { label: 'probe-2', ...roundAccuracy(round2), scenarios: round2 },
+      ];
+      // off 复验：rebuild 不触碰 L0，off 内容从未入 L0 → nonce 仍应缺席
+      lifecycle.offCapture.dataLeakAfterRebuild =
+        dataDirJsonlContains(opts.dataDir, 'records', OFF_FACTS.nonces)
+        || dataDirJsonlContains(opts.dataDir, 'conversations', OFF_FACTS.nonces);
+    }
+  } catch (err) {
+    lifecycle.rebuild.error = err?.message ?? String(err);
+    console.error(`[bench-runner] rebuild 阶段失败（继续后续阶段）：${lifecycle.rebuild.error}`);
+  }
+
+  // ---- 阶段 D：遗忘请求（自然对话，考 L1 冲突检测的删除路径）----
+  // 目标：首个 chat 场景的第一道 contains-all 题（gold 程序可验）；遗忘会话要求删除
+  // → 蒸馏去重应把旧记录作废（update/deleteBatch）→ 原题重问须拒答且不复述旧值。
+  progressEvent('▶ 生命周期：遗忘请求');
+  const forgetTarget = scenarios
+    .filter((s) => s.family === 'chat' && s.kind !== 'workflow')
+    .flatMap((sc) => (sc.probes ?? []).filter((p) => p.judge === 'contains-all').slice(0, 1).map((p) => ({ ...p, from: sc.id })))[0];
+  if (forgetTarget) {
+    const forgetMsg = `之前你问过我这件事，现在彻底作废了：把「${forgetTarget.q}」相关的记忆删掉，别再保留这条信息，以后我问起就当没有这回事。`;
+    progressPatch({ phase: 'teach', probeDone: 0, probeTotal: 1 });
+    await driveScriptedSession(ctx, opts.selection, 'lc-forget', [forgetMsg], { cwd: opts.workspace, control });
+    progressPatch({ phase: 'distill' });
+    await waitForDistillation(opts.dataDir, Number(process.env.DSH_BENCH_DISTILL_TIMEOUT_MS) || 120_000);
+    const fr = await runModeProbeSession(ctx, opts, 'lc-forget-probe', [
+      // 判卷口径：遗忘题的正确行为是"确认已删除/作废"且不复述旧值——不同于"从未发生"的
+      // 拒答题（abstain-llm 会把复述相邻事实也判负，过严）；stale=原 gold，复述即 FAIL。
+      { q: forgetTarget.q, gold: ['已删除或作废'], stale: forgetTarget.gold, judge: 'llm' },
+    ]);
+    lifecycle.forget = { scenarioId: forgetTarget.from, topic: forgetTarget.q, gold: forgetTarget.gold, probe: fr.probes[0] };
+  } else {
+    lifecycle.forget = { error: '无 contains-all 题可作遗忘目标' };
+  }
+
+  return lifecycle;
+}
+
+// ---------------------------------------------------------------------------
+// 效率三角工具（注入延迟 / 注入占比 / 蒸馏记账的数据采集侧）：
+// 事件自带 time（epoch ms），逐轮测「用户消息 → 召回注入 → 首个 step/assistant 事件」。
+// ---------------------------------------------------------------------------
+
+/** 轮次延迟摘要。事件时间戳的落盘语义（实测取证 2026-08-23）：recall 注入与 user
+ *  消息在同一步骤派发时写盘——seq 相邻、时间同戳（注入钩子自身耗时不可观测），
+ *  且 recall 的 seq 在 user 消息**之前**。因此：
+ *  - 注入轮判定 = user 消息向后看（到上一条 user 消息为止）有无 recall 事件；
+ *  - 轮次响应 = user 消息 → 首个 assistant/* 事件（chunk 即流式首响应）；
+ *  - 注入开销在报告侧用「注入轮均值 − 无注入轮均值」的差分口径表达。 */
+function summarizeTurnLatency(events) {
+  let turns = 0, injTurns = 0, firstRespInjSumMs = 0, firstRespPlainSumMs = 0;
+  let i = 0;
+  while (i < events.length) {
+    const e = events[i];
+    if (e.type === 'user/message' && e.data?.source?.form !== 'recall') {
+      turns++;
+      let injected = false;
+      for (let k = i - 1; k >= 0; k--) {
+        const ev = events[k];
+        if (ev.type === 'user/message' && ev.data?.source?.form !== 'recall') break; // 上一轮 user 消息，停止
+        if (ev.type === 'user/message' && ev.data?.source?.form === 'recall') {
+          injected = true;
+          break;
+        }
+      }
+      let t2 = null;
+      for (let j = i + 1; j < events.length; j++) {
+        const ev = events[j];
+        if (ev.type === 'user/message' && ev.data?.source?.form !== 'recall') break; // 下一轮开始
+        if (String(ev.type).startsWith('assistant/')) {
+          t2 = ev.time;
+          break;
+        }
+      }
+      if (injected) injTurns++;
+      if (t2 !== null) {
+        const resp = Math.max(0, t2 - e.time);
+        if (injected) firstRespInjSumMs += resp;
+        else firstRespPlainSumMs += resp;
+      }
+      i++;
+    } else {
+      i++;
+    }
+  }
+  return { turns, injTurns, firstRespInjSumMs, firstRespPlainSumMs };
+}
+
+function sumLatency(list) {
+  const out = { turns: 0, injTurns: 0, firstRespInjSumMs: 0, firstRespPlainSumMs: 0 };
+  for (const l of list) {
+    if (!l) continue;
+    for (const k of Object.keys(out)) out[k] += l[k] ?? 0;
+  }
+  return out;
+}
+
+/** 该轮 assistant 消息 usage 的输入 token 合计（非缓存 + 缓存命中）。 */
+function turnInputTokens(events) {
+  let t = 0;
+  for (const e of events) {
+    if (e.type !== 'assistant/message') continue;
+    const u = e.data?.usage;
+    if (!u) continue;
+    t += (typeof u.inputTokens === 'number' ? u.inputTokens : 0) + (typeof u.cacheReadTokens === 'number' ? u.cacheReadTokens : 0);
+  }
+  return t;
+}
+
+/** 非致命版控制服务获取（效率三角的蒸馏记账用；旧 profile 未开 benchControl 时静默跳过）。 */
+async function tryBenchControl(ctx, timeoutMs = 5000) {
+  try {
+    return await getBenchControl(ctx, timeoutMs);
+  } catch {
+    return null;
+  }
+}
+
+/** 两份蒸馏用量快照的差值（lifecycle 的 rebuild 归因用）。 */
+function diffDistillUsage(before, after) {
+  const layers = {};
+  for (const [layer, a] of Object.entries(after?.layers ?? {})) {
+    const b = before?.layers?.[layer] ?? { calls: 0, failures: 0, inputChars: 0, outputTokens: 0, reasoningTokens: 0 };
+    layers[layer] = {
+      calls: a.calls - b.calls,
+      failures: a.failures - b.failures,
+      inputChars: a.inputChars - b.inputChars,
+      outputTokens: a.outputTokens - b.outputTokens,
+      reasoningTokens: a.reasoningTokens - b.reasoningTokens,
+    };
+  }
+  return { layers };
 }
 
 /**
@@ -552,6 +1017,12 @@ async function runWorkflowScenario(ctx, sc, opts) {
         checksTotal: allChecks.length,
       },
       probeMetrics: probeRun.metrics,
+      // 效率三角：教学/变更/探针会话的轮次延迟/消息计数合计
+      latency: sumLatency([teachRun?.latency, changeRun?.latency, probeRun.latency]),
+      messages: {
+        user: (teachRun?.messages?.user ?? 0) + (changeRun?.messages?.user ?? 0) + (probeRun.messages?.user ?? 0),
+        assistant: (teachRun?.messages?.assistant ?? 0) + (changeRun?.messages?.assistant ?? 0) + (probeRun.messages?.assistant ?? 0),
+      },
     };
   } finally {
     site?.server.close();
@@ -633,6 +1104,16 @@ function recallInjectionText(events) {
     }
   }
   return text;
+}
+
+/** 注入文本里的记忆行内容（剥掉 `- [type|scene]` 前缀，预算截断后原样保留）。 */
+function recallInjectionLines(text) {
+  if (!text) return [];
+  return String(text)
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('- ['))
+    .map((l) => l.replace(/^- \[[^\]]*\]\s?/, ''));
 }
 
 /** gold 要点是否出现在注入文本里（要点按标点拆词，全词命中算该要点覆盖）。 */

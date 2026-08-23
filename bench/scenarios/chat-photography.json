@@ -1,0 +1,89 @@
+{
+  "id": "chat-photography",
+  "family": "chat",
+  "sessions": [
+    {
+      "kind": "teach",
+      "messages": [
+        "这个月入坑摄影了：收了一台二手半画幅微单，配 35mm 定焦挂机。想拍街头和旅行人文，器材到此为止，不走烧器材路线。",
+        "给自己定了一套基础参数口诀：ISO 上限 1600；光圈优先为主；街头快门不低于 1/250；白平衡留给后期统一调。RAW 还是 JPG 还没想好，先把习惯养起来。"
+      ]
+    },
+    {
+      "kind": "reinforce",
+      "messages": [
+        "上周六参加了摄影群组织的第一次外拍扫街，片子过半能用，比预期好。外拍前又入了一支 85mm 定焦拍人像。回来想清楚了存储方案：拍 RAW+JPG 双格式，买了两张 128G 卡轮换，避免单卡翻车。"
+      ]
+    },
+    {
+      "kind": "change",
+      "messages": [
+        "器材和参数各有一次调整：1) 镜头大改——两支定焦都出掉了，进了一支 24-70 F4 当挂机头，旅行一颗镜头走天下；2) ISO 上限放到 3200，这台机器高感比想象中好，噪点能接受。修图这边定了 Lightroom 订阅版，导入预设先买了两套街拍胶片色。"
+      ]
+    }
+  ],
+  "probes": [
+    {
+      "type": "extraction",
+      "q": "我第一台相机是什么画幅的？",
+      "gold": ["半画幅"],
+      "judge": "contains-all"
+    },
+    {
+      "type": "multihop",
+      "q": "我主要想拍什么题材、现在用什么软件修图？",
+      "gold": ["街头", "Lightroom"],
+      "judge": "llm"
+    },
+    {
+      "type": "temporal",
+      "q": "第一次外拍是什么时候、拍的什么？",
+      "gold": ["上周六", "扫街"],
+      "judge": "llm"
+    },
+    {
+      "type": "update",
+      "q": "现在 ISO 上限放到多少了？",
+      "gold": ["3200"],
+      "stale": ["1600"],
+      "judge": "llm"
+    },
+    {
+      "type": "scene",
+      "q": "我入坑摄影时给自己定的整体路线是什么？",
+      "gold": ["街头", "旅行人文", "不烧器材"],
+      "judge": "llm"
+    },
+    {
+      "type": "abstention",
+      "q": "那台二手微单的快门数是多少？",
+      "judge": "abstain-llm"
+    },
+    {
+      "type": "accretive",
+      "q": "我的拍摄格式和修图方案现在是什么？",
+      "gold": ["RAW+JPG", "Lightroom"],
+      "judge": "llm"
+    },
+    {
+      "type": "update-chain",
+      "q": "现在挂机的是哪支镜头？",
+      "gold": ["24-70"],
+      "stale": ["35mm 定焦挂机", "85mm"],
+      "judge": "llm"
+    },
+    {
+      "type": "ordering",
+      "q": "入坑买相机和第一次外拍扫街，哪件事在前？",
+      "gold": ["先买相机", "后外拍"],
+      "judge": "llm"
+    },
+    {
+      "type": "paraphrase",
+      "q": "抓拍走动的人时，速度参数上我给自己划的底线是多少？",
+      "gold": ["1/250"],
+      "judge": "llm"
+    }
+  ],
+  "marker": "半画幅"
+}

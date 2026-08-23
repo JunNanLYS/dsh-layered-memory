@@ -1,6 +1,6 @@
 {
   "name": "dsh-bench-runner",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "DSH-MemBench 自动化基准驱动器：装入专用 bench profile，apply 即按场景库驱动 Agent 跑记忆准确率测试",
