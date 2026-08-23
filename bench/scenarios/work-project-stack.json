@@ -53,7 +53,7 @@
       "stale": [
         "Redis"
       ],
-      "judge": "contains-all"
+      "judge": "llm"
     },
     {
       "type": "scene",

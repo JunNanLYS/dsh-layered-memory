@@ -202,7 +202,7 @@ compare 的判定规则：环境头一致 + A 组总分提升超 ±5pp 噪声带
 - **越界读取双档审计**（工作流赛道）：权限模型只限写不限读，硬防线在审计——严格档（参数出现 `~/.dsh`、`memory.db`、records/conversations/scenes 存储路径）命中即**该场景全部检查判负**并逐条写明原因；宽松档（`.dsh` 泛匹配等）仅提示人工复核。合法主动召回通道（memory_search / conversation_search / memory_read_scene 的调用）不进审计，防误判。
 - **无工具面**（对话赛道）：patch 禁掉全部面向模型的工具行（bash/fs/web/subagent…），并注入基准 persona——否则 Agent 会拿 shell 翻真实 `~/.dsh/memory` 作弊/污染（冒烟期实测踩过）。`tools` 运行时服务本身保留（记忆插件硬依赖）。
 - **蒸馏等待**：A 组 patch 设 `extract.minMessages=1, idleSeconds=30`；runner 轮询 `records/*.jsonl` 行数稳定后进探针，超时标记 `distillTimeout` 不中断。
-- **判分两级**：`contains-all`（gold 关键词全中且 stale 不中，程序判）与 `llm`/`abstain-llm`（判卷模型按要点判，答案全文留痕于 result.json 供人工抽检）。工作流完成度四型判据（`checks.js`）：`contains`/`notContains`/`absent`/`exists`；report 对工作流另出**探针段完成度**单列（教学/变更段两臂都有现场上下文，探针段才是纯记忆窗口）。
+- **判分两级**：`contains-all`（gold 关键词全中，程序判；不用 stale——子串无法区分"当作现状"与"交代演变"）与 `llm`/`abstain-llm`（判卷模型按要点判，答案全文留痕于 result.json 供人工抽检）。判卷口径（2026-08-23 修正）：**stale 旧值「当作现状陈述」才 FAIL**——单纯交代演变过程（"以前是 X，后来改成 Y"）且终值正确不判负（此前把连锁更新题的正确回答整批误杀）；拒答题 FAIL 仅限"把被问的具体内容当已知事实说出"，引用真实背景解释"为什么不知道被问点"（"只知道 A 和 B、没有 C 的记录"）判 PASS。工作流完成度四型判据（`checks.js`）：`contains`/`notContains`/`absent`/`exists`；report 对工作流另出**探针段完成度**单列（教学/变更段两臂都有现场上下文，探针段才是纯记忆窗口）。
 - **指标来源**：全部从会话事件流折叠（steps/输出 token/轮次错误原因），不依赖 zstd 会话落盘。
 - **模型钉死**：`--provider/--model` 走 runner 侧 agentOptions，绕开 settings.yaml 对默认模型的热替换；结果头部记录环境（含 gitSha），report/compare 校验一致性。判卷模型默认同被测模型（自判偏置），正式跑建议 `--judge-provider/--judge-model` 换模型。
 
