@@ -21,7 +21,7 @@ Requires Node ≥ 22.16. Two invocation styles — the `npx` prefix can replace 
 any command below:
 
 ```bash
-# Option 1: run the official CLI directly via npx (no pre-installed dsh; version can be pinned, e.g. dsh-layered-memory@0.8.2)
+# Option 1: run the official CLI directly via npx (no pre-installed dsh; version can be pinned, e.g. dsh-layered-memory@0.8.4)
 npx -y @deepseek-ai/dsh plugin --profile web add dsh-layered-memory
 
 # Option 2: with the dsh CLI installed (dsh is a pnpm forwarder; npm i -g pnpm first if missing)
@@ -153,22 +153,24 @@ trajectory view):
 
 ## Measured Comparison (DSH-MemBench: Automated Benchmark)
 
-Screenshots show what the plugin looks like — this section answers "**what does enabling it actually buy you?**" with measured numbers from an **automated benchmark** ([`bench/`](./bench/), one command to reproduce). Method: the same scenario bank with verbatim-identical inputs runs in **Group A (memory on)** with 3 merged repetitions and **Group B (memory off)** with 1 repetition (a memory-off long task burns multiples of the tokens per scenario — a cost guardrail); the dialog track now runs Group A only (memory-off probes in independent sessions cannot succeed, so the control carries no information — retired). Workflow-track environment: DeepSeek official `deepseek-v4-flash` (reasoning effort high), judge `glm-5.3`, plugin 0.8.3, Windows; taxonomy adapted from [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark).
+Screenshots show what the plugin looks like — this section answers "**what does enabling it actually buy you?**" with measured numbers from an **automated benchmark** ([`bench/`](./bench/), one command to reproduce). Method: the same scenario bank with verbatim-identical inputs runs in **Group A (memory on)** with 3 merged repetitions and **Group B (memory off)** with 1 repetition (a memory-off long task burns multiples of the tokens per scenario — a cost guardrail); the dialog track now runs Group A only (memory-off probes in independent sessions cannot succeed, so the control carries no information — retired). Dialog-track environment: DeepSeek official `deepseek-v4-flash`, plugin 0.8.5 (judge same-source as tested; every answer archived for manual audit), Windows; taxonomy adapted from [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark), with the extended probe types and lifecycle track informed by [MemoryAgentBench](https://arxiv.org/abs/2507.05257) / [GoodAI LTM](https://github.com/GoodAI/goodai-ltm-benchmark) / BEAM.
 
-> The numbers below are the archived 0.8.3 baseline. As of 0.8.5 the scenario bank has grown to 20 dialog scenarios (adding four probe types — accretive completion, update chains, event ordering, paraphrase robustness) + 8 workflow scenarios (adding prospective memory), plus offline retrieval-layer metrics (recall@5 / injection precision), a lifecycle track (family gating / off-mode capture / rebuild fidelity / forget requests), and scale-degradation curves (offline flooding + noise fillers); a fresh baseline is pending.
+> The dialog track below is the **fresh 0.8.5 baseline** (fixed plugin + corrected judging criteria); the workflow-track numbers remain the archived 0.8.3 run (the bank has since grown to 8 scenarios with a prospective-memory addition — re-run pending).
 
-### Dialog track (15 scenarios × 6 probe types × 3 reps = 270 questions): does it remember correctly
+### Dialog track (20 scenarios × 10 probe types × 3 reps = 420 questions): does it remember correctly
 
-> Archived 0.8.0 baseline (Group A data; the dialog-track B arm has since been retired — Group A only).
+> 0.8.5 baseline (Group A data; the dialog-track B arm is retired — Group A only).
 
 <p align="center">
   <img src="./assets/readme/bench-dialog.svg" width="100%"
-       alt="DSH-MemBench dialog track accuracy chart (Group A, memory on): overall accuracy 92.6% (250/270); per probe type, 45 each — extraction 45/45, multi-hop 45/45, temporal 43/45, knowledge updates 31/45, scene recall 41/45, abstention 45/45 with 0 fabricated; the dialog-track B arm is retired (memory-off probes in independent sessions cannot succeed)">
+       alt="DSH-MemBench dialog track accuracy chart (Group A, memory on): overall accuracy 95.2% (400/420); six core probe types, 60 questions each — extraction 58/60, multi-hop 60/60, temporal 56/60, updates 55/60, scene recall 52/60, abstention 60/60 with 0 fabricated; four extended probe types, 15 each — accretive completion 15/15, update chains 15/15, event ordering 14/15, paraphrase 15/15">
 </p>
 
-**Dual-channel recall** (Group A): passive injection hit rate **75.1%** (the answer's key points appear in the recall injection, 169/225); most of the rest the model recovered by **actively calling the memory tools** — 84 questions with active queries, **60 rescued by tools**. The end-to-end 92.6% is the composite of both channels plus model utilization. With the memory store accumulating across scenarios for the whole run, 144 probe injections carried other scenarios' memories (honestly counted) — yet overall accuracy held at 92.6%: interference resistance under a growing store, measured.
+**Dual-channel recall** (Group A): passive injection hit rate **78.1%** (the answer's key points appear in the recall injection, 281/360); most of the rest the model recovered by **actively calling the memory tools** — 106 questions with active queries, **75 rescued by tools**. The end-to-end 95.2% is the composite of both channels plus model utilization. With the memory store accumulating across scenarios for the whole run, 295 probe injections carried other scenarios' memories (honestly counted) — yet accuracy actually *rose* from 92.8% (early, small store) to 97.7% (late, largest store), and offline flooding with 600 extra synthetic records moved retrieval recall@5 by only −2.8pp: interference resistance under a growing store, measured.
 
-### Workflow track (7 scenarios · Group A ×3 / Group B ×1, real tool sandbox): does it do it right, and cheaper
+**Layered weaknesses**: offline retrieval metrics (recall@5, controlled replay) total 73.3%, with event ordering at 0% and scene recall at 50% — end-to-end still 93%+ thanks to model robustness over adjacent injected memories. **Efficiency triangle** (the cost of memory): injections add no latency (injected turns respond 210ms *faster* on average), recall text is ~10.3% of per-turn input, and the whole distillation pipeline costs ≈2727 input / 240 output tokens per captured message (1172 calls, 0 failures).
+
+### Workflow track (archived 0.8.3 · 7-scenario edition · Group A ×3 / Group B ×1, real tool sandbox): does it do it right, and cheaper
 
 <p align="center">
   <img src="./assets/readme/bench-workflow.svg" width="100%"
@@ -184,14 +186,17 @@ Screenshots show what the plugin looks like — this section answers "**what doe
 ```bash
 node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --model deepseek-v4-flash   # dialog track (Group A only)
 node bench/harness/run.mjs --track workflow --arm AB --repeats 3 ...                                  # workflow track (A/B arms in parallel)
+node bench/harness/run.mjs --track lifecycle --arm A ...                                              # lifecycle track (gating/off/rebuild/forget)
 node bench/harness/report.mjs --latest [dialog|workflow]                                               # aggregate report
+node bench/harness/retrieval-metrics.mjs <runDir> --flood 200,600                                     # retrieval metrics + flooding curve
 ```
 
-- Scoring: programmatic `contains-all` plus an LLM judge against key points (every answer and verdict is preserved in `result.json` for human audit); workflow completion is verified programmatically from produced files and their contents (four check kinds: positive / forbidden-word / must-not-exist / exists);
+- Scoring: programmatic `contains-all` plus an LLM judge against key points (every answer and verdict is preserved in `result.json` for human audit); for stale-bearing probes (updates/update-chains/forget) an old value only fails when stated *as the current answer*, and abstention probes allow citing real adjacent facts while denying the asked point; workflow completion is verified programmatically from produced files and their contents (four check kinds: positive / forbidden-word / must-not-exist / exists);
+- Metric surface: beyond the per-type accuracy table (6 core + 4 extended types), reports automatically include **offline retrieval metrics** (recall@5 / injection precision / stale leakage), the **efficiency triangle** (injection latency differential / injection share / distillation accounting per captured message), **scale-position analysis** (accuracy & contamination vs store growth), and the lifecycle-track section (family-gating matrix / off-mode dual assertions / rebuild fidelity / forget requests);
 - Live progress: running the benchmark auto-starts a local progress panel and opens the browser (`--no-panel` to disable) — per-arm scenario/phase/message-level progress, heartbeat & activity freshness (distinguishes "stuck" from "process died"), and cumulative cost as it accrues;
-- Metrics come from provider-reported usage (input with cache-hit split) and session-event folding; the steady-state cache rate excludes each session's first request (archived 0.8.0 baseline: A 88.7% vs B 85.4% — memory injection does not hurt caching);
-- Regression use: run before/after a plugin change and diff with `compare.mjs` (environment header check including git SHA + Group-B control-drift warning);
-- Limitations (stated honestly): single machine; Group A ×3 merged, Group B ×1 (cost guardrail — noisier); judge vs tested model: same model in the archived dialog baseline, heterogeneous in the new workflow run (glm-5.3 judging v4-flash); the scenario bank is author-built (biased toward memory-advantage scenarios — reproduce it yourself); sandbox-file affordances partially leak procedures (Group B can reverse-engineer by reading scripts — discrimination limits honestly noted); dual-tier tool audit (strict violation voids the scenario / loose heuristic flags only), with 0 violations measured on both sides.
+- Metrics come from provider-reported usage (input with cache-hit split) and session-event folding; the steady-state cache rate excludes each session's first request (0.8.5 baseline: 89.1% — memory injection does not hurt caching);
+- Regression use: run before/after a plugin change and diff with `compare.mjs` (environment header check including git SHA + Group-B control-drift warning + retrieval-metric comparison);
+- Limitations (stated honestly): single machine; Group A ×3 merged, Group B ×1 (cost guardrail — noisier); judge vs tested model: same model in the 0.8.5 dialog baseline, heterogeneous in the archived workflow run (glm-5.3 judging v4-flash); the scenario bank is author-built (biased toward memory-advantage scenarios — reproduce it yourself); sandbox-file affordances partially leak procedures (Group B can reverse-engineer by reading scripts — discrimination limits honestly noted); dual-tier tool audit (strict violation voids the scenario / loose heuristic flags only), with 0 violations measured on both sides.
 
 Full reports and per-question data: [`bench/baseline/`](./bench/baseline/).
 
@@ -255,6 +260,7 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `llm.maxInputChars` | `700000` | Input character budget per distillation call (over-budget L1 inputs are chunked automatically); runtime-adjustable in Settings → distillation parameters → input budget (empty/0 = follow this value) |
 | `llm.timeoutMs` | `120000` | Per-call distillation timeout (ms) |
 | `tools` | `true` | Whether to register model-callable memory tools |
+| `benchControl` | `false` | Register the in-process bench control service (rebuild trigger / session-mode setting / distillation usage snapshot — used by the benchmark's lifecycle track). Off by default — zero surface in production deployments; do not enable casually |
 
 ## Storage Layout
 

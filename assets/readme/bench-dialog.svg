@@ -2,75 +2,69 @@
      width="1200" height="630" viewBox="0 0 1200 630"
      role="img" aria-labelledby="benchDialogTitle benchDialogDesc">
   <title id="benchDialogTitle">DSH-MemBench 对话赛道：A 组（记忆开）准确率</title>
-  <desc id="benchDialogDesc">A 组（记忆开）总准确率 92.6%（250/270，15 场景 × 6 题型 × 3 次）。分题型（每题型 45 题）：抽取 45/45；多跳 45/45；时序 43/45；知识更新 31/45；场景回忆 41/45；拒答 45/45、0 编造。对话赛道 B 组已下线（会话独立、无记忆必然失败，对照无信息量）。</desc>
+  <desc id="benchDialogDesc">A 组（记忆开）总准确率 95.2%（400/420，20 场景 × 10 题型 × 3 次）。核心六题型各 60 题：抽取 58/60、多跳 60/60、时序 56/60、更新 55/60、场景回忆 52/60、拒答 60/60 且 0 编造；扩展四题型各 15 题：增量积累 15/15、连锁更新 15/15、事件排序 14/15、同义改写 15/15。对话赛道 B 组已下线（会话独立、无记忆必然失败，对照无信息量）。</desc>
 
   <rect width="1200" height="630" rx="26" fill="#0D1526"/>
 
   <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
 
-    <!-- ── 标题与图例 ── -->
     <text x="64" y="66" font-size="26" font-weight="700" fill="#EFF3FA">对话赛道：记忆开 · 准确率</text>
-    <text x="64" y="94" font-size="18" fill="#8296B3">15 场景 × 6 题型 × 3 次 = 270 题（每题型 45 题）· 条长 = 答对率，数值 = 答对题数</text>
+    <text x="64" y="94" font-size="18" fill="#8296B3">20 场景 × 10 题型 × 3 次 = 420 题（核心六题型各 60 题、扩展四题型各 15 题）· 条长 = 答对率，数值 = 答对题数</text>
 
     <rect x="842" y="50" width="18" height="18" rx="5" fill="#FFD15D"/>
-    <text x="868" y="65" font-size="18" fill="#C2CDDE">A 组 · 记忆开</text>
+    <text x="868" y="65" font-size="17" fill="#C2CDDE">核心六题型</text>
+    <rect x="966" y="50" width="18" height="18" rx="5" fill="#6FB1FF"/>
+    <text x="992" y="65" font-size="17" fill="#C2CDDE">扩展四题型</text>
 
-    <!-- ── 网格线（0/25/50/75/100%）── -->
     <g stroke="#1C2A47" stroke-width="1">
-      <line x1="260" y1="122" x2="260" y2="530"/>
-      <line x1="435" y1="122" x2="435" y2="530"/>
-      <line x1="610" y1="122" x2="610" y2="530"/>
-      <line x1="785" y1="122" x2="785" y2="530"/>
-      <line x1="960" y1="122" x2="960" y2="530"/>
+      <line x1="260" y1="120" x2="260" y2="525"/>
+      <line x1="435" y1="120" x2="435" y2="525"/>
+      <line x1="610" y1="120" x2="610" y2="525"/>
+      <line x1="785" y1="120" x2="785" y2="525"/>
+      <line x1="960" y1="120" x2="960" y2="525"/>
     </g>
     <g font-size="17" fill="#8296B3" text-anchor="middle">
-      <text x="260" y="558">0%</text>
-      <text x="435" y="558">25%</text>
-      <text x="610" y="558">50%</text>
-      <text x="785" y="558">75%</text>
-      <text x="960" y="558">100%</text>
+      <text x="260" y="552">0%</text>
+      <text x="435" y="552">25%</text>
+      <text x="610" y="552">50%</text>
+      <text x="785" y="552">75%</text>
+      <text x="960" y="552">100%</text>
     </g>
 
-    <!-- ── 总准确率（强调行）── -->
-    <text x="240" y="169" font-size="21" font-weight="700" fill="#EFF3FA" text-anchor="end">总准确率</text>
-    <rect x="260" y="148" width="648" height="26" rx="6" fill="#FFD15D"/>
-    <text x="922" y="169" font-size="22" font-weight="700" fill="#FFD15D">92.6%（250/270）</text>
+  <text x="240" y="149" font-size="18" font-weight="700" fill="#EFF3FA" text-anchor="end">总准确率</text>
+  <rect x="260" y="130" width="667" height="25" rx="6" fill="#FFD15D"/>
+  <text x="939" y="149" font-size="17" font-weight="600" fill="#FFD15D">400/420（95.2%）</text>
+  <text x="240" y="184" font-size="18" font-weight="400" fill="#C2CDDE" text-anchor="end">抽取</text>
+  <rect x="260" y="165" width="677" height="25" rx="6" fill="#FFD15D"/>
+  <text x="949" y="184" font-size="17" font-weight="600" fill="#FFD15D">58/60（96.7%）</text>
+  <text x="240" y="219" font-size="18" font-weight="400" fill="#C2CDDE" text-anchor="end">多跳</text>
+  <rect x="260" y="200" width="700" height="25" rx="6" fill="#FFD15D"/>
+  <text x="972" y="219" font-size="17" font-weight="600" fill="#FFD15D">60/60（100.0%）</text>
+  <text x="240" y="254" font-size="18" font-weight="400" fill="#C2CDDE" text-anchor="end">时序</text>
+  <rect x="260" y="235" width="653" height="25" rx="6" fill="#FFD15D"/>
+  <text x="925" y="254" font-size="17" font-weight="600" fill="#FFD15D">56/60（93.3%）</text>
+  <text x="240" y="289" font-size="18" font-weight="400" fill="#C2CDDE" text-anchor="end">更新</text>
+  <rect x="260" y="270" width="642" height="25" rx="6" fill="#FFD15D"/>
+  <text x="914" y="289" font-size="17" font-weight="600" fill="#FFD15D">55/60（91.7%）</text>
+  <text x="240" y="324" font-size="18" font-weight="400" fill="#C2CDDE" text-anchor="end">场景回忆</text>
+  <rect x="260" y="305" width="607" height="25" rx="6" fill="#FFD15D"/>
+  <text x="879" y="324" font-size="17" font-weight="600" fill="#FFD15D">52/60（86.7%）</text>
+  <text x="240" y="359" font-size="18" font-weight="400" fill="#C2CDDE" text-anchor="end">拒答（0 编造）</text>
+  <rect x="260" y="340" width="700" height="25" rx="6" fill="#FFD15D"/>
+  <text x="972" y="359" font-size="17" font-weight="600" fill="#FFD15D">60/60（100.0%）</text>
+  <text x="240" y="394" font-size="18" font-weight="400" fill="#C2CDDE" text-anchor="end">增量积累</text>
+  <rect x="260" y="375" width="700" height="25" rx="6" fill="#6FB1FF"/>
+  <text x="972" y="394" font-size="17" font-weight="600" fill="#6FB1FF">15/15（100.0%）</text>
+  <text x="240" y="429" font-size="18" font-weight="400" fill="#C2CDDE" text-anchor="end">连锁更新</text>
+  <rect x="260" y="410" width="700" height="25" rx="6" fill="#6FB1FF"/>
+  <text x="972" y="429" font-size="17" font-weight="600" fill="#6FB1FF">15/15（100.0%）</text>
+  <text x="240" y="464" font-size="18" font-weight="400" fill="#C2CDDE" text-anchor="end">事件排序</text>
+  <rect x="260" y="445" width="653" height="25" rx="6" fill="#6FB1FF"/>
+  <text x="925" y="464" font-size="17" font-weight="600" fill="#6FB1FF">14/15（93.3%）</text>
+  <text x="240" y="499" font-size="18" font-weight="400" fill="#C2CDDE" text-anchor="end">同义改写</text>
+  <rect x="260" y="480" width="700" height="25" rx="6" fill="#6FB1FF"/>
+  <text x="972" y="499" font-size="17" font-weight="600" fill="#6FB1FF">15/15（100.0%）</text>
 
-    <line x1="64" y1="200" x2="1136" y2="200" stroke="#263A5C" stroke-width="1.5"/>
-
-    <!-- ── 分题型行 ── -->
-    <!-- 抽取 -->
-    <text x="240" y="249" font-size="19" fill="#C2CDDE" text-anchor="end">抽取</text>
-    <rect x="260" y="234" width="700" height="18" rx="5" fill="#FFD15D"/>
-    <text x="974" y="249" font-size="18" font-weight="700" fill="#FFD15D" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">45/45</text>
-
-    <!-- 多跳 -->
-    <text x="240" y="303" font-size="19" fill="#C2CDDE" text-anchor="end">多跳</text>
-    <rect x="260" y="288" width="700" height="18" rx="5" fill="#FFD15D"/>
-    <text x="974" y="303" font-size="18" font-weight="700" fill="#FFD15D" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">45/45</text>
-
-    <!-- 时序 -->
-    <text x="240" y="357" font-size="19" fill="#C2CDDE" text-anchor="end">时序</text>
-    <rect x="260" y="342" width="669" height="18" rx="5" fill="#FFD15D"/>
-    <text x="943" y="357" font-size="18" font-weight="700" fill="#FFD15D" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">43/45</text>
-
-    <!-- 知识更新 -->
-    <text x="240" y="411" font-size="19" fill="#C2CDDE" text-anchor="end">知识更新 *</text>
-    <rect x="260" y="396" width="482" height="18" rx="5" fill="#FFD15D"/>
-    <text x="756" y="411" font-size="18" font-weight="700" fill="#FFD15D" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">31/45</text>
-
-    <!-- 场景回忆 -->
-    <text x="240" y="465" font-size="19" fill="#C2CDDE" text-anchor="end">场景回忆</text>
-    <rect x="260" y="450" width="638" height="18" rx="5" fill="#FFD15D"/>
-    <text x="912" y="465" font-size="18" font-weight="700" fill="#FFD15D" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">41/45</text>
-
-    <!-- 拒答 -->
-    <text x="240" y="519" font-size="19" fill="#C2CDDE" text-anchor="end">拒答 *</text>
-    <rect x="260" y="504" width="700" height="18" rx="5" fill="#FFD15D"/>
-    <text x="974" y="519" font-size="18" font-weight="700" fill="#FFD15D" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">45/45</text>
-
-    <!-- ── 脚注 ── -->
-    <text x="64" y="600" font-size="16" fill="#8296B3">* 知识更新：改口后仍答旧值记 0 分（直接考核 L1 去重更新）；拒答：没发生过的事编造即 0 分（0 编造）。</text>
-    <text x="64" y="622" font-size="16" fill="#8296B3">对话赛道 B 组已下线：Harness 会话彼此独立，无记忆的探针必然失败，对照无信息量。</text>
+    <text x="64" y="600" font-size="16" fill="#8296B3">DSH-MemBench 0.8.5 基线 · DeepSeek v4-flash · 3 次重复合并 · 场景库跨场景累积（越靠后的场景记忆干扰越大）</text>
   </g>
 </svg>
