@@ -77,6 +77,7 @@ export async function runPersona(
     system: systemPrompt,
     user: userPrompt,
     maxTokens: resolveLayerTokens(cfg, 'l3'),
+    layer: 'l3',
     logger,
   });
   const body = unwrapFence(raw);

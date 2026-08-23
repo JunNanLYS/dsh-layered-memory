@@ -111,6 +111,9 @@ export interface MemoryConfig {
   };
   /** 是否注册模型可调用的记忆工具。 */
   tools: boolean;
+  /** 注册 bench 控制服务（dsh-memory-bench，进程内 rebuild 触发面）。
+   *  仅供基准/调试部署（bench profile 的 lifecycle 赛道），默认关——生产零表面积。 */
+  benchControl: boolean;
 }
 
 export const memorySchema = Schema.object({
@@ -179,6 +182,7 @@ export const memorySchema = Schema.object({
     timeoutMs: Schema.number().min(1000).max(600_000).default(120_000),
   }),
   tools: Schema.boolean().default(true),
+  benchControl: Schema.boolean().default(false),
 });
 
 export function resolveDataDir(cfg: MemoryConfig): string {

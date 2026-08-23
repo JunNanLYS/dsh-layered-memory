@@ -62,6 +62,7 @@ export async function runSceneConsolidation(
     system: systemPrompt,
     user: userPrompt,
     maxTokens: resolveLayerTokens(cfg, 'l2'),
+    layer: 'l2',
     logger,
   });
 

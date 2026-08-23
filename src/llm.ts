@@ -8,10 +8,13 @@ import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import type { MemoryConfig } from './config.js';
 import type { MemoryLogger } from './types.js';
 import { errDetail } from './util/filelog.js';
+import { recordDistillCall, type DistillLayer } from './llm-usage.js';
 
 export interface LlmCallOptions {
   system: string;
   user: string;
+  /** 蒸馏层标签（用量记账用，缺省 'l1-extract' 之外的兜底为 unknown 不计——四层调用点都应传）。 */
+  layer?: DistillLayer;
   maxTokens?: number;
   temperature?: number;
   signal?: AbortSignal;
@@ -269,11 +272,14 @@ export async function callLLM(ctx: Context, cfg: MemoryConfig, opts: LlmCallOpti
       }
     }
   } catch (err) {
+    // 记账含失败路径（failures 计数；tokens 尽当时流内已到的 usage）
+    if (opts.layer) recordDistillCall(opts.layer, user.length, outputTokens, reasoningTokens, true);
     opts.logger?.warn(
       `[memory] LLM 调用失败 ${provider}/${model}（${((Date.now() - startedAt) / 1000).toFixed(1)}s）: ${errDetail(err)}`,
     );
     throw err;
   }
+  if (opts.layer) recordDistillCall(opts.layer, user.length, outputTokens, reasoningTokens, false);
   const out = (blockText || deltaText).trim();
   if (out.length === 0) {
     // 空输出是最难排查的失败：流正常结束但一个字没吐。必须记录 finish 原因、
