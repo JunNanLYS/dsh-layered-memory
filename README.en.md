@@ -155,6 +155,8 @@ trajectory view):
 
 Screenshots show what the plugin looks like — this section answers "**what does enabling it actually buy you?**" with measured numbers from an **automated benchmark** ([`bench/`](./bench/), one command to reproduce). Method: the same scenario bank with verbatim-identical inputs runs in **Group A (memory on)** with 3 merged repetitions and **Group B (memory off)** with 1 repetition (a memory-off long task burns multiples of the tokens per scenario — a cost guardrail); the dialog track now runs Group A only (memory-off probes in independent sessions cannot succeed, so the control carries no information — retired). Workflow-track environment: DeepSeek official `deepseek-v4-flash` (reasoning effort high), judge `glm-5.3`, plugin 0.8.3, Windows; taxonomy adapted from [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark).
 
+> The numbers below are the archived 0.8.3 baseline. As of 0.8.5 the scenario bank has grown to 20 dialog scenarios (adding four probe types — accretive completion, update chains, event ordering, paraphrase robustness) + 8 workflow scenarios (adding prospective memory), plus offline retrieval-layer metrics (recall@5 / injection precision), a lifecycle track (family gating / off-mode capture / rebuild fidelity / forget requests), and scale-degradation curves (offline flooding + noise fillers); a fresh baseline is pending.
+
 ### Dialog track (15 scenarios × 6 probe types × 3 reps = 270 questions): does it remember correctly
 
 > Archived 0.8.0 baseline (Group A data; the dialog-track B arm has since been retired — Group A only).

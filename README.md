@@ -131,6 +131,8 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
 
 图文回答"长什么样"，这一节用**自动化基准**的实测数字回答"**开了到底有什么用**"（[`bench/`](./bench/)，一条命令可复现）。方法：同场景库、逐字相同输入，**A 组（记忆开）跑 3 次取合并值，B 组（记忆关）跑 1 次**（无记忆的长任务每场景要吞数倍 token，成本护栏）；对话赛道只跑 A 组（B 组会话独立无记忆必然失败，对照无信息量，已下线）。工作流赛道环境：DeepSeek 官方 `deepseek-v4-flash`（思考档 high）、判卷 `glm-5.3`、插件 0.8.3、Windows；题型设计借鉴 [LongMemEval](https://github.com/xiaowu0162/longmemeval) / [LoCoMo](https://snap-research.github.io/locomo/) / [AMB](https://github.com/vectorize-io/agent-memory-benchmark)。
 
+> 以下数字为 0.8.3 存档基线。0.8.5 起场景库扩至 20 对话场景（新增增量积累 / 连锁更新 / 事件排序 / 同义改写四题型）+ 8 工作流场景（新增前瞻记忆），并加入检索层离线指标（recall@5 / 注入精度）、生命周期赛道（分族门控 / off 捕获 / rebuild 保真 / 遗忘请求）与规模退化曲线（离线灌水 + 噪声填充）；新基线待重跑。
+
 ### 对话赛道（15 场景 × 6 题型 × 3 次 = 270 题）：答得准吗
 
 > 0.8.0 留档基线（A 组数据；此后对话赛道 B 组下线，只跑 A 组）。

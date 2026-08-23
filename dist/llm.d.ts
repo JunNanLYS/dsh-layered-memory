@@ -4,9 +4,12 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { MemoryConfig } from './config.js';
 import type { MemoryLogger } from './types.js';
+import { type DistillLayer } from './llm-usage.js';
 export interface LlmCallOptions {
     system: string;
     user: string;
+    /** 蒸馏层标签（用量记账用，缺省 'l1-extract' 之外的兜底为 unknown 不计——四层调用点都应传）。 */
+    layer?: DistillLayer;
     maxTokens?: number;
     temperature?: number;
     signal?: AbortSignal;

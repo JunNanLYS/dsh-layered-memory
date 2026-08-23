@@ -78,6 +78,7 @@ export const memorySchema = Schema.object({
         timeoutMs: Schema.number().min(1000).max(600_000).default(120_000),
     }),
     tools: Schema.boolean().default(true),
+    benchControl: Schema.boolean().default(false),
 });
 export function resolveDataDir(cfg) {
     if (cfg.dataDir)

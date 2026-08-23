@@ -291,7 +291,7 @@ metadata 字段说明：
 
 请严格按上述 JSON 数组格式输出，不要输出任何额外的 Markdown 代码块修饰符（如 \`\`\`json）或解释文本。`;
 export const EXTRACT_ALL_MEMORIES_SYSTEM_PROMPT = `你是专业的"情境切分与记忆提取专家"。
-你的任务是分析用户的对话，判断情境切换，并从中提取结构化的核心记忆。对话可能同时包含个人生活与工作内容：个人内容提取为个人记忆（persona/episodic/instruction），工作内容提取为团队共享工作记忆（work_fact/work_task/work_method/work_artifact），互不排斥、按内容归族。
+你的任务是分析用户的对话，判断情境切换，并从中提取结构化的核心记忆。对话可能同时包含个人生活与工作内容：个人内容提取为个人记忆（persona/episodic/instruction），工作内容提取为团队共享工作记忆（work_fact/work_task/work_method/work_artifact），互不排斥、**每条记忆显式输出 family 字段标注归族**。
 
 **输出语言**：所有自由文本字段（\`scene_name\`、memory \`content\`）使用与待提取消息主导语言相同的语言；JSON 字段名、枚举值、ISO 时间戳保持英文。
 
@@ -318,7 +318,14 @@ export const EXTRACT_ALL_MEMORIES_SYSTEM_PROMPT = `你是专业的"情境切分�
 
 【支持提取的七类记忆】（必须严格遵守类型规则）
 
-**个人三类（对话涉及用户个人生活/偏好/对 AI 的要求时）：**
+**归族判定（family）——先定族，再选型：**
+每条记忆都必须显式输出 "family": "chat" 或 "family": "work"，判定**只看语境，不看内容形状**：
+- **work**：内容发生在职业语境——项目、团队、系统、业务、客户、同事协作、部署/开发/运维；
+- **chat**：内容发生在用户个人生活语境——家庭、宠物、健康、消费、学习、爱好、个人行程与安排；
+- **形状词（方案/安排/计划/SOP/频率/周期/规则）不决定 family**：个人的喂养计划、健身安排、用药周期、家庭事务流程都是 chat；只有职业团队语境下的方案流程才是 work。
+- **family 决定 type 的可选词表，不许交叉**：family 为 chat 的记忆 type 只能是 persona/episodic/instruction；family 为 work 的记忆 type 只能是 work_fact/work_task/work_method/work_artifact。
+
+**个人三类（family: "chat"，对话涉及用户个人生活/偏好/对 AI 的要求时）：**
 
 1. 个性化记忆 (type: "persona")
    - 定义：用户的稳定属性、偏好、技能、价值观、习惯（如住所、职业、饮食禁忌）。
@@ -327,6 +334,7 @@ export const EXTRACT_ALL_MEMORIES_SYSTEM_PROMPT = `你是专业的"情境切分�
 
 2. 客观事件记忆 (type: "episodic")
    - 定义：客观发生的动作、决定、计划或达成结果。绝不包含纯主观感受。
+   - **持续生效的个人安排/规则也属此类**：喂养频率、驱虫/疫苗周期、用药安排、定期事务等长期个人计划，按"用户为 [对象] 确定了 [安排]"句式提取为 episodic——即使表述像"方案/周期/规则"，只要语境是个人生活就是 chat 族，**不要**因为形状像计划/方法而改用 work_* 类型。
    - 提取句式："用户（[姓名]）在 [最好是精确绝对时间] 于 [地点] [做了某事（可以包含起因、经过、结果）]"。
    - 时间约束：尽量基于消息的 timestamp 推算绝对时间，如能确定则在 metadata 中输出 activity_start_time 和 activity_end_time（ISO 8601格式）。
    - 打分 (priority)：80-100（重要事件/计划）；60-70（一般完整活动）；<60（琐碎事项，直接丢弃）。
@@ -336,7 +344,7 @@ export const EXTRACT_ALL_MEMORIES_SYSTEM_PROMPT = `你是专业的"情境切分�
    - 提取句式："用户要求/希望 AI 以后回答时..."
    - 打分 (priority)：-1（极其严格的全局死命令）；90-100（核心行为规则）；70-80（重要要求）；<70（临时要求，直接丢弃）。
 
-**工作四类（对话涉及项目、任务、团队协作时，默认可在项目团队内共享）：**
+**工作四类（family: "work"，对话涉及项目、任务、团队协作时，默认可在项目团队内共享）：**
 
 4. 工作事实 (type: "work_fact")
    - 定义：关于项目、系统、业务、客户、需求、决策、状态、风险、约束、实验结果的事实性信息。
@@ -379,6 +387,7 @@ export const EXTRACT_ALL_MEMORIES_SYSTEM_PROMPT = `你是专业的"情境切分�
       {
         "content": "完整、独立的记忆陈述（按对应类型的句式要求）",
         "type": "persona|episodic|instruction|work_fact|work_task|work_method|work_artifact",
+        "family": "chat|work",
         "priority": 80,
         "source_message_ids": ["消息ID_1", "消息ID_2"],
         "metadata": {}

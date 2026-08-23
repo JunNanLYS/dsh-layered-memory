@@ -113,6 +113,9 @@ export interface MemoryConfig {
     };
     /** 是否注册模型可调用的记忆工具。 */
     tools: boolean;
+    /** 注册 bench 控制服务（dsh-memory-bench，进程内 rebuild 触发面）。
+     *  仅供基准/调试部署（bench profile 的 lifecycle 赛道），默认关——生产零表面积。 */
+    benchControl: boolean;
 }
 export declare const memorySchema: Schema<Schemastery.ObjectS<{
     dataDir: Schema<string, string>;
@@ -219,6 +222,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         timeoutMs: Schema<number, number>;
     }>>;
     tools: Schema<boolean, boolean>;
+    benchControl: Schema<boolean, boolean>;
 }>, Schemastery.ObjectT<{
     dataDir: Schema<string, string>;
     family: Schema<"chat" | "work" | "auto", "chat" | "work" | "auto">;
@@ -324,5 +328,6 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         timeoutMs: Schema<number, number>;
     }>>;
     tools: Schema<boolean, boolean>;
+    benchControl: Schema<boolean, boolean>;
 }>>;
 export declare function resolveDataDir(cfg: MemoryConfig): string;

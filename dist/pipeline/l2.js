@@ -31,6 +31,7 @@ export async function runSceneConsolidation(ctx, cfg, scenes, newMemories, logge
         system: systemPrompt,
         user: userPrompt,
         maxTokens: resolveLayerTokens(cfg, 'l2'),
+        layer: 'l2',
         logger,
     });
     // ── 解析：先取 PERSONA_UPDATE_REQUEST 标记，再解析操作数组 ──

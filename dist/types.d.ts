@@ -43,7 +43,15 @@ export interface ExtractedMemory {
     metadata: Record<string, unknown>;
     /** 所属情境名（L1 抽取的情境切分结果）。 */
     scene_name: string;
+    /** auto 档抽取输出的显式族判定（chat|work；纯档 Prompt 无此字段）。
+     *  语境归族、形状不归族——修复"个人计划性事实被 work_* 形状吸走"的族错标
+     *  （2026-08-23 lifecycle 赛道实测发现）。 */
+    family?: string;
 }
+/** 抽取输出的 family 字段归一：只认 chat|work，其余（缺省/非法值）交由调用方回落。 */
+export declare function normExtractedFamily(raw: unknown): MemoryFamily | undefined;
+/** 记录族三级兜底链：会话档位强制（纯档）→ 抽取显式判定（auto）→ type 前缀推导（旧输出兜底）。 */
+export declare function resolveRecordFamily(forced: MemoryFamily | undefined, extracted: unknown, type: string): MemoryFamily;
 /** L1 持久化记录（字段对齐 MemoryCore；version/source_message_ids/metadata 由写入侧补默认）。 */
 export interface MemoryRecord {
     id: string;

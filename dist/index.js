@@ -18,6 +18,7 @@
  */
 import * as path from 'node:path';
 import { memorySchema, resolveDataDir } from './config.js';
+import { registerBenchControl } from './bench-control.js';
 import { registerCapture } from './hooks/capture.js';
 import { registerRecall } from './hooks/recall.js';
 import { MemoryRunner } from './pipeline/runner.js';
@@ -305,6 +306,13 @@ export async function apply(ctx, config) {
         l0Count: (sid) => stores.l0.countBySession(sid),
         capabilities: () => db.getCapabilities(),
     });
+    // bench 控制服务（config.benchControl 门控，默认关）：仅基准/调试部署注册，
+    // 供同进程的 bench-runner lifecycle 赛道触发 rebuild / 设置会话档位
+    // （宿主侧 RPC 无 call()，见 bench-control.ts）
+    if (config.benchControl && rebuild) {
+        const disposeBench = registerBenchControl(ctx, rebuild, modes, logger);
+        ctx.effect(() => () => disposeBench());
+    }
     logger.info(`[memory] L0~L3 分层蒸馏记忆插件就绪（L1 记忆 ${storageOk ? stores.l1.size : 0} 条 | 捕获=${storageOk && config.capture.enabled} | 蒸馏=${storageOk && config.extract.enabled} | 召回=${config.recall.enabled}）`);
     // 停机顺序（M7）：置停机标志（后台 embeddings 不再发起）→ 停蒸馏取新任务 →
     // 冲刷 L0 串行链（排队消息先落盘）→ 关库。cordis disposer 为 LIFO 逐个 await，

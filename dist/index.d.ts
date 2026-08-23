@@ -113,6 +113,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
     }>>;
     tools: import("@deepseek-ai/schemastery").default<boolean, boolean>;
+    benchControl: import("@deepseek-ai/schemastery").default<boolean, boolean>;
 }>, Schemastery.ObjectT<{
     dataDir: import("@deepseek-ai/schemastery").default<string, string>;
     family: import("@deepseek-ai/schemastery").default<"chat" | "work" | "auto", "chat" | "work" | "auto">;
@@ -218,5 +219,6 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
     }>>;
     tools: import("@deepseek-ai/schemastery").default<boolean, boolean>;
+    benchControl: import("@deepseek-ai/schemastery").default<boolean, boolean>;
 }>>;
 export declare function apply(ctx: Context, config: MemoryConfig): Promise<void>;

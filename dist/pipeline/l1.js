@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { callLLM, parseJsonLogged, resolveLayerTokens } from '../llm.js';
 import { formatExtractionPrompt, getExtractMemoriesSystemPrompt } from '../prompts/l1-extraction.js';
 import { formatBatchConflictPrompt, getConflictDetectionSystemPrompt } from '../prompts/l1-dedup.js';
-import { familyForType } from '../types.js';
+import { familyForType, resolveRecordFamily } from '../types.js';
 function newId(prefix) {
     return `${prefix}_${Date.now()}_${randomBytes(3).toString('hex')}`;
 }
@@ -64,6 +64,7 @@ export async function runExtraction(ctx, cfg, store, states, pending, background
             system: getExtractMemoriesSystemPrompt(mode),
             user: userPrompt,
             maxTokens: resolveLayerTokens(cfg, 'extract'),
+            layer: 'l1-extract',
             logger,
         });
         const scenes = parseJsonLogged(raw, 'L1 抽取', logger);
@@ -81,7 +82,7 @@ export async function runExtraction(ctx, cfg, store, states, pending, background
                     ...m,
                     record_id: newId('mem'),
                     scene_name: scene.scene_name,
-                    family: forcedFamily ?? familyForType(m.type ?? ''),
+                    family: resolveRecordFamily(forcedFamily, m.family, m.type ?? ''),
                 });
             }
         }
@@ -102,6 +103,7 @@ export async function runExtraction(ctx, cfg, store, states, pending, background
         system: getConflictDetectionSystemPrompt(mode),
         user: dedupPrompt,
         maxTokens: resolveLayerTokens(cfg, 'dedup'),
+        layer: 'l1-dedup',
         logger,
     });
     const decisions = parseJsonLogged(dedupRaw, 'L1 去重判定', logger);

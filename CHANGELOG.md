@@ -5,6 +5,73 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **auto 档族错标：个人"计划性"事实被吸进 work 族**（lifecycle 赛道首跑实测发现）：
+  抽取输出的 type 前缀隐式决定 family，而「驱虫方案/疫苗安排/猫砂选择」这类规则态
+  个人事实在 chat 词表没有贴合句式、被 work_fact/work_method 的形状语义吸走 → 族
+  错标 → 同一事实双族并存（去重永不跨族 → 旧值复活、连锁更新题失败）+ 分族门控
+  泄漏（chat 档会话能答出 work 事实，lifecycle 实测 2/2×2）。修复：auto 档抽取
+  Prompt **每条记忆显式输出 family 字段**（判定只看语境不看形状——职业/团队/项目
+  → work，家庭/宠物/健康/个人行程 → chat；family 决定 type 词表不许交叉）；工程侧
+  三级兜底链 `resolveRecordFamily`（纯档强制 → 抽取显式 → type 前缀）。与
+  MemoryCore 上游的分叉已在 prompt 头注释注明。**存量错标库需升级后 rebuild 一次
+  治愈**（L1 清空重导；注意 rebuild 会从 L0 复活已"遗忘"的事实——既有语义）。
+
+### 新增
+
+- **效率三角补全**（bench + 插件）：「记忆的开销」与工作流赛道已测的"记忆节省"
+  配成完整 ROI——①**注入开销**（注入轮 vs 无注入轮的轮次响应差分——事件时间戳
+  在步骤派发时统一落盘，注入钩子自身耗时不可直接观测，实测取证后改差分口径；
+  A 组内自成基线）；②**注入占比**（探针轮注入字符/该轮输入 token，中文 1 字≈1
+  token 折算）；③**蒸馏记账**（新增 `src/llm-usage.ts` 常开计数器，callLLM 按
+  l1-extract/l1-dedup/l2/l3 层累计输入字符/输出/思考 token，经 bench 控制服务
+  `getDistillUsage` 读取，摊到每条捕获消息；lifecycle 的 rebuild 另有前后差分
+  专属用量）。patch-arm-on 同步开启 benchControl；旧运行无新字段时报告自动跳过。
+  另修复 run.mjs 链接守卫漏洞：主树之下的兄弟 worktree（.worktree/…）此前被
+  放行——2026-08-23 实测链接指向 .worktree/dev 的旧 runner 静默跑完全程。
+- **生命周期赛道**（bench `--track lifecycle`，只跑 A 组）：考只有本架构能测的
+  生命周期不变量——**分族门控**（chat 档会话问不出 work 族事实、镜像亦然，
+  异族泄漏非 0 即"写入与召回同档"被打破）、**off 档捕获**（off 会话教的 nonce
+  事实双断言：auto 探针须拒答 + records/conversations JSONL 全文缺席，rebuild
+  后复验）、**rebuild 保真**（触发全量重建后探针轮 2 对照轮 1，显著回退即
+  rebuild 链路丢信息）、**遗忘请求**（自然对话要求删记忆 → L1 冲突检测的删除
+  路径 → 原题重问须拒答且不复述旧值；rebuild 从 L0 复活旧事实为已注明的现状
+  语义）。零新场景文件，复用对话场景库。
+- **规模退化曲线**：①离线灌水（`retrieval-metrics.mjs --flood N1,N2`）——复制
+  基准库灌 N 条确定性合成记录（主题域错开、全文零数字防误撞数值 gold）重算
+  recall@k，零运行成本出「检索质量 vs 库容」曲线（0.8.3 存档库实测 +400 条时
+  recall@5 70.2%→65.8%）；②运行时噪声（run.mjs `--noise k`）——对话场景间插
+  入填充会话（`fillers.json` 25 会话，装载期断言不撞 marker）测端到端退化，
+  report 新增「规模位置分析」节（前/中/后段三桶）；填充不改 scenarioFiles
+  清单，跨 noise 档 compare 不触发环境告警。
+- **bench 控制服务**（插件 `benchControl` 配置，默认关）：进程内 cordis 服务
+  `dsh-memory-bench`（rebuild 触发/状态轮询/会话档位设置），供 lifecycle 赛道
+  使用——宿主侧 connection.rpc 只有 handle 没有 call，这是唯一干净的进程内
+  通道；生产部署不开此配置，零表面积。
+- **基准检索层离线指标**（bench）：report/compare 自动计算 + 独立 CLI
+  （`bench/harness/retrieval-metrics.mjs`）——recall@5 / gold 覆盖 / MRR 分题型表
+  （探针问题原文在 rep 最终记忆库上受控复现 keyword 检索，候选池/阈值/小语料
+  例外与运行时逐项一致，分词与索引共用 dist 的 search-utils）+ 注入精度
+  （含 gold 要点的注入行占比）+ 注入含已作废信息计数（update 类 stale 进注入，
+  更新失败在注入层直接可见）。runner 补落盘 `recall.lines`（注入记忆行明细）。
+  端到端准确率是钝器的问题从此有了不依赖判卷与采样的直接信号。
+- **基准四种新题型 + 前瞻记忆工作流场景**（bench，借鉴 MemoryAgentBench /
+  GoodAI LTM / BEAM）：`accretive`（增量积累：完整事实拆多会话考拼装）、
+  `update-chain`（连锁更新 v1→v2→v3，含回摆链）、`ordering`（事件排序）、
+  `paraphrase`（同义改写压测词法缺口）——对话场景库 15→20（新增场景全 10 题制，
+  90→140 题/rep），场景可带 reinforce 补强教学会话（0~2 个，夹在 teach 与
+  change 之间）；工作流新增 `wf-preflight`（教学立常设约定"生成前先写预检文件"，
+  探针只给模糊任务，A 组须凭记忆主动补步骤）。
+
+### 变更
+
+- 对话场景校验器规则更新：探题数 6→6~10（六核心各恰 1 + 扩展题型各至多 1）、
+  允许 reinforce 会话（顺序强制 teach → reinforce → change）、
+  `update-chain` 必须带 stale；更新专项口径并入连锁更新题。
+  场景清单变化使旧基线 compare 告警"环境不一致"——属预期，重跑基线或用
+  `--scenarios` 指向同子集对比。
+
 ## [0.8.4] — 2026-08-22
 
 ### 修复
