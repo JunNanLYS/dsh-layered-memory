@@ -326,7 +326,7 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
   if (storageOk) {
     flushL0 = registerCapture(ctx, config, runner, stores.l0, logger, live, modes);
   }
-  const recall = registerRecall(ctx, config, stores, logger, live, modes);
+  const recall = registerRecall(ctx, config, stores, logger, live, modes, dataDir);
   runner.setAfterRun(recall.invalidateProfile);
   registerMemoryTools(ctx, config, stores, logger, modes);
   registerMemoryRpc(

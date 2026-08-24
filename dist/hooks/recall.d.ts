@@ -32,17 +32,21 @@ export declare function buildRecallQuery(messages: Array<{
 }>, tailMessages?: number, maxChars?: number): string;
 /** 单会话召回统计（悬浮卡信息区数据源；每轮 O(1) 记账，agent/disposed 清理）。
  *  口径声明：这是"注入统计"而非 bench 的离线 recall@k——运行时没有 ground truth，
- *  命中率 = hitTurns / injectedTurns（发生过检索的轮次中命中 ≥1 条的占比）。 */
+ *  命中率 = hitTurns / injectedTurns。去重语义（0.8.6）：全量压制轮计入 hitTurns
+ *  （相关记忆已在模型上下文里，本质是命中而非未命中），injectedTurns 仍计全部
+ *  发生过检索的轮次（保住分母语义与悬浮卡口径连续性）。 */
 export interface RecallSessionStats {
-    /** 发生过召回检索的轮次数（含零命中与超时）。 */
+    /** 发生过召回检索的轮次数（含零命中、全量压制与超时）。 */
     injectedTurns: number;
-    /** 命中（≥1 条）轮次数。 */
+    /** 命中（≥1 条实际注入，或有命中但被去重全量压制）轮次数。 */
     hitTurns: number;
-    /** 累计命中条数（预算截断前）。 */
+    /** 累计注入条数（去重过滤后、预算截断前）。 */
     totalHits: number;
     /** 总预算超时跳过次数。 */
     timeouts: number;
-    /** 最近一轮命中条数（0 = 零命中/超时；工具指南门控沿用此信号）。 */
+    /** 累计被去重压制的命中条数（同会话已注入过，不重复注入）。 */
+    suppressedRecalls: number;
+    /** 最近一轮实际注入条数（0 = 零命中/超时/全量压制；工具指南门控沿用此信号）。 */
     lastHits: number;
     /** 最近一轮检索耗时 ms。 */
     lastDurationMs: number;
@@ -61,4 +65,4 @@ export declare function registerRecall(ctx: Context, cfg: MemoryConfig, stores: 
     l1: L1Store;
     scenes: Record<'chat' | 'work', SceneStore>;
     persona: Record<'chat' | 'work', PersonaStore>;
-}, logger: MemoryLogger, live: LiveSettingsHandle, modes: SessionModeStore): RecallHooks;
+}, logger: MemoryLogger, live: LiveSettingsHandle, modes: SessionModeStore, dataDir: string): RecallHooks;

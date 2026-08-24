@@ -47,6 +47,7 @@ import { StateStore } from './store/state.js';
 import { dayKey } from './store/io.js';
 import { familyForType, normExtractedFamily, resolveRecordFamily } from './types.js';
 import { CaptureBuffers, isCaptureRelevant, registerCapture, trimBuffer } from './hooks/capture.js';
+import { RecallDedupeStore, RECALL_DEDUPE_IDS_CAP, RECALL_DEDUPE_SESSION_CAP } from './store/recall-dedupe.js';
 import { buildRecallQuery, registerRecall, type RecallSessionStats } from './hooks/recall.js';
 import { sanitizeText, shouldCaptureL0, stripCodeBlocks } from './util/sanitize.js';
 import { errDetail, SIZE_CHECK_INTERVAL, withFileLog } from './util/filelog.js';
@@ -518,7 +519,7 @@ async function main(): Promise<void> {
 
       // session-stats 数据源 stub：召回统计给已知值，runnerView 按 (sess-x, work) 给攒批/挂起视图
       const recallStatsStub = new Map<string, RecallSessionStats>();
-      recallStatsStub.set('sess-x', { injectedTurns: 4, hitTurns: 3, totalHits: 9, timeouts: 1, lastHits: 2, lastDurationMs: 35, updatedAt: t });
+      recallStatsStub.set('sess-x', { injectedTurns: 4, hitTurns: 3, totalHits: 9, timeouts: 1, suppressedRecalls: 2, lastHits: 2, lastDurationMs: 35, updatedAt: t });
       const sessionInfoStub = {
         recallStats: (sid: string) => recallStatsStub.get(sid),
         runnerView: (sid: string, mode: string) =>
@@ -1454,12 +1455,13 @@ async function main(): Promise<void> {
       } as never;
       let searchCalls = 0;
       let hitContent = '命中记忆内容';
+      let hitId = 'h1'; // 可换新 id：模拟新记忆/更新后的记录（去重语义下旧 id 已注入会被压制）
       let personaText = '';
       const storesT5 = {
         l1: {
           search: async () => {
             searchCalls++;
-            return [{ id: 'h1', content: hitContent, type: 'persona', priority: 70, scene_name: '闲聊', score: 0.9, family: 'chat' }];
+            return [{ id: hitId, content: hitContent, type: 'persona', priority: 70, scene_name: '闲聊', score: 0.9, family: 'chat' }];
           },
         },
         scenes: {
@@ -1494,6 +1496,7 @@ async function main(): Promise<void> {
         silentLogger,
         liveT5 as never,
         modesT5,
+        tmpT5,
       );
       assert(contextText['memory:recall'] === undefined, '动态召回槽（memory:recall）已从系统提示撤除');
       assert(typeof contextText['memory:profile'] === 'function', '系统提示稳定区上下文已注册');
@@ -1539,8 +1542,9 @@ async function main(): Promise<void> {
       );
       assert(d3.kind === 'reject' && searchCalls === 1, 'reject 决策原样透传（不检索）');
 
-      // ④ 预算截断：单条 600 字符命中被截到 500 并带工具引导后缀
+      // ④ 预算截断：换新 id（新记忆不被去重压制），单条 600 字符命中被截到 500 并带工具引导后缀
       hitContent = '长'.repeat(600);
+      hitId = 'h2';
       const d4 = await preStep!(
         { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
         () => Promise.resolve(enter([userMsg])),
@@ -1610,6 +1614,7 @@ async function main(): Promise<void> {
         silentLogger,
         liveT5 as never,
         modesT5,
+        tmpT5,
       );
       await new Promise((r) => setTimeout(r, 30)); // 等 profileCache 首刷
       const profileNoTools = contextText2['memory:profile']() ?? '';
@@ -3071,6 +3076,130 @@ async function main(): Promise<void> {
       } finally {
         await w.terminate();
       }
+    }
+  }
+
+  // ── 30. 召回去重（0.8.6）：同会话已注入的记忆不再重复注入；compact/clear 重置 ──
+  console.log('== 30. 召回去重 ==');
+  {
+    // a. 存储层：持久化往返 / reset / 单会话 id 上限 / 会话 LRU / 坏文件降级
+    const tmpD = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-dedupe-'));
+    try {
+      const st1 = new RecallDedupeStore(tmpD, silentLogger);
+      st1.mark('s1', ['a', 'b']);
+      st1.mark('s2', ['c']);
+      st1.reset('s2');
+      await st1.flush();
+      const st2 = new RecallDedupeStore(tmpD, silentLogger);
+      await st2.flush(); // init 载入链
+      assert(st2.seen('s1').has('a') && st2.seen('s1').has('b'), '持久化往返：mark 后重载可见');
+      assert(!st2.seen('s2').has('c'), 'reset 后条目消失');
+
+      const st3 = new RecallDedupeStore(tmpD, silentLogger);
+      const many = Array.from({ length: RECALL_DEDUPE_IDS_CAP + 10 }, (_, i) => `id-${i}`);
+      st3.mark('s3', many);
+      assert(st3.seen('s3').size === RECALL_DEDUPE_IDS_CAP, `单会话 id 上限生效（${st3.seen('s3').size}）`);
+      assert(!st3.seen('s3').has('id-0') && st3.seen('s3').has(`id-${RECALL_DEDUPE_IDS_CAP + 9}`), '超限按插入序淘汰最旧');
+    } finally {
+      await fs.rm(tmpD, { recursive: true, force: true }).catch(() => {});
+    }
+
+    const tmpL = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-dedupe-lru-'));
+    try {
+      const stL = new RecallDedupeStore(tmpL, silentLogger);
+      for (let i = 0; i < RECALL_DEDUPE_SESSION_CAP + 5; i++) stL.mark(`sess-${i}`, [`x${i}`]);
+      await stL.flush();
+      const stL2 = new RecallDedupeStore(tmpL, silentLogger);
+      await stL2.flush();
+      assert(!stL2.seen('sess-0').has('x0'), '会话 LRU 上限：最旧会话被淘汰');
+      assert(stL2.seen(`sess-${RECALL_DEDUPE_SESSION_CAP + 4}`).has(`x${RECALL_DEDUPE_SESSION_CAP + 4}`), '最新会话保留');
+    } finally {
+      await fs.rm(tmpL, { recursive: true, force: true }).catch(() => {});
+    }
+
+    const tmpB = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-dedupe-bad-'));
+    try {
+      await fs.writeFile(path.join(tmpB, 'recall-dedupe.json'), '{oops', 'utf8');
+      const stBad = new RecallDedupeStore(tmpB, silentLogger);
+      await stBad.flush();
+      assert(stBad.seen('any').size === 0, '坏文件空起步不抛（降级内存态）');
+    } finally {
+      await fs.rm(tmpB, { recursive: true, force: true }).catch(() => {});
+    }
+
+    // b. hook 级：连续追问同命中 → 第二轮压制；compact 重置重新注入；resume 不重置
+    const tmpH = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-dedupe-hook-'));
+    try {
+      type DecisionH = { kind: 'enter'; messages: Array<Record<string, unknown>> } | { kind: 'reject' };
+      let preStepH:
+        | ((
+            payload: { agent: { id: string }; messages: Array<{ content: unknown }>; signal: { aborted: boolean } },
+            next: () => Promise<DecisionH>,
+          ) => Promise<DecisionH>)
+        | undefined;
+      let sessionStartH: ((payload: { agent: { id: string }; source: string }) => void) | undefined;
+      const ctxH = {
+        on: (ev: string, h: typeof preStepH | typeof sessionStartH, _opts?: unknown) => {
+          if (ev === 'agent/pre-step') preStepH = h as typeof preStepH;
+          if (ev === 'agent/session-start') sessionStartH = h as typeof sessionStartH;
+          return () => {};
+        },
+        effect: (f: () => (() => void)) => f(),
+        get: () => undefined,
+      } as never;
+      const hit = { id: 'h1', content: '命中记忆内容', type: 'persona', priority: 70, scene_name: '闲聊', score: 0.9, family: 'chat' };
+      const storesH = {
+        l1: { search: async () => [{ ...hit }] },
+        scenes: { chat: { navigation: async () => '' }, work: { navigation: async () => '' } },
+        persona: { chat: { read: async () => '' }, work: { read: async () => '' } },
+      } as never;
+      const modesH = new SessionModeStore(tmpH, 'auto');
+      await modesH.init();
+      const liveH = { supported: true, get: () => ({ enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' }) };
+      const hooksH = registerRecall(
+        ctxH,
+        {
+          tools: false,
+          recall: {
+            enabled: true,
+            maxResults: 5,
+            maxCharsPerMemory: 500,
+            maxTotalRecallChars: 2000,
+            timeoutMs: 5000,
+            includePersona: false,
+            includeSceneNav: false,
+            strategy: 'keyword',
+            scoreThreshold: 0.3,
+          },
+        } as never,
+        storesH,
+        silentLogger,
+        liveH as never,
+        modesH,
+        tmpH,
+      );
+      const userMsgH = { id: 'u1', role: 'user', content: [{ type: 'text', text: '咖啡 手冲 偏好' }], source: { kind: 'user' }, timestamp: 1 };
+      const stepH = () =>
+        preStepH!(
+          { agent: { id: 'agent-dedup' }, messages: [userMsgH] as never, signal: { aborted: false } },
+          () => Promise.resolve({ kind: 'enter', messages: [userMsgH] }),
+        );
+      const r1 = await stepH();
+      assert(r1.kind === 'enter' && r1.messages.length === 2, '首轮正常注入');
+      const r2 = await stepH();
+      assert(r2.kind === 'enter' && r2.messages.length === 1, '第二轮同命中被去重压制（不注入）');
+      const statsH = hooksH.stats('agent-dedup')!;
+      assert(statsH.injectedTurns === 2 && statsH.hitTurns === 2, `压制轮仍计检索轮与命中轮（inj=${statsH.injectedTurns} hit=${statsH.hitTurns}）`);
+      assert(statsH.suppressedRecalls === 1 && statsH.totalHits === 1, `累计压制/注入计数（sup=${statsH.suppressedRecalls} total=${statsH.totalHits}）`);
+      assert(statsH.lastHits === 0, '全量压制轮 lastHits=0（工具指南门控沿用）');
+      sessionStartH!({ agent: { id: 'agent-dedup' }, source: 'compact' });
+      const r3 = await stepH();
+      assert(r3.kind === 'enter' && r3.messages.length === 2, 'compact 后重置 → 重新注入');
+      sessionStartH!({ agent: { id: 'agent-dedup' }, source: 'resume' });
+      const r4 = await stepH();
+      assert(r4.kind === 'enter' && r4.messages.length === 1, 'resume 不重置 → 继续压制');
+    } finally {
+      await fs.rm(tmpH, { recursive: true, force: true }).catch(() => {});
     }
   }
 

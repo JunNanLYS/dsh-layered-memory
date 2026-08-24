@@ -90,7 +90,12 @@ synthetic message placed right before the user's new message, rendered as a
 **"Context injection · memory"** row in the chat flow (expand to see the hits) — so you
 can see "memory at work" directly. Injected content is bounded by length and
 time budgets — oversized lines are truncated (pointing the model at the memory tools for
-the full text) and a timed-out recall silently skips that turn, never slowing the chat. It
+the full text) and a timed-out recall silently skips that turn, never slowing the chat.
+**Per-session dedupe**: a memory already injected in this session is not injected again
+(the model's context already holds it — follow-up questions on the same topic save
+tokens); the record resets when the context is compacted or cleared, so memories can
+flow back in, and an updated memory (new id after a content change) is never held back
+by the old suppression. It
 also registers three model-callable memory tools: `memory_search` /
 `conversation_search` / `memory_read_scene`.
 
