@@ -1,7 +1,7 @@
 import { resolveDataDir } from '../config.js';
 import { emptyPending, freshWarmup, groupPendingBySession, loadPending, PENDING_MODES, pendingPathFor, savePending, } from '../store/pending.js';
 import { errDetail } from '../util/filelog.js';
-import { advanceWarmupThreshold, effectiveExtractThreshold, idleSessionsToFlush, modeSwitchAction, pickSessionBackground, } from './trigger.js';
+import { advanceWarmupThreshold, effectiveExtractThreshold, extractionBackoffMs, idleSessionsToFlush, modeSwitchAction, pickSessionBackground, } from './trigger.js';
 import { runExtraction } from './l1.js';
 import { runSceneConsolidation } from './l2.js';
 import { runPersona } from './l3.js';
@@ -84,6 +84,9 @@ export class MemoryRunner {
     lastActivity = new Map();
     /** 每会话累计产出 L1 条数与最近蒸馏时间（session-stats 数据源；LRU 上限防泄漏）。 */
     sessionProduced = new Map();
+    /** 抽取连续失败退避（瞬态，不持久化：重启后允许首试再退避）：
+     *  sessionId → 连败次数与下次可自动重试时间（修闲置兜底×LLM 超时的重试风暴）。 */
+    extractFailures = new Map();
     pendingFile;
     /** 分族 checkpoint（init 后可用；重建收尾也从这里读活引用）。 */
     states;
@@ -251,7 +254,7 @@ export class MemoryRunner {
         }
         if (infos.size === 0)
             return;
-        const targets = idleSessionsToFlush([...infos.values()], this.lastActivity, now, idleMs, (sid) => this.modes?.get(sid) === 'off');
+        const targets = idleSessionsToFlush([...infos.values()], this.lastActivity, now, idleMs, (sid) => this.modes?.get(sid) === 'off').filter((sid) => !this.inExtractBackoff(sid, now)); // 退避中的会话不入队（任务堆积源头）
         for (const sid of targets) {
             this.logger.info(`[memory] 闲置兜底：会话 ${sid} 静默达标，未蒸馏切片落袋`);
             this.enqueueSessionSlices(sid);
@@ -306,6 +309,11 @@ export class MemoryRunner {
             this.draining = false;
         }
     }
+    /** 该会话是否处于抽取退避窗口内。 */
+    inExtractBackoff(sessionId, now = Date.now()) {
+        const f = this.extractFailures.get(sessionId);
+        return !!f && now < f.nextAt;
+    }
     /** 缓冲落盘（每次蒸馏尝试后调用；失败只告警不阻断管线）。
      *  非重建轮持久化前按桶截断到上限：重建取消后的大桶不至于在后续每次
      *  蒸馏尝试时反复整量序列化落盘（多 MB 级 IO）；重建轮豁免维持。 */
@@ -347,11 +355,15 @@ export class MemoryRunner {
             // force：重建轮全量蒸馏（历史小会话也必须出记忆，不受阈值约束）。
             const effective = effectiveExtractThreshold(this.warmup[mode], cfg.extract.minMessages);
             const sliceLen = bucket.reduce((n, m) => (m.sessionId === sessionId ? n + 1 : n), 0);
-            if (opts?.force || sliceLen >= effective) {
+            // 抽取失败退避：重建轮（noBufferCap，用户显式动作、有自己的失败/取消 UI）豁免
+            const backedOff = !opts?.noBufferCap && this.inExtractBackoff(sessionId);
+            if ((opts?.force || sliceLen >= effective) && !backedOff) {
                 newRecords = await this.extractSessionSlice(sessionId, mode, cfg, effective, opts);
             }
             else {
-                this.logger.debug?.(`[memory] 会话切片攒批中（session=${sessionId}，mode=${mode}，${sliceLen}/${effective}）`);
+                this.logger.debug?.(backedOff
+                    ? `[memory] 蒸馏退避中，本轮跳过抽取（session=${sessionId}，mode=${mode}）`
+                    : `[memory] 会话切片攒批中（session=${sessionId}，mode=${mode}，${sliceLen}/${effective}）`);
                 // 攒阈值中途也落盘：进程退出后切片与爬坡状态不丢
                 await this.persistPending(opts?.noBufferCap);
             }
@@ -428,6 +440,8 @@ export class MemoryRunner {
                     this.warmup[mode] = advanceWarmupThreshold(this.warmup[mode], cfg.extract.minMessages);
                 // 会话产出记账（成功消费即记——零产出也算"蒸馏过"，lastAt 推进）
                 this.noteSessionDistill(sessionId, result.newRecords.length);
+                // 成功消费清零失败退避（切片已出桶，后续轮次恢复正常触发）
+                this.extractFailures.delete(sessionId);
             }
             this.logger.info(`[memory] L1 阶段完成（session=${sessionId}，mode=${mode}，切片 ${slice.length} 条，背景 ${background.length} 条，阈值 ${effectiveThreshold}，${Date.now() - t}ms）`);
             // 缓冲与爬坡每次尝试后立即落盘：进程中途退出不丢待重试/攒阈值状态
@@ -445,6 +459,11 @@ export class MemoryRunner {
         catch (err) {
             // 保留切片下次重试（桶入口已裁到 ≤200，防无限堆积；重建轮不裁，量被会话规模约束）
             this.logger.warn(`[memory] L1 抽取失败（session=${sessionId}，mode=${mode}，切片 ${slice.length} 条）: ${errDetail(err)}`);
+            // 指数退避：压制闲置兜底/补跑在 LLM 故障期间的连环重试（成功消费时清零）
+            const streak = (this.extractFailures.get(sessionId)?.streak ?? 0) + 1;
+            const delayMs = extractionBackoffMs(streak);
+            this.extractFailures.set(sessionId, { streak, nextAt: Date.now() + delayMs });
+            this.logger.info(`[memory] 蒸馏连续失败 ${streak} 次，${Math.round(delayMs / 1000)}s 内暂停该会话的自动重试`);
             await this.persistPending(opts?.noBufferCap).catch(() => { });
             return [];
         }

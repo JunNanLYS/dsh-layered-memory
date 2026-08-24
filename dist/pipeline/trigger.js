@@ -43,6 +43,17 @@ export function pickSessionBackground(recent, sliceIds, n) {
         return [];
     return recent.filter((m) => !sliceIds.has(m.id)).slice(-n);
 }
+// ── 抽取失败退避（修"重试风暴"：LLM 网关故障期间闲置兜底每 30s 入队一个任务，
+//    在 120s LLM 超时的等待中堆积成连环调用）──
+/** 退避基数与封顶：60s 起步指数翻倍，封顶 30 分钟（LLM 故障自愈的合理量级）。 */
+const EXTRACT_BACKOFF_BASE_MS = 60_000;
+const EXTRACT_BACKOFF_CAP_MS = 30 * 60_000;
+/** 连续失败第 failStreak 次后的自动重试等待时长（1 → 60s，2 → 120s，…封顶 30min）。 */
+export function extractionBackoffMs(failStreak) {
+    if (!Number.isFinite(failStreak) || failStreak <= 0)
+        return EXTRACT_BACKOFF_BASE_MS;
+    return Math.min(EXTRACT_BACKOFF_BASE_MS * 2 ** (failStreak - 1), EXTRACT_BACKOFF_CAP_MS);
+}
 /**
  * 闲置扫描：静默达标且有切片的会话。off 档会话跳过（挂起语义）；
  * 活动时间优先取运行时记录，缺省回退切片内最晚消息时间。

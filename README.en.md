@@ -299,7 +299,10 @@ with per-file sha256; arbitrary repos cannot be downloaded).
   under `models/<id>/` in the data directory, deletable from the settings page at any time;
 - **On-demand runtime**: the inference runtime (transformers.js, ~100–200MB) is
   installed only on first switch to the local tier, into `runtime/` in the data
-  directory — never in the plugin's dependency tree or install directory;
+  directory — never in the plugin's dependency tree or install directory; model
+  loading and inference run on a **dedicated worker thread**, so the host event
+  loop is never frozen (conversations and page interactions stay responsive while
+  text is being embedded);
 - **Live switching**: one click to swap sources — everything is re-embedded in the
   background (visible progress, cancellable; retrieval silently degrades to keywords
   in the meantime, conversations unaffected; a dimension change rebuilds the vector

@@ -13,7 +13,8 @@ export interface EmbeddingProviderInfo {
 }
 
 /** 单次嵌入调用的可选参数：timeoutMs 只允许缩短服务配置的超时（内层钳制），
- *  永不放大——召回路径用它给 FTS 降级留时间（规格 A 节）。本地实现可忽略。 */
+ *  永不放大——召回路径用它给 FTS 降级留时间（规格 A 节）。本地实现经 worker
+ *  代理以 Promise.race 钳制（迟到回复丢弃，推理在 worker 线程无法真正取消）。 */
 export interface EmbedCallOptions {
   timeoutMs?: number;
 }

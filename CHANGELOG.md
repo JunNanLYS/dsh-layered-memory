@@ -5,6 +5,28 @@
 
 ## [Unreleased]
 
+## [0.8.6] — 2026-08-24
+
+### 修复
+
+- **本地嵌入冻结整页（性能事故级）**：transformers.js 的模型加载与 ONNX 推理原先在
+  host 主线程同步执行——onnxruntime-node（v1.24.3）的 `run`/`loadModel` 是
+  setImmediate 回调里的同步调用（Promise 包装不卸载计算），启用本地嵌入
+  （embeddinggemma-300m 实测单条推理 ~0.3-1.3s）后每轮对话的 L0 落盘、召回 query、
+  蒸馏落库、reindex 批次都会冻结事件循环数秒——dsh 页面一切交互无响应。修复：
+  推理整体移入 worker 线程（`resources/embedding-worker.cjs`，主线程只留协议代理
+  `LocalEmbeddingService`）：逐条推理 + 条间让路，单条请求（召回 query）插队不被
+  reindex 批次堵队尾；实测 8 条批量嵌入（旧路径 ~10s 连续冻结）期间主线程采样
+  超期 0.0ms。附带语义增强：召回路径的 `embeddingTimeoutMs` 内层钳制对本地嵌入
+  从"忽略"变为真实生效（race 放弃、迟到回复丢弃）。worker 崩溃不自愈（转 failed
+  态走 FTS 降级链，换源/重启恢复）；`close()` = terminate，terminated 不可复活
+  语义保持。
+- **蒸馏重试风暴（LLM 故障期间连环烧调用）**：L1 抽取失败（如网关 120s 超时）后，
+  闲置兜底每 30s 继续入队 force 蒸馏任务，在 LLM 等待期间堆积成无限连环调用
+  （memory.log 2026-08-24 实证：每 2 分钟一轮 120s 调用不收敛）。修复：按会话
+  指数退避（60s 起步翻倍封顶 30 分钟，成功消费清零；重建轮豁免——用户显式动作
+  有自己的失败/取消 UI），退避期间闲置兜底与阈值触发均跳过该会话。
+
 ## [0.8.5] — 2026-08-23
 
 ### 修复

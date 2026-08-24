@@ -7,6 +7,8 @@ import { createHash } from 'node:crypto';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { fileURLToPath } from 'node:url';
+import { Worker } from 'node:worker_threads';
 import type { SessionEvent } from '@deepseek-ai/dsh-session';
 import type { MemoryConfig } from './config.js';
 import { memorySchema } from './config.js';
@@ -23,7 +25,12 @@ import {
 } from './store/embedding-source.js';
 import { L0Store } from './store/l0.js';
 import { L1Store } from './store/l1.js';
-import { LocalEmbeddingService } from './store/local-embedding.js';
+import {
+  LocalEmbeddingService,
+  type EmbedWorkerCall,
+  type EmbedWorkerChannel,
+  type EmbedWorkerReply,
+} from './store/local-embedding.js';
 import { catalogById, catalogTotalBytes, MODEL_CATALOG, type CatalogEntry } from './store/model-catalog.js';
 import { PersonaStore } from './store/persona.js';
 import { RuntimeInstaller, type SpawnImpl } from './store/runtime-installer.js';
@@ -46,7 +53,7 @@ import { errDetail, SIZE_CHECK_INTERVAL, withFileLog } from './util/filelog.js';
 import { parseJson } from './llm.js';
 import { chunkByCharBudget } from './pipeline/l1.js';
 import { MemoryRunner, pickNextTaskIndex } from './pipeline/runner.js';
-import { advanceWarmupThreshold, effectiveExtractThreshold, idleSessionsToFlush, modeSwitchAction, pickSessionBackground } from './pipeline/trigger.js';
+import { advanceWarmupThreshold, effectiveExtractThreshold, extractionBackoffMs, idleSessionsToFlush, modeSwitchAction, pickSessionBackground } from './pipeline/trigger.js';
 import { estimateCalls, groupL0Sessions, RebuildController } from './pipeline/rebuild.js';
 import { BENCH_CONTROL_SERVICE, registerBenchControl } from './bench-control.js';
 import { recordDistillCall, snapshotDistillUsage } from './llm-usage.js';
@@ -1227,6 +1234,9 @@ async function main(): Promise<void> {
     assert(effectiveExtractThreshold(0, 6) === 6, '毕业（0）取稳态值');
     assert(advanceWarmupThreshold(1, 6) === 2 && advanceWarmupThreshold(2, 6) === 4, '成功抽取后翻倍');
     assert(advanceWarmupThreshold(4, 6) === 0 && advanceWarmupThreshold(0, 6) === 0, '达稳态毕业（0）且保持');
+    assert(extractionBackoffMs(1) === 60_000 && extractionBackoffMs(2) === 120_000 && extractionBackoffMs(3) === 240_000, '抽取失败退避指数翻倍（60s 起步）');
+    assert(extractionBackoffMs(10) === 30 * 60_000 && extractionBackoffMs(100) === 30 * 60_000, '退避封顶 30 分钟');
+    assert(extractionBackoffMs(0) === 60_000, '非法连败次数按首档处理');
 
     const tmpT3 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-warmup-'));
     try {
@@ -2541,7 +2551,54 @@ async function main(): Promise<void> {
     }
   }
 
-  // ── 23. 本地嵌入服务状态机（#21：懒加载/就绪/失败/释放，假 loader 不触真模型） ──
+  /** 假通道（测试缝）：进程内模拟 worker 协议——首请求触发"加载"，逐条"推理"。
+   *  makeExtractor 抛错 = 模型加载失败路径；延迟 extractor 用于超时钳制测试。 */
+  class FakeEmbedChannel implements EmbedWorkerChannel {
+    private extractor: ((texts: string[]) => Promise<Array<{ data: Float32Array | number[] }>>) | null = null;
+    private loadPromise: Promise<void> | null = null;
+    private terminatedFlag = false;
+    private crashCb: ((error: string) => void) | null = null;
+    constructor(
+      private readonly makeExtractor: () => Promise<(texts: string[]) => Promise<Array<{ data: Float32Array | number[] }>>>,
+    ) {}
+
+    setOnCrash(cb: (error: string) => void): void {
+      this.crashCb = cb;
+    }
+
+    async request(call: EmbedWorkerCall): Promise<EmbedWorkerReply> {
+      if (this.terminatedFlag) throw new Error('嵌入 worker 已释放');
+      if (call.type === 'ping') return { id: -1, ok: true, type: 'pong' };
+      try {
+        if (!this.extractor) {
+          this.loadPromise = this.loadPromise ?? this.makeExtractor().then((ext) => {
+            this.extractor = ext;
+          });
+          await this.loadPromise;
+        }
+      } catch (err) {
+        return { id: -1, ok: false, stage: 'load', error: err instanceof Error ? err.message : String(err) };
+      }
+      if (call.type === 'warmup') return { id: -1, ok: true, type: 'ready' };
+      const vectors: Float32Array[] = [];
+      for (const t of call.texts) {
+        const r = await this.extractor!([t]);
+        vectors.push(new Float32Array(r[0].data));
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      return { id: -1, ok: true, type: 'embedded', vectors };
+    }
+
+    terminate(): void {
+      this.terminatedFlag = true;
+    }
+
+    crash(error: string): void {
+      this.crashCb?.(error);
+    }
+  }
+
+  // ── 23. 本地嵌入服务状态机（#21：懒加载/就绪/失败/释放/超时钳制，假通道不触真 worker） ──
   console.log('== 23. 本地嵌入服务 ==');
   {
     const entry = catalogById('bge-small-zh-v1.5')!;
@@ -2555,8 +2612,11 @@ async function main(): Promise<void> {
       return new Float32Array(Array.from(v).map((x) => x / norm)) as Float32Array;
     };
     const fakeExtractor = async (texts: string[]) => texts.map((t) => ({ data: vec512(t) }));
-    const okLoader = async () => ({ pipeline: async () => fakeExtractor, env: {} });
-    const svc = new LocalEmbeddingService(entry, '/fake/model/dir', okLoader, silentLogger);
+    const svc = new LocalEmbeddingService(entry, '/fake/model/dir', {
+      runtimeDir: '/fake/runtime',
+      channel: new FakeEmbedChannel(async () => fakeExtractor),
+      logger: silentLogger,
+    });
     assert(!svc.isReady() && svc.getState() === 'idle', '初始 idle');
     const vecs = await svc.embedBatch(['你好世界', 'hello world']);
     assert(svc.isReady() && svc.getState() === 'ready', '首次调用触发懒加载 → ready');
@@ -2571,10 +2631,44 @@ async function main(): Promise<void> {
       (e) => assert(/已释放/.test(String(e)), 'terminated 态不可复活（防卸载后模型重载泄漏）'),
     );
 
-    const badLoader = async () => {
-      throw new Error('模块加载爆炸');
-    };
-    const svc2 = new LocalEmbeddingService(entry, '/fake', badLoader, silentLogger);
+    // timeoutMs 内层钳制：慢推理 + 短超时 → 放弃等待（迟到回复丢弃），非阻塞降级
+    const slowChannel = new FakeEmbedChannel(async () => async (texts: string[]) => {
+      await new Promise((r) => setTimeout(r, 200));
+      return texts.map((t) => ({ data: vec512(t) }));
+    });
+    const svcSlow = new LocalEmbeddingService(entry, '/fake', {
+      runtimeDir: '/fake/runtime',
+      channel: slowChannel,
+      logger: silentLogger,
+    });
+    await svcSlow.embed('x', { timeoutMs: 20 }).then(
+      () => assert(false, 'timeoutMs=20 面对慢推理应超时放弃'),
+      (e) => assert(/超时/.test(String(e)), `本地嵌入内层钳制生效（${e}）`),
+    );
+    svcSlow.close();
+
+    // worker 崩溃语义：未决请求已拒 + failed 态（不自愈），后续调用快速失败
+    const crashChannel = new FakeEmbedChannel(async () => fakeExtractor);
+    const svcCrash = new LocalEmbeddingService(entry, '/fake', {
+      runtimeDir: '/fake/runtime',
+      channel: crashChannel,
+      logger: silentLogger,
+    });
+    crashChannel.crash('本地嵌入 worker 线程退出（code=1）');
+    assert(svcCrash.getState() === 'failed' && /退出/.test(svcCrash.getLoadError() ?? ''), '崩溃转入 failed 态带原因');
+    await svcCrash.embed('x').then(
+      () => assert(false, 'failed 态 embed 应抛'),
+      (e) => assert(/加载失败/.test(String(e)), '崩溃后 embed 快速失败'),
+    );
+    svcCrash.close();
+
+    const svc2 = new LocalEmbeddingService(entry, '/fake', {
+      runtimeDir: '/fake/runtime',
+      channel: new FakeEmbedChannel(async () => {
+        throw new Error('模块加载爆炸');
+      }),
+      logger: silentLogger,
+    });
     await svc2.waitForReady().then(
       () => assert(false, '加载失败应 reject'),
       () => assert(true, '加载失败 reject'),
@@ -2656,8 +2750,11 @@ async function main(): Promise<void> {
       await l1s.appendNew([rec24('m1'), rec24('m2')]);
 
       const entry = catalogById('bge-small-zh-v1.5')!;
+      const modelsRoot = dl24.modelsDir(entry.id);
       for (const f of entry.files) {
-        const p = path.join(dl24.modelsDir(entry.id), f.path);
+        // 目录文件路径不变量（防穿越）：resolve 后必须仍落在 models 根目录内
+        const p = path.resolve(modelsRoot, f.path);
+        assert(p.startsWith(modelsRoot + path.sep), `目录文件路径越界（${f.path}）`);
         await fs.mkdir(path.dirname(p), { recursive: true });
         await fs.writeFile(p, Buffer.alloc(f.size, 7));
       }
@@ -2679,7 +2776,6 @@ async function main(): Promise<void> {
         isReady: async () => true,
         ensure: async () => true,
         cancel: () => false,
-        resolveModule: () => ({ pipeline: async () => fakeExtractor24, env: {} }),
       } as unknown as RuntimeInstaller;
 
       const initial24: InitialEmbedding = { svc: new NoopEmbeddingService(), dims: 0 };
@@ -2694,6 +2790,16 @@ async function main(): Promise<void> {
         downloader: dl24,
         initial: initial24,
         logger: silentLogger,
+        // 本地服务注入假通道（worker 线程化后工厂只传 runtimeDir，不再有 resolveModule 缝）
+        makeLocal: (modelId) => {
+          const e24 = catalogById(modelId);
+          if (!e24) return null;
+          return new LocalEmbeddingService(e24, dl24.modelsDir(e24.id), {
+            runtimeDir: fakeInstaller.runtimeDir,
+            channel: new FakeEmbedChannel(async () => fakeExtractor24),
+            logger: silentLogger,
+          });
+        },
       });
 
       const waitApply = async (): Promise<string> => {
@@ -2939,6 +3045,33 @@ async function main(): Promise<void> {
     assert(resolveRecordFamily(undefined, 'chat', 'work_method') === 'chat', '个人语境的计划性事实（work_* 形状）不再被吸进 work 族');
     assert(resolveRecordFamily(undefined, undefined, 'work_fact') === 'work' && resolveRecordFamily(undefined, undefined, 'episodic') === 'chat', '无显式 family 时回落 type 前缀（旧输出兼容）');
     assert(resolveRecordFamily(undefined, '乱写', 'work_fact') === 'work', '非法 family 字符串回落 type 前缀');
+  }
+
+  // ── 29. 嵌入 worker 资产握手（真线程 ping/pong；dist 资产未构建时跳过） ──
+  console.log('== 29. 嵌入 worker ping ==');
+  {
+    const workerAsset = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'embedding-worker.cjs');
+    if (!existsSync(workerAsset)) {
+      console.log('  (skip: dist/embedding-worker.cjs 未构建——先 npm run build 再跑本段)');
+    } else {
+      const w = new Worker(workerAsset, {
+        workerData: { runtimeDir: '', modelDir: '', pooling: 'mean', dtype: 'q8', maxInputChars: 100 },
+      });
+      try {
+        const pong = await new Promise<{ ok?: boolean; type?: string }>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('ping 超时')), 5000);
+          w.on('message', (msg) => {
+            clearTimeout(timer);
+            resolve(msg as { ok?: boolean; type?: string });
+          });
+          w.on('error', reject);
+          w.postMessage({ id: 1, type: 'ping' });
+        });
+        assert(pong.ok === true && pong.type === 'pong', 'worker 资产可加载且协议握手成功');
+      } finally {
+        await w.terminate();
+      }
+    }
   }
 
   console.log(failures === 0 ? '\n全部通过 ✅' : `\n${failures} 个失败 ❌`);

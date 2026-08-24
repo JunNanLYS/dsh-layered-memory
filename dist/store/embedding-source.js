@@ -101,13 +101,18 @@ export async function resolveInitialEmbedding(cfg, sourceStore, downloader, make
     });
     return { svc, dims: cfg.embedding.dimensions, providerInfo: svc.getProviderInfo() };
 }
-/** 本地服务构造工厂（index.ts 的初始解析与 Manager 共用一份实现，防漂移）。 */
+/** 本地服务构造工厂（index.ts 的初始解析与 Manager 共用一份实现，防漂移）。
+ *  推理在 worker 线程（见 local-embedding.ts）；此处只传 runtime 目录与模型目录。 */
 export function makeLocalServiceFactory(installer, downloader, logger, maxInputChars) {
     return (modelId) => {
         const entry = catalogById(modelId);
         if (!entry)
             return null;
-        return new LocalEmbeddingService(entry, downloader.modelsDir(entry.id), () => Promise.resolve(installer.resolveModule()), logger, maxInputChars);
+        return new LocalEmbeddingService(entry, downloader.modelsDir(entry.id), {
+            runtimeDir: installer.runtimeDir,
+            logger,
+            maxInputChars,
+        });
     };
 }
 export class EmbeddingManager {

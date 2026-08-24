@@ -65,6 +65,9 @@ export declare class MemoryRunner {
     private lastActivity;
     /** 每会话累计产出 L1 条数与最近蒸馏时间（session-stats 数据源；LRU 上限防泄漏）。 */
     private sessionProduced;
+    /** 抽取连续失败退避（瞬态，不持久化：重启后允许首试再退避）：
+     *  sessionId → 连败次数与下次可自动重试时间（修闲置兜底×LLM 超时的重试风暴）。 */
+    private extractFailures;
     private readonly pendingFile;
     /** 分族 checkpoint（init 后可用；重建收尾也从这里读活引用）。 */
     states: FamilyStates;
@@ -121,6 +124,8 @@ export declare class MemoryRunner {
     onModeChange(sessionId: string, oldMode: string, newMode: string): void;
     private pushTask;
     private drain;
+    /** 该会话是否处于抽取退避窗口内。 */
+    private inExtractBackoff;
     /** 缓冲落盘（每次蒸馏尝试后调用；失败只告警不阻断管线）。
      *  非重建轮持久化前按桶截断到上限：重建取消后的大桶不至于在后续每次
      *  蒸馏尝试时反复整量序列化落盘（多 MB 级 IO）；重建轮豁免维持。 */
