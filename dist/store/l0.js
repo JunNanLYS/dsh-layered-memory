@@ -42,10 +42,16 @@ export class L0Store {
                 if (!f.endsWith('.jsonl'))
                     continue;
                 const records = await readJsonl(path.join(this.legacyDir, f));
-                if (records.length > 0) {
-                    total += records.length;
-                    if (this.db.upsertL0Batch(records))
-                        imported += records.length;
+                // 最小有效性门（同 L1 的 importLegacy）：坏行读取时丢弃，按 valid 数判迁移完成
+                const valid = records.filter((r) => r && typeof r.id === 'string' && r.content);
+                const badCount = records.length - valid.length;
+                if (badCount > 0) {
+                    this.logger?.warn(`[memory] 旧版 L0 文件 ${f} 丢弃 ${badCount} 条坏行（缺 id/content）`);
+                }
+                if (valid.length > 0) {
+                    total += valid.length;
+                    if (this.db.upsertL0Batch(valid))
+                        imported += valid.length;
                 }
             }
             // 只有全部批次入库成功（或目录为空）才改名，避免数据被改名带走

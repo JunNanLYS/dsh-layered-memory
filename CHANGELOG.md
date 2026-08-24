@@ -24,6 +24,17 @@
 
 ### 修复
 
+- **旧版 records.jsonl 导入永久卡死（#28）**：旧代写入器产出的记录缺 `type`/`priority`/
+  `scene_name` 任一字段时，`undefined` 进 node:sqlite 绑定层被拒——逐条回退也系统性全挂
+  （同一代写入器产出的缺字段是同批的），文件保留导致每次启动重试、数据永不入库。修复：
+  **绑定层字段兜底**（`upsertL1InTx`/`upsertL0Batch` 归一化局部变量，主表/向量/FTS 共用
+  同源值；默认值取 schema 列默认 `type='' / priority=50 / scene_name=''`，L0 侧
+  `sessionId='default' / role='' / recordedAt='' / timestamp=0`）——一处修覆盖旧版导入、
+  reindex、backfill 与常规写入全部调用方；附带消除 `familyForType(undefined)` 的
+  TypeError 隐患（归一化后回落 chat 族）。L0 旧版导入同时补最小有效性门（缺 id/content
+  坏行读取时丢弃计数，此前零过滤）。注：报告所指"无行级隔离"不成立——逐条回退早已
+  存在（报告日志自证），真正缺的是字段兜底；`.failed` 熔断按共识跳过（已知循环成因
+  已根治，未知形态留待真实出现再做）。
 - **本地嵌入冻结整页（性能事故级）**：transformers.js 的模型加载与 ONNX 推理原先在
   host 主线程同步执行——onnxruntime-node（v1.24.3）的 `run`/`loadModel` 是
   setImmediate 回调里的同步调用（Promise 包装不卸载计算），启用本地嵌入

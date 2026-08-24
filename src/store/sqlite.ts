@@ -762,6 +762,13 @@ export class MemoryDb {
   /** 事务内的单条写入体（upsertL1 / upsertL1Batch 共用；调用方负责 BEGIN/COMMIT）。 */
   private upsertL1InTx(record: MemoryRecord, embedding?: Float32Array): void {
     const ts = timestampsToDb(record.timestamps);
+    // 绑定层字段兜底（取 schema 列默认）：旧版 JSONL 等外部数据缺字段时 undefined
+    // 无法绑定（node:sqlite 拒绝绑定），曾致旧版导入逐条全挂、每次启动无限重试（#28）。
+    // 主表与 FTS 两条语句共用同源归一化值；type 归一化后 familyForType 也不再收到 undefined。
+    const type = record.type ?? '';
+    const priority = record.priority ?? 50;
+    const sceneName = record.scene_name ?? '';
+    const family = record.family ?? familyForType(type);
     // 防御性 FTS 删除的前置点查（主键索引，微秒级）：record_id 在 FTS 表是 UNINDEXED，
     // 按 id DELETE 是 O(N) 全表扫描——导入/重建/重嵌等"全新增"路径曾为每条记录白付一次
     // 全扫（批量写整体 O(N²)）。只有主表已有该行（覆盖/合并）才可能有旧 FTS 行需要删。
@@ -770,9 +777,9 @@ export class MemoryDb {
     this.stmtUpsertL1.run(
       record.id,
       record.content,
-      record.type,
-      record.priority,
-      record.scene_name,
+      type,
+      priority,
+      sceneName,
       record.sessionId ?? 'default',
       record.version ?? 0,
       ts.str,
@@ -781,7 +788,7 @@ export class MemoryDb {
       toIso(record.createdAt),
       toIso(record.updatedAt),
       JSON.stringify(record.metadata ?? {}),
-      record.family ?? familyForType(record.type),
+      family,
     );
     // vec0 不支持 ON CONFLICT → 先删后插；零向量跳过（cosine 未定义）
     if (this.stmtDeleteL1Vec && this.stmtInsertL1Vec) {
@@ -798,16 +805,16 @@ export class MemoryDb {
         tokenizeForFts(record.content),
         record.content,
         record.id,
-        record.type,
-        record.priority,
-        record.scene_name,
+        type,
+        priority,
+        sceneName,
         record.sessionId ?? 'default',
         record.version ?? 0,
         ts.str,
         ts.start,
         ts.end,
         JSON.stringify(record.metadata ?? {}),
-        record.family ?? familyForType(record.type),
+        family,
       );
     }
   }
@@ -1056,21 +1063,28 @@ export class MemoryDb {
     try {
       this.db.exec('BEGIN');
       for (let i = 0; i < records.length; i++) {
-        const r = records[i];
+        const rec = records[i];
+        // 绑定层字段兜底（取 schema 列默认）：同 upsertL1InTx——外部数据缺字段时
+        // undefined 无法绑定（#28）；主表/向量/FTS 共用同源归一化值
+        const sessionId = rec.sessionId ?? 'default';
+        const role = rec.role ?? '';
+        const content = rec.content ?? '';
+        const recordedAt = rec.recordedAt ?? '';
+        const timestamp = rec.timestamp ?? 0;
         // 同 upsertL1 的点查预判：全新增路径跳过 UNINDEXED 列的 FTS 全扫删除
-        const ftsExisted = this.ftsAvailable ? this.stmtL0Exists.get(r.id) !== undefined : false;
-        this.stmtUpsertL0.run(r.id, r.sessionId, r.role, r.content, r.recordedAt, r.timestamp);
+        const ftsExisted = this.ftsAvailable ? this.stmtL0Exists.get(rec.id) !== undefined : false;
+        this.stmtUpsertL0.run(rec.id, sessionId, role, content, recordedAt, timestamp);
         if (this.stmtDeleteL0Vec && this.stmtInsertL0Vec) {
-          this.stmtDeleteL0Vec.run(r.id);
+          this.stmtDeleteL0Vec.run(rec.id);
           const vec = embeddings?.[i];
           if (vec && !isZeroVector(vec)) {
-            this.stmtInsertL0Vec.run(r.id, vecToBuffer(vec), r.recordedAt);
+            this.stmtInsertL0Vec.run(rec.id, vecToBuffer(vec), recordedAt);
           }
         }
         if (this.ftsAvailable) {
           // 同 upsertL1：FTS 失败冒泡触发整批回滚，禁止"删了没补"的索引空洞。
-          if (ftsExisted) this.stmtL0FtsDelete.run(r.id);
-          this.stmtL0FtsInsert.run(tokenizeForFts(r.content), r.content, r.id, r.sessionId, r.role, r.recordedAt, r.timestamp);
+          if (ftsExisted) this.stmtL0FtsDelete.run(rec.id);
+          this.stmtL0FtsInsert.run(tokenizeForFts(content), content, rec.id, sessionId, role, recordedAt, timestamp);
         }
       }
       this.db.exec('COMMIT');

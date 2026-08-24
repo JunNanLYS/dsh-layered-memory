@@ -401,12 +401,15 @@ async function main(): Promise<void> {
   const tmp3 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-legacy-'));
   try {
     const oldRecord = { id: 'old1', content: '旧版单文件里的记忆', type: 'work_fact', priority: 80, scene_name: '迁移', timestamps: [Date.now()], createdAt: Date.now(), updatedAt: Date.now() };
+    // #28 回归：旧代写入器产出的缺字段记录（type/priority/scene_name 全缺）——
+    // 绑定层无兜底时 undefined 进 node:sqlite 被拒，导入逐条全挂、每次启动无限重试
+    const deficientRecord = { id: 'old2', content: '缺字段旧记录', timestamps: [Date.now()], createdAt: Date.now(), updatedAt: Date.now() };
     await fs.mkdir(path.join(tmp3, 'l1'), { recursive: true });
-    await fs.writeFile(path.join(tmp3, 'l1', 'records.jsonl'), `${JSON.stringify(oldRecord)}\n`, 'utf-8');
+    await fs.writeFile(path.join(tmp3, 'l1', 'records.jsonl'), `${JSON.stringify(oldRecord)}\n${JSON.stringify(deficientRecord)}\n`, 'utf-8');
     await fs.mkdir(path.join(tmp3, 'l0'), { recursive: true });
     await fs.writeFile(
       path.join(tmp3, 'l0', '2026-01-01.jsonl'),
-      `${JSON.stringify({ sessionId: 'old-sess', recordedAt: new Date().toISOString(), id: 'om1', role: 'user', content: '旧格式消息内容', timestamp: Date.now() })}\n`,
+      `${JSON.stringify({ sessionId: 'old-sess', recordedAt: new Date().toISOString(), id: 'om1', role: 'user', content: '旧格式消息内容', timestamp: Date.now() })}\n${JSON.stringify({ id: 'om2', content: '缺字段旧消息' })}\n`,
       'utf-8',
     );
     const db3 = new MemoryDb(path.join(tmp3, 'memory.db'), 0);
@@ -415,8 +418,12 @@ async function main(): Promise<void> {
     await l0L.init();
     const l1L = new L1Store(tmp3, db3);
     await l1L.init();
-    assert(l1L.size === 1, '旧 L1 records.jsonl 导入检索库');
-    assert((await l0L.search('旧格式', 5)).length === 1, '旧 L0 目录导入并可检索');
+    assert(l1L.size === 2, '旧 L1 records.jsonl 导入检索库（含缺字段记录）');
+    const imported2 = l1L.all().find((r) => r.id === 'old2')!;
+    assert(imported2.type === '' && imported2.priority === 50 && imported2.scene_name === '' && imported2.family === 'chat', `缺字段记录按 schema 列默认兜底（type=${imported2.type} priority=${imported2.priority} family=${imported2.family}）`);
+    assert((await l1L.search('缺字段', 5)).length === 1, '兜底导入的缺字段记录可被 FTS 检索');
+    assert((await l0L.search('旧格式', 5)).some((r) => r.id === 'om1'), '旧 L0 目录导入并可检索');
+    assert((await l0L.search('缺字段', 5)).length === 1, '缺字段 L0 记录同款兜底入库可检索');
     assert(existsSync(path.join(tmp3, 'l1', 'records.jsonl.imported')), '旧 L1 文件改名 .imported');
     assert(existsSync(path.join(tmp3, 'l0.imported')), '旧 L0 目录改名 l0.imported/');
     db3.close();
