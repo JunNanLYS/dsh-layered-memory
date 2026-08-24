@@ -257,6 +257,7 @@ ONNX 量化 **CPU 推理**——无需 API Key，数据不出本机）。本地�
 | `recall.includeSceneNav` | `true` | 系统提示注入场景导航（`<scene-navigation>`，稳定区） |
 | `recall.strategy` | `hybrid` | 检索策略：`keyword` / `embedding` / `hybrid` |
 | `recall.scoreThreshold` | `0.3` | 召回分数阈值（低于不注入；仅 keyword/embedding 策略生效，hybrid 融合前不过滤；工具路径不过滤） |
+| `recall.decayHalfLifeDays` | `30` | 召回时效衰减半衰期（天，0=关）：排序按 `相关度 × max(0.5, 0.5^(距更新天数/半衰期))` 软加权——相关度相近的候选间新鲜记忆优先（名额轮转），老记忆最多损失一半排序分（地板兜底，长期事实不沉底） |
 | `embedding.enabled` | `false` | 向量检索开关；关闭即纯 FTS 运行 |
 | `embedding.baseUrl` | 空 | OpenAI 兼容 /embeddings 地址（如 `https://api.siliconflow.cn/v1`） |
 | `embedding.apiKey` | 空 | API Key |

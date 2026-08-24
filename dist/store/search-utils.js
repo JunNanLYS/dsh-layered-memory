@@ -24,15 +24,15 @@ export const DECAY_FLOOR = 0.5;
  * - 仅用于召回/工具检索；searchCandidates（去重候选）不得应用——写路径找同语义
  *   旧记录要无视新旧，衰减会让去重漏检（同事实双记录）。
  */
-export function applyDecayWeight(hits, halfLifeDays, updatedAtOf, now = Date.now(), floor = DECAY_FLOOR) {
+export function applyDecayWeight(hits, halfLifeDays, updatedAtOf, now = Date.now()) {
     if (!(halfLifeDays > 0) || hits.length === 0)
         return hits;
     const weight = (h) => {
         const t = updatedAtOf(h);
         if (t == null || !Number.isFinite(t))
-            return floor;
+            return DECAY_FLOOR;
         const days = Math.max(0, (now - t) / 86_400_000);
-        return Math.max(floor, 0.5 ** (days / halfLifeDays));
+        return Math.max(DECAY_FLOOR, 0.5 ** (days / halfLifeDays));
     };
     return hits
         .map((h) => ({ h, weighted: h.score * weight(h) }))

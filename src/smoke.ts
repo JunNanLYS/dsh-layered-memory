@@ -424,6 +424,13 @@ async function main(): Promise<void> {
     assert((await l1L.search('缺字段', 5)).length === 1, '兜底导入的缺字段记录可被 FTS 检索');
     assert((await l0L.search('旧格式', 5)).some((r) => r.id === 'om1'), '旧 L0 目录导入并可检索');
     assert((await l0L.search('缺字段', 5)).length === 1, '缺字段 L0 记录同款兜底入库可检索');
+    {
+      const om2 = (await l0L.search('缺字段', 5)).find((r) => r.id === 'om2')!;
+      assert(
+        om2.sessionId === 'default' && (om2.role as string) === '' && om2.recordedAt === '' && om2.timestamp === 0,
+        `缺字段 L0 记录兜底值逐字段断言（sess=${om2.sessionId} role=${om2.role} ts=${om2.timestamp}）`,
+      );
+    }
     assert(existsSync(path.join(tmp3, 'l1', 'records.jsonl.imported')), '旧 L1 文件改名 .imported');
     assert(existsSync(path.join(tmp3, 'l0.imported')), '旧 L0 目录改名 l0.imported/');
     db3.close();

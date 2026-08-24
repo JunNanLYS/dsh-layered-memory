@@ -16,7 +16,7 @@ export declare const DECAY_FLOOR = 0.5;
  */
 export declare function applyDecayWeight<T extends {
     score: number;
-}>(hits: T[], halfLifeDays: number, updatedAtOf: (hit: T) => number | undefined, now?: number, floor?: number): T[];
+}>(hits: T[], halfLifeDays: number, updatedAtOf: (hit: T) => number | undefined, now?: number): T[];
 /**
  * RRF 融合多个已排序列表：每项得分 = 各列表 1/(k + rank + 1) 之和。
  * 出现在多个列表的项得分累加，按得分降序返回（附 rrfScore）。

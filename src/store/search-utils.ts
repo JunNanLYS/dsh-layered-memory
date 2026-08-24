@@ -32,14 +32,13 @@ export function applyDecayWeight<T extends { score: number }>(
   halfLifeDays: number,
   updatedAtOf: (hit: T) => number | undefined,
   now: number = Date.now(),
-  floor: number = DECAY_FLOOR,
 ): T[] {
   if (!(halfLifeDays > 0) || hits.length === 0) return hits;
   const weight = (h: T): number => {
     const t = updatedAtOf(h);
-    if (t == null || !Number.isFinite(t)) return floor;
+    if (t == null || !Number.isFinite(t)) return DECAY_FLOOR;
     const days = Math.max(0, (now - t) / 86_400_000);
-    return Math.max(floor, 0.5 ** (days / halfLifeDays));
+    return Math.max(DECAY_FLOOR, 0.5 ** (days / halfLifeDays));
   };
   return hits
     .map((h) => ({ h, weighted: h.score * weight(h) }))

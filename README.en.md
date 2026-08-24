@@ -252,6 +252,7 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `recall.includeSceneNav` | `true` | Inject scene navigation into the system prompt (`<scene-navigation>`, stable zone) |
 | `recall.strategy` | `hybrid` | Retrieval strategy: `keyword` / `embedding` / `hybrid` |
 | `recall.scoreThreshold` | `0.3` | Recall score threshold (below is not injected; applies to keyword/embedding only, not pre-fusion hybrid; tool path unfiltered) |
+| `recall.decayHalfLifeDays` | `30` | Freshness-decay half-life for recall ranking (days, 0=off): ranking applies `relevance × max(0.5, 0.5^(days since last update / half-life))` — among similarly relevant candidates the fresh one wins (slots rotate), and an old memory loses at most half its ranking score (floor keeps long-lived facts afloat) |
 | `embedding.enabled` | `false` | Vector retrieval switch; off = pure FTS |
 | `embedding.baseUrl` | empty | OpenAI-compatible /embeddings endpoint (e.g. `https://api.siliconflow.cn/v1`) |
 | `embedding.apiKey` | empty | API key |
