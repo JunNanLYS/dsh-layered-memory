@@ -25,6 +25,11 @@ const { parentPort, workerData } = require('node:worker_threads');
 const path = require('node:path');
 const { createRequire } = require('node:module');
 
+/** 错误消息归一化（Error 取 message，其余 String 化）。 */
+function errMsg(err) {
+  return err && err.message ? err.message : String(err);
+}
+
 const cfg = workerData || {};
 const RUNTIME_DIR = typeof cfg.runtimeDir === 'string' ? cfg.runtimeDir : '';
 const MODEL_DIR = typeof cfg.modelDir === 'string' ? cfg.modelDir : '';
@@ -56,7 +61,7 @@ function ensureLoaded() {
       loadState = 'ready';
     } catch (err) {
       loadState = 'failed';
-      loadError = err && err.message ? err.message : String(err);
+      loadError = errMsg(err);
       loadPromise = null; // 失败后下一次 warmup 重新走加载
       throw err;
     }
@@ -88,7 +93,7 @@ function failRequest(request, error, stage) {
   for (let i = queue.length - 1; i >= 0; i--) {
     if (queue[i].request === request) queue.splice(i, 1);
   }
-  postReply({ id: request.id, ok: false, stage: stage, error: error && error.message ? error.message : String(error) });
+  postReply({ id: request.id, ok: false, stage: stage, error: errMsg(error) });
 }
 
 async function pump() {
@@ -163,7 +168,7 @@ parentPort.on('message', (msg) => {
 // 并转入 failed 态）。不保持半死状态——半死的 worker 只会让调用方挂到超时。
 process.on('uncaughtException', (err) => {
   try {
-    postReply({ type: 'fatal', error: err && err.message ? err.message : String(err) });
+    postReply({ type: 'fatal', error: errMsg(err) });
   } catch {
     /* 端口已坏，exit 处理兜底 */
   }

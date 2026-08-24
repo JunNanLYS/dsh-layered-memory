@@ -60,8 +60,6 @@ export declare class RuntimeInstaller {
      * runNpm 起跑前复查即不再起新进程（否则回退的 npm 会跑到自然结束且无法再取消）。
      */
     cancel(): boolean;
-    /** 从 runtime 目录解析已安装的 transformers 模块（LocalEmbeddingService 用）。 */
-    resolveModule(): unknown;
     private pushLine;
     /** 跑一次 npm 子进程（采集尾行 + 超时 kill），返回退出码（null = 被杀死/启动失败）。 */
     private runNpm;

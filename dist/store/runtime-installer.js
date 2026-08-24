@@ -14,7 +14,6 @@
  * - 幂等：已装版本 == 目标版本直接就绪；版本漂移（插件升级换了钉死版本）重装覆盖。
  */
 import { spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -138,11 +137,6 @@ export class RuntimeInstaller {
         this.progress.phase = 'cancelled';
         this.child?.kill();
         return true;
-    }
-    /** 从 runtime 目录解析已安装的 transformers 模块（LocalEmbeddingService 用）。 */
-    resolveModule() {
-        const req = createRequire(path.join(this.runtimeDir, 'package.json'));
-        return req(RuntimeInstaller.packageName);
     }
     pushLine(line) {
         const lines = this.progress.lastLines;

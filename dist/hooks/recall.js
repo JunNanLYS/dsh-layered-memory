@@ -132,7 +132,7 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
                 const hits = await raceRecallTimeout(stores.l1.search(query, cfg.recall.maxResults, {
                     scoreThreshold: cfg.recall.scoreThreshold,
                     family: mode === 'auto' ? undefined : mode,
-                    // 远程嵌入 fetch 内层钳制：给 FTS 降级留出总预算内的时间（本地推理不钳）
+                    // 嵌入内层钳制：给 FTS 降级留出总预算内的时间（远程限 HTTP fetch；本地经 worker 代理 race 放弃）
                     embeddingTimeoutMs: RECALL_EMBED_CAP_MS,
                 }), cfg.recall.timeoutMs);
                 st.updatedAt = Date.now();

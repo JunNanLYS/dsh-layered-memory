@@ -197,12 +197,20 @@ export class LocalEmbeddingService {
     async requestWithTimeout(call, timeoutMs) {
         if (!(timeoutMs && timeoutMs > 0))
             return this.channel.request(call);
-        return await Promise.race([
-            this.channel.request(call),
-            new Promise((_, reject) => {
-                setTimeout(() => reject(new Error(`本地嵌入调用超时（${timeoutMs}ms），已放弃等待`)), timeoutMs);
-            }),
-        ]);
+        let timer;
+        try {
+            return await Promise.race([
+                this.channel.request(call),
+                new Promise((_, reject) => {
+                    timer = setTimeout(() => reject(new Error(`本地嵌入调用超时（${timeoutMs}ms），已放弃等待`)), timeoutMs);
+                }),
+            ]);
+        }
+        finally {
+            // 先到者胜出后清掉另一个定时器（不清理会挂住引用至自然到期，raceRecallTimeout 同款）
+            if (timer)
+                clearTimeout(timer);
+        }
     }
     /** loading → ready 一次性日志（memory.log 时序可读性：启动到模型就绪的间隔）。 */
     markReady() {

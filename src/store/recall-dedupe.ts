@@ -10,6 +10,7 @@
  */
 import * as path from 'node:path';
 import type { MemoryLogger } from '../types.js';
+import { errDetail } from '../util/filelog.js';
 import { atomicWriteJson, ensureDir, readJsonIfExists } from './io.js';
 
 /** 会话条目上限（按 updatedAt 淘汰最旧；防文件无限增长）。 */
@@ -109,7 +110,7 @@ export class RecallDedupeStore {
     } catch (err) {
       if (!this.persistFailed) {
         this.persistFailed = true;
-        this.logger?.warn(`[memory] 召回去重持久化失败（降级内存态）: ${err instanceof Error ? err.message : String(err)}`);
+        this.logger?.warn(`[memory] 召回去重持久化失败（降级内存态）: ${errDetail(err)}`);
       }
     }
   }
