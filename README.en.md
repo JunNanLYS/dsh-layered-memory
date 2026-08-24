@@ -95,7 +95,11 @@ the full text) and a timed-out recall silently skips that turn, never slowing th
 (the model's context already holds it — follow-up questions on the same topic save
 tokens); the record resets when the context is compacted or cleared, so memories can
 flow back in, and an updated memory (new id after a content change) is never held back
-by the old suppression. It
+by the old suppression. **Freshness weighting**: recall ranking applies a soft weight
+`relevance × max(0.5, 0.5^(days since last update / 30))` — among candidates of similar
+relevance the fresh one wins (slots rotate naturally), while a strongly relevant old
+memory still recalls fine (the floor caps its loss at half a ranking score, so
+long-lived facts never sink); tune via `recall.decayHalfLifeDays`, `0` disables. It
 also registers three model-callable memory tools: `memory_search` /
 `conversation_search` / `memory_read_scene`.
 

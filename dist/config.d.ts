@@ -66,6 +66,9 @@ export interface MemoryConfig {
         strategy: 'keyword' | 'embedding' | 'hybrid';
         /** 召回路径分数阈值（0~1，低于该分不注入；工具路径不过滤）。 */
         scoreThreshold: number;
+        /** 时效衰减半衰期（天，0=关）：召回排序的 freshness 加权——score × max(0.5, 0.5^(Δ天/半衰期))，
+         *  只影响相关度相近候选间的名次（老记忆最多损失一半排序分，不淘汰）。 */
+        decayHalfLifeDays: number;
     };
     embedding: {
         /** 向量检索总开关；关闭时纯 FTS 运行（官方 provider="none" 同款）。 */
@@ -170,6 +173,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         includeSceneNav: Schema<boolean, boolean>;
         strategy: Schema<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
         scoreThreshold: Schema<number, number>;
+        decayHalfLifeDays: Schema<number, number>;
     }>, Schemastery.ObjectT<{
         enabled: Schema<boolean, boolean>;
         maxResults: Schema<number, number>;
@@ -180,6 +184,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         includeSceneNav: Schema<boolean, boolean>;
         strategy: Schema<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
         scoreThreshold: Schema<number, number>;
+        decayHalfLifeDays: Schema<number, number>;
     }>>;
     embedding: Schema<Schemastery.ObjectS<{
         enabled: Schema<boolean, boolean>;
@@ -276,6 +281,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         includeSceneNav: Schema<boolean, boolean>;
         strategy: Schema<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
         scoreThreshold: Schema<number, number>;
+        decayHalfLifeDays: Schema<number, number>;
     }>, Schemastery.ObjectT<{
         enabled: Schema<boolean, boolean>;
         maxResults: Schema<number, number>;
@@ -286,6 +292,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         includeSceneNav: Schema<boolean, boolean>;
         strategy: Schema<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
         scoreThreshold: Schema<number, number>;
+        decayHalfLifeDays: Schema<number, number>;
     }>>;
     embedding: Schema<Schemastery.ObjectS<{
         enabled: Schema<boolean, boolean>;

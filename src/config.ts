@@ -69,6 +69,9 @@ export interface MemoryConfig {
     strategy: 'keyword' | 'embedding' | 'hybrid';
     /** 召回路径分数阈值（0~1，低于该分不注入；工具路径不过滤）。 */
     scoreThreshold: number;
+    /** 时效衰减半衰期（天，0=关）：召回排序的 freshness 加权——score × max(0.5, 0.5^(Δ天/半衰期))，
+     *  只影响相关度相近候选间的名次（老记忆最多损失一半排序分，不淘汰）。 */
+    decayHalfLifeDays: number;
   };
   embedding: {
     /** 向量检索总开关；关闭时纯 FTS 运行（官方 provider="none" 同款）。 */
@@ -152,6 +155,9 @@ export const memorySchema = Schema.object({
     includeSceneNav: Schema.boolean().default(true),
     strategy: Schema.union(['keyword', 'embedding', 'hybrid']).default('hybrid'),
     scoreThreshold: Schema.number().min(0).max(1).default(0.3),
+    // 时效衰减（#29）：乘法软加权 + 地板 0.5（老记忆最多损失一半排序分），只轮转
+    // 相关度相近候选的名次；0=关（bench 基线可比性可 pin 0）
+    decayHalfLifeDays: Schema.number().min(0).max(3650).default(30),
   }),
   embedding: Schema.object({
     enabled: Schema.boolean().default(false),

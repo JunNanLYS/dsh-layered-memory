@@ -131,7 +131,7 @@ export async function apply(ctx, config) {
     }
     const stores = {
         l0: new L0Store(dataDir, db, embed, logger),
-        l1: new L1Store(dataDir, db, embed, config.recall.strategy, logger),
+        l1: new L1Store(dataDir, db, embed, config.recall.strategy, logger, config.recall.decayHalfLifeDays),
         // L2/L3 分族隔离：各自目录与文件（scenes/chat|work、persona-chat|work.md）
         scenes: {
             chat: new SceneStore(dataDir, 'chat', logger),

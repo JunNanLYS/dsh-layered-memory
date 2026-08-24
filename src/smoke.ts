@@ -37,7 +37,7 @@ import { RuntimeInstaller, type SpawnImpl } from './store/runtime-installer.js';
 import { SceneStore, sanitizeFilename } from './store/scenes.js';
 import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
-import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts } from './store/search-utils.js';
+import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts, applyDecayWeight, DECAY_FLOOR } from './store/search-utils.js';
 import { liveSettingsSchema, registerLiveSettings, type LiveSettingsHandle, type MemoryLiveSettings } from './settings.js';
 import { callLLM, decideSendableEffort, layerMaxTokens, resolveLayerTokens } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
@@ -3207,6 +3207,51 @@ async function main(): Promise<void> {
       assert(r4.kind === 'enter' && r4.messages.length === 1, 'resume 不重置 → 继续压制');
     } finally {
       await fs.rm(tmpH, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  // ── 31. 时效衰减加权（#29）：相关候选名次轮转 + 地板 + 开关 ──
+  console.log('== 31. 召回时效衰减 ==');
+  {
+    // a. 纯函数：相关性主导（强相关老记忆仍第一）+ 地板轮转（同量级新鲜者胜）+ 缺失按地板 + 关闭原样
+    const now = Date.UTC(2026, 7, 24);
+    const mk = (id: string, score: number, updatedAt?: number) => ({ id, score, updatedAt });
+    const hits = [
+      mk('old-tie', 1.0, now - 300 * 86_400_000), // 300 天 → 0.5^10 → 地板接管
+      mk('old-strong', 2.0, now - 300 * 86_400_000),
+      mk('new-tie', 0.6, now - 1 * 86_400_000),
+      mk('missing', 0.8, undefined), // 缺 updated_at → 按最老 → 地板
+    ];
+    const ordered = applyDecayWeight(hits, 30, (h) => h.updatedAt, now);
+    assert(
+      ordered.map((h) => h.id).join(',') === 'old-strong,new-tie,old-tie,missing',
+      `衰减排序：强相关老记忆第一、同量级新鲜者胜、缺失按地板（${ordered.map((h) => h.id).join(',')}）`,
+    );
+    assert(ordered[0].score === 2.0 && ordered[2].score === 1.0, 'hit 原始 score 不被改写（展示仍反映检索相关度）');
+    assert(applyDecayWeight(hits, 0, (h) => h.updatedAt, now) === hits, '半衰期 0=关：原样返回零开销');
+    assert(DECAY_FLOOR === 0.5, '地板常量 0.5（老记忆最多损失一半排序分）');
+
+    // b. 集成：keyword 检索的同分并列由新鲜度打破（名额轮转）
+    const tmpD31 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-decay-'));
+    try {
+      const db31 = new MemoryDb(path.join(tmpD31, 'memory.db'), 0);
+      db31.init();
+      const t31 = Date.now();
+      const mkRec = (id: string, updatedAt: number) => ({
+        id, content: '时效衰减排序测试', type: 'preference', priority: 60, scene_name: '',
+        timestamps: [updatedAt], createdAt: updatedAt, updatedAt,
+      });
+      db31.upsertL1(mkRec('decay-old', t31 - 300 * 86_400_000));
+      db31.upsertL1(mkRec('decay-new', t31));
+      const l1On = new L1Store(tmpD31, db31, new NoopEmbeddingService(), 'keyword', silentLogger, 30);
+      const hitsOn = await l1On.search('时效衰减排序测试', 5);
+      assert(hitsOn.length === 2 && hitsOn[0].id === 'decay-new', `同分并列由新鲜度打破（首位=${hitsOn[0]?.id}）`);
+      const l1Off = new L1Store(tmpD31, db31, new NoopEmbeddingService(), 'keyword', silentLogger, 0);
+      const hitsOff = await l1Off.search('时效衰减排序测试', 5);
+      assert(hitsOff.length === 2 && hitsOff.some((h) => h.id === 'decay-old') && hitsOff.some((h) => h.id === 'decay-new'), '关闭衰减：两条照常召回');
+      db31.close();
+    } finally {
+      await fs.rm(tmpD31, { recursive: true, force: true }).catch(() => {});
     }
   }
 

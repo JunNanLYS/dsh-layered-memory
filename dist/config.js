@@ -48,6 +48,9 @@ export const memorySchema = Schema.object({
         includeSceneNav: Schema.boolean().default(true),
         strategy: Schema.union(['keyword', 'embedding', 'hybrid']).default('hybrid'),
         scoreThreshold: Schema.number().min(0).max(1).default(0.3),
+        // 时效衰减（#29）：乘法软加权 + 地板 0.5（老记忆最多损失一半排序分），只轮转
+        // 相关度相近候选的名次；0=关（bench 基线可比性可 pin 0）
+        decayHalfLifeDays: Schema.number().min(0).max(3650).default(30),
     }),
     embedding: Schema.object({
         enabled: Schema.boolean().default(false),
