@@ -2824,12 +2824,283 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // ── 折线图 helper：把桶序列画成 SVG 多模型折线 ──
+    function renderCostChart(buckets, models, maxY, fmtDate, fmtInt, palette) {
+      var W = 600, H = 200, L = 46, R = 10, T = 10, B = 26;
+      var iw = W - L - R;
+      var ih = H - T - B;
+      var n = buckets.length;
+      var x = function (i) { return L + (n <= 1 ? iw / 2 : (i / (n - 1)) * iw); };
+      var y = function (v) { return T + ih - (v / maxY) * ih; };
+      var yTicks = [0, maxY / 2, maxY];
+      var xIdx = n > 2 ? [0, Math.floor((n - 1) / 2), n - 1] : n === 2 ? [0, 1] : [0];
+      return react.createElement(
+        "svg",
+        { viewBox: "0 0 " + W + " " + H, style: { width: "100%", height: "auto", display: "block" } },
+        react.createElement("line", { x1: L, y1: y(0), x2: W - R, y2: y(0), stroke: "var(--dsh-mem-border)", strokeWidth: 1 }),
+        yTicks.map(function (v) {
+          return react.createElement("text", { key: "yt" + v, x: L - 6, y: y(v) + 4, textAnchor: "end", fontSize: 10, fill: "var(--dsh-mem-text-3)" }, fmtInt(v));
+        }),
+        xIdx.map(function (i) {
+          return react.createElement("text", { key: "xt" + i, x: x(i), y: H - 8, textAnchor: "middle", fontSize: 10, fill: "var(--dsh-mem-text-3)" }, fmtDate(buckets[i] ? buckets[i].ts : 0));
+        }),
+        models.map(function (m, mi) {
+          var pts = buckets.map(function (b, i) { return x(i) + "," + y(b.byModel[m] || 0); }).join(" ");
+          return react.createElement("polyline", { key: "pl" + m, points: pts, fill: "none", stroke: palette[mi % palette.length], strokeWidth: 2, strokeLinejoin: "round", strokeLinecap: "round" });
+        }),
+      );
+    }
+
+    // ── Tab：蒸馏成本看板（折线图 + 层级×窗口表格 + 总览） ──
+    function CostTab(props) {
+      var rpc = props.rpc;
+      var dataState = react.useState(null);
+      var data = dataState[0];
+      var setData = dataState[1];
+      var errState = react.useState(null);
+      var error = errState[0];
+      var setError = errState[1];
+      var granState = react.useState("day");
+      var granularity = granState[0];
+      var setGranularity = granState[1];
+      var layerState = react.useState("");
+      var layer = layerState[0];
+      var setLayer = layerState[1];
+
+      var load = react.useCallback(function () {
+        setError(null);
+        rpc("dsh-memory/token-cost", { granularity: granularity })
+          .then(function (r) {
+            if (r && r.ok) setData(r.value);
+            else setError(r && r.error ? r.error.message : "RPC error");
+          })
+          .catch(function (e) { setError(String((e && e.message) || e)); });
+      }, [rpc, granularity]);
+
+      react.useEffect(function () {
+        load();
+        var timer = setInterval(load, 5000);
+        return function () { clearInterval(timer); };
+      }, [load]);
+
+      var fmtInt = function (n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); };
+      var fmtDate = function (ts) {
+        try {
+          var d = new Date(ts);
+          if (granularity === "month") return (d.getMonth() + 1) + "月";
+          return (d.getMonth() + 1) + "/" + d.getDate();
+        } catch (e) { return ""; }
+      };
+      var RANGE_LABELS = { day: "今日", week: "本周", month: "本月", all: "累计" };
+      var LAYER_OPTS = [{ key: "", label: "全部" }, { key: "l1", label: "L1" }, { key: "l2", label: "L2" }, { key: "l3", label: "L3" }];
+      var GRAN_OPTS = [{ key: "day", label: "日" }, { key: "week", label: "周" }, { key: "month", label: "月" }];
+      var PALETTE = ["#4f8cff", "#ff7a45", "#34c98e", "#b26bff", "#ffc53d", "#ff5c8a", "#22c1c3", "#8c97a8"];
+
+      var windows = (data && data.windows) || [];
+      var byModel = (data && data.byModel) || [];
+      var byLayer = (data && data.byLayer) || [];
+      var trend = data && data.trend ? data.trend : null;
+
+      // 趋势桶（按 layer 过滤/合并；全部 = l1+l2+l3 逐桶相加）
+      var buckets = [];
+      if (trend && trend.byLayer) {
+        if (layer === "l1" || layer === "l2" || layer === "l3") {
+          buckets = trend.byLayer[layer] || [];
+        } else {
+          var seqs = [trend.byLayer.l1 || [], trend.byLayer.l2 || [], trend.byLayer.l3 || []];
+          var n = seqs[0].length;
+          for (var i = 0; i < n; i++) {
+            var merged = { ts: 0, total: 0, byModel: {} };
+            for (var s = 0; s < seqs.length; s++) {
+              var seq = seqs[s];
+              if (seq && seq[i]) {
+                if (merged.ts === 0) merged.ts = seq[i].ts;
+                merged.total += seq[i].total;
+                Object.keys(seq[i].byModel).forEach(function (m) {
+                  merged.byModel[m] = (merged.byModel[m] || 0) + seq[i].byModel[m];
+                });
+              }
+            }
+            buckets.push(merged);
+          }
+        }
+      }
+
+      // 折线模型 + maxY
+      var models = [];
+      var seen = {};
+      buckets.forEach(function (b) {
+        Object.keys(b.byModel).forEach(function (m) {
+          if (!seen[m]) { seen[m] = true; models.push(m); }
+        });
+      });
+      models.sort();
+      var maxY = 1;
+      buckets.forEach(function (b) {
+        if (b.total > maxY) maxY = b.total;
+        models.forEach(function (m) { if ((b.byModel[m] || 0) > maxY) maxY = b.byModel[m]; });
+      });
+
+      // 层级×窗口表格数据（layer → {range: 格子}）
+      var layerTable = byLayer.map(function (lc) {
+        var win = {};
+        lc.windows.forEach(function (w) { win[w.range] = w; });
+        return { layer: lc.layer, win: win };
+      });
+
+      var thFirst = { fontSize: 12, fontWeight: 600, color: "var(--dsh-mem-text-3)", textAlign: "left", padding: "4px 10px", borderBottom: "1px solid var(--dsh-mem-border)" };
+      var thStyle = { fontSize: 12, fontWeight: 600, color: "var(--dsh-mem-text-3)", textAlign: "right", padding: "4px 10px", borderBottom: "1px solid var(--dsh-mem-border)" };
+      var tdFirst = { fontSize: 12.5, fontWeight: 600, color: "var(--dsh-mem-text-1)", textAlign: "left", padding: "4px 10px" };
+      var tdStyle = { fontSize: 12.5, color: "var(--dsh-mem-text-1)", textAlign: "right", padding: "4px 10px", fontFamily: "ui-monospace, Consolas, monospace" };
+
+      return react.createElement(
+        "div", null,
+        react.createElement(
+          "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
+          react.createElement(Segmented, { value: layer, options: LAYER_OPTS, onChange: setLayer }),
+          react.createElement(Segmented, { value: granularity, options: GRAN_OPTS, onChange: setGranularity }),
+          react.createElement("div", { style: S.grow }),
+          react.createElement(NButton, { onClick: load }, "刷新"),
+        ),
+        error
+          ? react.createElement("div", { style: S.error }, "成本读取失败：" + error)
+          : null,
+        react.createElement("div", { style: S.panelLabel }, "成本趋势（按模型）"),
+        buckets.length > 0
+          ? react.createElement(
+              "div", null,
+              renderCostChart(buckets, models, maxY, fmtDate, fmtInt, PALETTE),
+              react.createElement(
+                "div", { style: { display: "flex", flexWrap: "wrap", gap: "4px 12px", margin: "6px 0 14px" } },
+                models.map(function (m, mi) {
+                  return react.createElement(
+                    "span", { key: "lg" + m, style: { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--dsh-mem-text-2)" } },
+                    react.createElement("span", { style: { width: 10, height: 10, borderRadius: 2, background: PALETTE[mi % PALETTE.length], display: "inline-block" } }),
+                    m,
+                  );
+                }),
+              ),
+            )
+          : react.createElement("p", { style: S.muted }, data ? "当前层级暂无趋势数据。" : "加载中…"),
+        react.createElement("div", { style: S.panelLabel }, "层级成本（输出 token）"),
+        react.createElement(
+          "table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 } },
+          react.createElement(
+            "thead", null,
+            react.createElement(
+              "tr", null,
+              react.createElement("th", { style: thFirst }, "层级"),
+              ["day", "week", "month", "all"].map(function (r) {
+                return react.createElement("th", { key: r, style: thStyle }, RANGE_LABELS[r]);
+              }),
+            ),
+          ),
+          react.createElement(
+            "tbody", null,
+            layerTable.map(function (lc) {
+              return react.createElement(
+                "tr", { key: lc.layer },
+                react.createElement("td", { style: tdFirst }, lc.layer.toUpperCase()),
+                ["day", "week", "month", "all"].map(function (r) {
+                  var w = lc.win[r];
+                  return react.createElement("td", { key: r, style: tdStyle }, w ? fmtInt(w.outputTokens) : "0");
+                }),
+              );
+            }),
+          ),
+        ),
+        react.createElement("div", { style: S.panelLabel }, "层级成本（单次 avg）"),
+        react.createElement(
+          "table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 } },
+          react.createElement(
+            "thead", null,
+            react.createElement(
+              "tr", null,
+              react.createElement("th", { style: thFirst }, "层级"),
+              ["day", "week", "month", "all"].map(function (r) {
+                return react.createElement("th", { key: r, style: thStyle }, RANGE_LABELS[r] + "-avg");
+              }),
+            ),
+          ),
+          react.createElement(
+            "tbody", null,
+            layerTable.map(function (lc) {
+              return react.createElement(
+                "tr", { key: lc.layer },
+                react.createElement("td", { style: tdFirst }, lc.layer.toUpperCase()),
+                ["day", "week", "month", "all"].map(function (r) {
+                  var w = lc.win[r];
+                  return react.createElement("td", { key: r, style: tdStyle }, w ? fmtInt(w.avgOutputTokens) : "0");
+                }),
+              );
+            }),
+          ),
+        ),
+        react.createElement("div", { style: S.panelLabel }, "层级成本（单次 median）"),
+        react.createElement(
+          "table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 } },
+          react.createElement(
+            "thead", null,
+            react.createElement(
+              "tr", null,
+              react.createElement("th", { style: thFirst }, "层级"),
+              ["day", "week", "month", "all"].map(function (r) {
+                return react.createElement("th", { key: r, style: thStyle }, RANGE_LABELS[r] + "-median");
+              }),
+            ),
+          ),
+          react.createElement(
+            "tbody", null,
+            layerTable.map(function (lc) {
+              return react.createElement(
+                "tr", { key: lc.layer },
+                react.createElement("td", { style: tdFirst }, lc.layer.toUpperCase()),
+                ["day", "week", "month", "all"].map(function (r) {
+                  var w = lc.win[r];
+                  return react.createElement("td", { key: r, style: tdStyle }, w ? fmtInt(w.medianOutputTokens) : "0");
+                }),
+              );
+            }),
+          ),
+        ),
+        react.createElement("div", { style: S.panelLabel }, "时间窗口总览"),
+        react.createElement(
+          "div", { style: S.statGrid },
+          windows.map(function (w) {
+            return react.createElement(
+              "div", { key: w.range, className: "dsh-mem-card", style: S.statTile },
+              react.createElement("div", { style: S.statNum }, fmtInt(w.outputTokens + w.reasoningTokens)),
+              react.createElement("div", { style: S.statLabel }, RANGE_LABELS[w.range] + " · 总输出 token"),
+              react.createElement("div", { style: S.muted }, "文字 " + fmtInt(w.outputTokens) + " · 思考 " + fmtInt(w.reasoningTokens) + " · " + w.calls + " 次调用"),
+            );
+          }),
+        ),
+        byModel.length > 0
+          ? react.createElement(
+              "div", null,
+              react.createElement("div", { style: S.panelLabel }, "按模型（累计）"),
+              byModel.map(function (m) {
+                return react.createElement(
+                  "div", { key: "m-" + m.model, style: S.infoRow },
+                  react.createElement("span", { style: S.infoKey }, m.model),
+                  react.createElement("span", { style: S.infoVal }, m.calls + " 次 · 输出 " + fmtInt(m.outputTokens) + " · 思考 " + fmtInt(m.reasoningTokens)),
+                );
+              }),
+            )
+          : null,
+        data
+          ? react.createElement("p", { style: S.hint }, "输入按字符、输出/思考按 token 计；趋势图 Y 轴为输出 token，上方可切换层级与颗粒度。" )
+          : null,
+      );
+    }
+
     // ── 主面板：Tab 框架 ──
     var TABS = [
       ["overview", "概览"],
       ["records", "记忆"],
       ["scenes", "场景"],
       ["persona", "画像"],
+      ["cost", "成本"],
       ["log", "日志"],
     ];
 
@@ -2898,6 +3169,7 @@ window.__ModuleLoader__.load({
       else if (tab === "records") body = react.createElement(RecordsTab, { rpc: rpc });
       else if (tab === "scenes") body = react.createElement(ScenesTab, { rpc: rpc });
       else if (tab === "persona") body = react.createElement(PersonaTab, { rpc: rpc });
+      else if (tab === "cost") body = react.createElement(CostTab, { rpc: rpc });
       else body = react.createElement(LogTab, { rpc: rpc });
 
       return react.createElement(

@@ -1,6 +1,7 @@
 import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import { errDetail } from './util/filelog.js';
 import { recordDistillCall } from './llm-usage.js';
+import { recordCostCall } from './token-cost.js';
 // ── 分层输出预算（规格 C 节）：结构化蒸馏远用不到总闸级预算，逐层设护栏；
 //    模型跑偏时单次损失有界。数值"先试跑"状态，按线上截断率调整。
 /** L1 抽取（大输入块的 JSON 记忆数组输出）。 */
@@ -203,11 +204,15 @@ export async function callLLM(ctx, cfg, opts) {
         // 记账含失败路径（failures 计数；tokens 尽当时流内已到的 usage）
         if (opts.layer)
             recordDistillCall(opts.layer, user.length, outputTokens, reasoningTokens, true);
+        if (opts.layer)
+            recordCostCall(model, opts.layer, user.length, outputTokens, reasoningTokens);
         opts.logger?.warn(`[memory] LLM 调用失败 ${provider}/${model}（${((Date.now() - startedAt) / 1000).toFixed(1)}s）: ${errDetail(err)}`);
         throw err;
     }
     if (opts.layer)
         recordDistillCall(opts.layer, user.length, outputTokens, reasoningTokens, false);
+    if (opts.layer)
+        recordCostCall(model, opts.layer, user.length, outputTokens, reasoningTokens);
     const out = (blockText || deltaText).trim();
     if (out.length === 0) {
         // 空输出是最难排查的失败：流正常结束但一个字没吐。必须记录 finish 原因、

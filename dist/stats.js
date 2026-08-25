@@ -14,6 +14,7 @@ import { effectiveCfg } from './pipeline/runner.js';
 import { emptyRecallStats } from './hooks/recall.js';
 import { decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
 import { errDetail } from './util/filelog.js';
+import { snapshotTokenCost } from './token-cost.js';
 const require = createRequire(import.meta.url);
 export const PLUGIN_VERSION = require('../package.json').version;
 /** 注册状态 RPC（web 侧 connection 服务可选，缺失时跳过，不影响插件主体）。 */
@@ -148,6 +149,11 @@ async function handleEndpoint(endpoint, payload, deps) {
     switch (endpoint) {
         case 'dsh-memory/stats':
             return buildStats(cfg, stores, status);
+        case 'dsh-memory/token-cost': {
+            const p = (payload ?? {});
+            const granularity = p.granularity === 'week' || p.granularity === 'month' ? p.granularity : 'day';
+            return snapshotTokenCost(granularity);
+        }
         case 'dsh-memory/session-mode-get': {
             if (!modes)
                 throw new Error('档位存储未初始化');
