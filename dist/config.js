@@ -80,6 +80,10 @@ export const memorySchema = Schema.object({
         maxInputChars: Schema.number().min(1000).max(1_000_000).default(700_000),
         timeoutMs: Schema.number().min(1000).max(600_000).default(120_000),
     }),
+    // token_cost 明细保留期（写入时滚动清理；0 = 永久保留）。成本看板的「近 N 天」窗口上限也取此值
+    tokenCost: Schema.object({
+        retentionDays: Schema.number().min(0).max(3650).default(365),
+    }),
     tools: Schema.boolean().default(true),
     benchControl: Schema.boolean().default(false),
 });

@@ -2,19 +2,21 @@
  * 蒸馏成本看板账本：把每次蒸馏调用（model × layer）的 token 成本写入 SQLite 明细表。
  *
  * 模块级单例 + init 注入 db：callLLM 拿不到 db（db 在 index.ts 运行时创建），
- * 故通过 initTokenCost(db) 在插件启动时注入；recordCostCall 每次调用写一行明细。
+ * 故通过 initTokenCost(db, retentionDays) 在插件启动时注入；recordCostCall 每次调用写一行明细。
  *
  * 与作者 llm-usage.ts 的关系：作者是"按 layer 累计的纯内存计数器"（给 bench 用）；
- * 本模块补上三个缺口——按 model 分组、持久化（365 天明细）、面向 UI 成本看板。
+ * 本模块补上三个缺口——按 model 分组、持久化（保留期可配置，默认 365 天）、面向 UI 成本看板。
  */
 import type { DistillLayer } from './llm-usage.js';
 import type { BucketRow, CostByModel, MemoryDb } from './store/sqlite.js';
 
 let db: MemoryDb | null = null;
+let retentionDays = 365;
 
-/** 插件启动时注入 db（index.ts 调用）。 */
-export function initTokenCost(d: MemoryDb): void {
+/** 插件启动时注入 db 与明细保留期（index.ts 调用；retentionDays 0 = 永久保留）。 */
+export function initTokenCost(d: MemoryDb, retention: number): void {
   db = d;
+  retentionDays = Math.max(0, Math.round(retention));
 }
 
 /** 插件卸载时清空 db 引用（index.ts 的 ctx.effect 清理里调用，防悬空引用）。 */
@@ -32,7 +34,7 @@ export function recordCostCall(
   reasoningTokens: number,
 ): void {
   if (!db) return;
-  db.insertCostCall(provider, model, layer, inputChars, outputTokens, reasoningTokens);
+  db.insertCostCall(provider, model, layer, inputChars, outputTokens, reasoningTokens, retentionDays);
 }
 
 /** 成本看板单个时间窗口（day/week/month/all）。 */

@@ -2992,7 +2992,7 @@ window.__ModuleLoader__.load({
         rangeOpen
           ? react.createElement(
               "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
-              react.createElement("span", { style: S.muted }, "展示近 N 天（1~365 整数，清空=默认窗口）"),
+              react.createElement("span", { style: S.muted }, "展示近 N 天（正整数，清空=默认窗口；超出保留期后端自动回退）"),
               react.createElement(NInput, {
                 value: rangeDays === 0 ? "" : String(rangeDays),
                 placeholder: "如 30",
@@ -3001,7 +3001,7 @@ window.__ModuleLoader__.load({
                   var v = String(e.target.value || "").trim();
                   if (v === "") { setRangeDays(0); return; }
                   var n = Number(v);
-                  if (Number.isInteger(n) && n > 0 && n <= 365) setRangeDays(n);
+                  if (Number.isInteger(n) && n > 0 && n <= 3650) setRangeDays(n);
                 },
               }),
             )

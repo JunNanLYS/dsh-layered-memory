@@ -134,7 +134,7 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
   // ── 检索引擎（memory.db）与向量服务 ──
   const embed = initial.svc;
   const db = new MemoryDb(path.join(dataDir, 'memory.db'), initial.dims, logger);
-  initTokenCost(db);
+  initTokenCost(db, config.tokenCost.retentionDays);
   // 插件卸载时关闭连接（WAL 落盘），注册一次即可
   ctx.effect(() => () => db.close());
 

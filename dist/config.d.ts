@@ -114,6 +114,10 @@ export interface MemoryConfig {
             l3: number;
         }>;
     };
+    tokenCost: {
+        /** token_cost 明细保留天数；写入时滚动清理更早行。0 = 永久保留。 */
+        retentionDays: number;
+    };
     /** 是否注册模型可调用的记忆工具。 */
     tools: boolean;
     /** 注册 bench 控制服务（dsh-memory-bench，进程内 rebuild 触发面）。
@@ -226,6 +230,11 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;
     }>>;
+    tokenCost: Schema<Schemastery.ObjectS<{
+        retentionDays: Schema<number, number>;
+    }>, Schemastery.ObjectT<{
+        retentionDays: Schema<number, number>;
+    }>>;
     tools: Schema<boolean, boolean>;
     benchControl: Schema<boolean, boolean>;
 }>, Schemastery.ObjectT<{
@@ -333,6 +342,11 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         temperature: Schema<number, number>;
         maxInputChars: Schema<number, number>;
         timeoutMs: Schema<number, number>;
+    }>>;
+    tokenCost: Schema<Schemastery.ObjectS<{
+        retentionDays: Schema<number, number>;
+    }>, Schemastery.ObjectT<{
+        retentionDays: Schema<number, number>;
     }>>;
     tools: Schema<boolean, boolean>;
     benchControl: Schema<boolean, boolean>;

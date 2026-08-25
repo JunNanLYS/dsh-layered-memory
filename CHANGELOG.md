@@ -5,6 +5,32 @@
 
 ## [Unreleased]
 
+## [0.8.7] — 2026-08-25
+
+### 新增
+
+- **token 成本看板（#30，贡献者 @Irvington258）**：每次蒸馏 LLM 调用
+  （l1-extract / l1-dedup / l2 / l3）的 token 成本按 `provider/model` 复合键写入
+  SQLite `token_cost` 明细表（含旧表 provider 列迁移），设置页新增「成本」Tab：
+  按模型分色的趋势折线（`--dsh-mem-chart-1..8` 图表系列令牌，日/周/月粒度 +
+  近 N 天窗口强制日粒度 + L1/L2/L3 层级过滤）、层级 × 时间窗口表格（调用数 /
+  输出与思考 token / 均值 / 中位数，median 在 JS 侧计算）、按模型累计列表，
+  经 `dsh-memory/token-cost` 只读 RPC 拉取、5s 轮询。数据口径：输入按字符
+  （dsh 流式 usage 不含输入 token，沿用 llm-usage 口径），输出/思考按 token；
+  记账挂在 callLLM 出口、成功/失败双路都记，记账失败只 warn 绝不阻塞蒸馏；
+  语句构造期 prepare 缓存；插件卸载清理模块引用。
+- `tokenCost.retentionDays` 配置项（默认 `365`，`0` = 永久保留）：成本明细保留
+  天数，写入时滚动清理；成本看板「近 N 天」窗口上限同此值（保留期放开后 client
+  输入上限放宽到 3650，真实上限由后端按配置校验）。
+
+### 变更
+
+- design spec 回写：`global-spec.md` 新增「图表系列色」节（数据可视化编码色类目——
+  单强调色锁的功能性豁免，先例同档位色；8 档双主题令牌 + AA 对比度复算值，
+  浅色全档 ≥3:1 / 暗色全档 ≥4.29，第 1 档锚定品牌蓝、第 8 档中性灰收"其他"）；
+  `settings-spec.md` 新增「成本 Tab（CostTab）」节；README 中英同步功能说明与
+  配置表行；smoke 新增 retentionDays 默认值/边界断言与图表令牌接线断言。
+
 ## [0.8.6] — 2026-08-24
 
 ### 新增

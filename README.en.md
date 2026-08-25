@@ -103,6 +103,15 @@ long-lived facts never sink); tune via `recall.decayHalfLifeDays`, `0` disables.
 also registers three model-callable memory tools: `memory_search` /
 `conversation_search` / `memory_read_scene`.
 
+**Cost dashboard**: every distillation LLM call (extract / dedup / L2 / L3) writes its
+token cost to a SQLite detail table keyed by `provider/model` (configurable retention,
+default 365 days with rolling cleanup on write; accounting failures only log a warning
+and never block distillation). Visualize it under Settings → Memory → the **Cost** tab:
+per-model trend lines (day/week/month granularity + last-N-days window + L1/L2/L3 layer
+filter), a layer × time-window table (calls / output & reasoning tokens / mean / median),
+and per-model totals — distillation overhead at a glance. Input is counted in characters
+(DSH streaming usage carries no input tokens); output and reasoning in tokens.
+
 In action: the "Context injection · memory" row surfaces relevant memories first, and
 the model then calls `memory_read_scene` directly to read scene blocks before answering
 from memory:
@@ -269,6 +278,7 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `llm.temperature` | `0.3` | Distillation temperature |
 | `llm.maxInputChars` | `700000` | Input character budget per distillation call (over-budget L1 inputs are chunked automatically); runtime-adjustable in Settings → distillation parameters → input budget (empty/0 = follow this value) |
 | `llm.timeoutMs` | `120000` | Per-call distillation timeout (ms) |
+| `tokenCost.retentionDays` | `365` | Retention (days) for distillation cost details (the `token_cost` table); rows older than this are rolled away on write. `0` = keep forever. Also the upper bound of the cost dashboard's "last N days" window |
 | `tools` | `true` | Whether to register model-callable memory tools |
 | `benchControl` | `false` | Register the in-process bench control service (rebuild trigger / session-mode setting / distillation usage snapshot — used by the benchmark's lifecycle track). Off by default — zero surface in production deployments; do not enable casually |
 

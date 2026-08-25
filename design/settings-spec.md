@@ -1,6 +1,6 @@
 # settings-spec — 设置页记忆浏览器
 
-组件：`MemoryPanel`（"设置 → 记忆"多 Tab 浏览器：概览+开关 / 记忆 / 场景 / 画像 / 日志，
+组件：`MemoryPanel`（"设置 → 记忆"多 Tab 浏览器：概览+开关 / 记忆 / 场景 / 画像 / 成本 / 日志，
 两族混合视图）与 `RebuildPanel`（记忆全量重建）。全局令牌与守则见 `global-spec.md`。
 
 ## 原生组件复用（原生优先）
@@ -163,6 +163,27 @@ L2 场景块列表。每块一张 `.dsh-mem-card dsh-mem-card-hover` 卡片（`S
 热度 + 更新时间）与摘要行；点击头部整行切换展开/收起，展开时渲染正文 `<pre>`
 （S.pre）。箭头 `.dsh-mem-scene-chev` 展开态旋转 90°。交互范式与记忆 Tab 的
 点击展开卡同款（cursor pointer + hover 描边加深；头部 userSelect 关闭防误选）。
+
+## 成本 Tab（CostTab）
+
+蒸馏 token 成本看板（`dsh-memory/token-cost` RPC，5s 轮询刷新；只读）。结构自上而下：
+
+- **控件行**：层级过滤（Segmented：全部/L1/L2/L3）+ 趋势粒度（Segmented：日/周/月）+
+  「近N天」按钮（展开内联输入行：NInput 正整数，清空=默认窗口；超保留期由后端回退）+
+  「刷新」。
+- **成本趋势（按模型）**：自绘 SVG 折线（viewBox 600×200，折线走
+  `var(--dsh-mem-chart-1..8)` 按模型名序循环取色，轴线/刻度文字用 border/text-3 令牌）；
+  图例色块 10×10、圆角 4。近 N 天模式后端强制日粒度（N 个日桶），横轴日期格式化
+  跟随后端实际粒度（trend.granularity）而非用户所选。无数据时整块替换为
+  muted 占位文案（"暂无成本数据…"）。
+- **层级成本（输出 token）表格**：行=L1/L2/L3（l1 = l1-extract + l1-dedup 归并），
+  列=今日/本周/本月/累计四窗口，格=调用数 + 输出/思考 token + avg/median
+  （median 由 JS 侧计算，SQLite 无内置函数）。
+- **按模型（累计）**：infoRow 列表，键为 `provider/model` 复合键。
+
+数据口径：输入按**字符**（llm 流 usage 拿不到输入 token，沿用 llm-usage 口径），
+输出/思考按 token；明细保留期 = `tokenCost.retentionDays` 配置（默认 365，0=永久），
+写入时滚动清理。空 `byModel`/`byLayer` 时表格/列表渲染空态。
 
 ## 日志 Tab（LogTab）
 

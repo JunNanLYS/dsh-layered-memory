@@ -339,7 +339,7 @@ export class MemoryDb {
         this.stmtGetL0 = this.db.prepare('SELECT session_id, role, message_text, recorded_at, timestamp FROM l0_conversations WHERE record_id = ?');
         this.stmtL0Exists = this.db.prepare('SELECT 1 FROM l0_conversations WHERE record_id = ?');
         this.prepareL0VecStatements();
-        // ── token_cost：蒸馏成本明细表（成本看板用；365 天滚动清理） ──
+        // ── token_cost：蒸馏成本明细表（成本看板用；保留期经 retentionDays 滚动清理） ──
         this.db.exec(`
       CREATE TABLE IF NOT EXISTS token_cost (
         ts INTEGER NOT NULL,
@@ -1012,15 +1012,16 @@ export class MemoryDb {
         }
     }
     /**
-     * 记录一次蒸馏调用成本（明细表，365 天滚动清理）。
+     * 记录一次蒸馏调用成本（明细表，写入时按 retentionDays 滚动清理；0 = 永久保留）。
      * 失败/成功都记（token 照烧）；记账失败记 warn 但不阻断蒸馏（成本看板是增强能力）。
      */
-    insertCostCall(provider, model, layer, inputChars, outputTokens, reasoningTokens) {
+    insertCostCall(provider, model, layer, inputChars, outputTokens, reasoningTokens, retentionDays) {
         if (this.degraded)
             return;
         try {
             this.stmtInsertCost.run(Date.now(), provider, model, layer, Math.max(0, Math.round(inputChars)), Math.max(0, Math.round(outputTokens)), Math.max(0, Math.round(reasoningTokens)));
-            this.stmtDeleteCost.run(Date.now() - 365 * 24 * 3600_000);
+            if (retentionDays > 0)
+                this.stmtDeleteCost.run(Date.now() - retentionDays * 24 * 3600_000);
         }
         catch (err) {
             this.logger?.warn(`${TAG} token_cost 记账失败: ${err instanceof Error ? err.message : String(err)}`);

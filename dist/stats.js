@@ -152,9 +152,11 @@ async function handleEndpoint(endpoint, payload, deps) {
         case 'dsh-memory/token-cost': {
             const p = (payload ?? {});
             const granularity = p.granularity === 'week' || p.granularity === 'month' ? p.granularity : 'day';
-            // rangeDays 须为 1~365 的正整数（存储上限 365 天），否则回退默认窗口
+            // rangeDays 须为正整数且不超过明细保留期（tokenCost.retentionDays，0=永久保留则放行 1~3650），否则回退默认窗口
+            const retention = cfg.tokenCost.retentionDays;
+            const upper = retention > 0 ? retention : 3650;
             const rawDays = p.rangeDays;
-            const rangeDays = typeof rawDays === 'number' && Number.isInteger(rawDays) && rawDays > 0 && rawDays <= 365 ? rawDays : 0;
+            const rangeDays = typeof rawDays === 'number' && Number.isInteger(rawDays) && rawDays > 0 && rawDays <= upper ? rawDays : 0;
             return snapshotTokenCost(granularity, rangeDays);
         }
         case 'dsh-memory/session-mode-get': {

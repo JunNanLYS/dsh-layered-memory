@@ -114,6 +114,11 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         maxInputChars: import("@deepseek-ai/schemastery").default<number, number>;
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
     }>>;
+    tokenCost: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
+        retentionDays: import("@deepseek-ai/schemastery").default<number, number>;
+    }>, Schemastery.ObjectT<{
+        retentionDays: import("@deepseek-ai/schemastery").default<number, number>;
+    }>>;
     tools: import("@deepseek-ai/schemastery").default<boolean, boolean>;
     benchControl: import("@deepseek-ai/schemastery").default<boolean, boolean>;
 }>, Schemastery.ObjectT<{
@@ -221,6 +226,11 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         temperature: import("@deepseek-ai/schemastery").default<number, number>;
         maxInputChars: import("@deepseek-ai/schemastery").default<number, number>;
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
+    }>>;
+    tokenCost: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
+        retentionDays: import("@deepseek-ai/schemastery").default<number, number>;
+    }>, Schemastery.ObjectT<{
+        retentionDays: import("@deepseek-ai/schemastery").default<number, number>;
     }>>;
     tools: import("@deepseek-ai/schemastery").default<boolean, boolean>;
     benchControl: import("@deepseek-ai/schemastery").default<boolean, boolean>;

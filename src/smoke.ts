@@ -2015,6 +2015,11 @@ async function main(): Promise<void> {
     assert(defLlm?.maxTokens === 65_536, 'llm.maxTokens 兜底总闸默认 65536');
     const defExtract = defCfg?.value?.extract;
     assert(defExtract?.minMessages === 6 && defExtract?.idleSeconds === 300, '稳态阈值默认 6 / 闲置兜底默认 300s');
+    // token_cost 保留期默认值 + 边界（0=永久保留合法；超 3650 拒绝）
+    const defTokenCost = (defCfg as unknown as { value?: { tokenCost?: { retentionDays?: number } } })?.value?.tokenCost;
+    assert(defTokenCost?.retentionDays === 365, 'tokenCost.retentionDays 默认 365');
+    assert(tryValidate({ tokenCost: { retentionDays: 0 } }), 'retentionDays=0（永久保留）合法');
+    assert(!tryValidate({ tokenCost: { retentionDays: 3651 } }), 'retentionDays 超 3650 拒绝');
   }
 
   // 19b. pending 持久化前按桶截断（非重建轮）/ 重建轮豁免 —— 挂在 §14 的 runner2 之后
@@ -2215,6 +2220,9 @@ async function main(): Promise<void> {
     for (const cls of ['dsh-mem-btn', 'dsh-mem-input', 'dsh-mem-select', 'dsh-mem-tab', 'dsh-mem-card', 'dsh-mem-root']) {
       assert(clientSrc.includes(`"${cls}`), `组件类被引用：${cls}`);
     }
+    // 图表系列色接线（成本看板折线）：8 档令牌双主题定义 + PALETTE 只引用 var()
+    for (let i = 1; i <= 8; i++) assert(clientSrc.includes(`--dsh-mem-chart-${i}: #`), `图表令牌定义：chart-${i}`);
+    assert(clientSrc.includes('"var(--dsh-mem-chart-1)"'), 'PALETTE 引用 chart 令牌（非裸 hex）');
   }
 
   // ── 22. 模型目录 + 下载器（#20：目录即完整性契约 + 断点续传状态机） ──

@@ -1,7 +1,9 @@
 let db = null;
-/** 插件启动时注入 db（index.ts 调用）。 */
-export function initTokenCost(d) {
+let retentionDays = 365;
+/** 插件启动时注入 db 与明细保留期（index.ts 调用；retentionDays 0 = 永久保留）。 */
+export function initTokenCost(d, retention) {
     db = d;
+    retentionDays = Math.max(0, Math.round(retention));
 }
 /** 插件卸载时清空 db 引用（index.ts 的 ctx.effect 清理里调用，防悬空引用）。 */
 export function resetTokenCost() {
@@ -11,7 +13,7 @@ export function resetTokenCost() {
 export function recordCostCall(provider, model, layer, inputChars, outputTokens, reasoningTokens) {
     if (!db)
         return;
-    db.insertCostCall(provider, model, layer, inputChars, outputTokens, reasoningTokens);
+    db.insertCostCall(provider, model, layer, inputChars, outputTokens, reasoningTokens, retentionDays);
 }
 /** 四窗口定义：range + 回看毫秒数（all 的 ms 恒 0）。 */
 const WINDOW_DEFS = [

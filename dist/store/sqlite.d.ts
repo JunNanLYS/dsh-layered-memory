@@ -188,10 +188,10 @@ export declare class MemoryDb {
     /** 批量 upsert L0 消息（元数据 + FTS；embeddings 与 records 等长，可省略）。 */
     upsertL0Batch(records: L0MessageRecord[], embeddings?: Array<Float32Array | undefined>): boolean;
     /**
-     * 记录一次蒸馏调用成本（明细表，365 天滚动清理）。
+     * 记录一次蒸馏调用成本（明细表，写入时按 retentionDays 滚动清理；0 = 永久保留）。
      * 失败/成功都记（token 照烧）；记账失败记 warn 但不阻断蒸馏（成本看板是增强能力）。
      */
-    insertCostCall(provider: string, model: string, layer: string, inputChars: number, outputTokens: number, reasoningTokens: number): void;
+    insertCostCall(provider: string, model: string, layer: string, inputChars: number, outputTokens: number, reasoningTokens: number, retentionDays: number): void;
     /**
      * 查询 token_cost 单窗口聚合（成本看板用；since 为毫秒起点，0 = 全量）。
      * 输入口径：inputChars 是字符（llm 流拿不到输入 token，沿用 llm-usage 的字符折算口径）。
