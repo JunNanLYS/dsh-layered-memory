@@ -49,6 +49,7 @@ import type { MemoryLogger } from './types.js';
 import { errDetail, withFileLog } from './util/filelog.js';
 import { resolveModelRoute, invalidateEffortCache } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
+import { initTokenCost, resetTokenCost } from './token-cost.js';
 
 export const name = 'dsh-memory-plugin';
 
@@ -133,6 +134,7 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
   // ── 检索引擎（memory.db）与向量服务 ──
   const embed = initial.svc;
   const db = new MemoryDb(path.join(dataDir, 'memory.db'), initial.dims, logger);
+  initTokenCost(db);
   // 插件卸载时关闭连接（WAL 落盘），注册一次即可
   ctx.effect(() => () => db.close());
 
@@ -377,6 +379,7 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
     return (async () => {
       await flushL0?.();
       db.close();
+      resetTokenCost();
     })();
   });
 }

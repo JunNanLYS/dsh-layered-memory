@@ -31,6 +31,7 @@ import type { EmbeddingManager } from './store/embedding-source.js';
 import type { StateStore } from './store/state.js';
 import type { MemoryFamily, MemoryLogger, MemoryMode } from './types.js';
 import { errDetail } from './util/filelog.js';
+import { snapshotTokenCost } from './token-cost.js';
 
 const require = createRequire(import.meta.url);
 export const PLUGIN_VERSION = (require('../package.json') as { version: string }).version;
@@ -274,6 +275,16 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
   switch (endpoint) {
     case 'dsh-memory/stats':
       return buildStats(cfg, stores, status);
+
+    case 'dsh-memory/token-cost': {
+      const p = (payload ?? {}) as { granularity?: string; rangeDays?: number };
+      const granularity: 'day' | 'week' | 'month' =
+        p.granularity === 'week' || p.granularity === 'month' ? p.granularity : 'day';
+      // rangeDays 须为 1~365 的正整数（存储上限 365 天），否则回退默认窗口
+      const rawDays = p.rangeDays;
+      const rangeDays = typeof rawDays === 'number' && Number.isInteger(rawDays) && rawDays > 0 && rawDays <= 365 ? rawDays : 0;
+      return snapshotTokenCost(granularity, rangeDays);
+    }
 
     case 'dsh-memory/session-mode-get': {
       if (!modes) throw new Error('档位存储未初始化');

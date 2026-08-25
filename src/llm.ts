@@ -9,6 +9,7 @@ import type { MemoryConfig } from './config.js';
 import type { MemoryLogger } from './types.js';
 import { errDetail } from './util/filelog.js';
 import { recordDistillCall, type DistillLayer } from './llm-usage.js';
+import { recordCostCall } from './token-cost.js';
 
 export interface LlmCallOptions {
   system: string;
@@ -274,12 +275,14 @@ export async function callLLM(ctx: Context, cfg: MemoryConfig, opts: LlmCallOpti
   } catch (err) {
     // 记账含失败路径（failures 计数；tokens 尽当时流内已到的 usage）
     if (opts.layer) recordDistillCall(opts.layer, user.length, outputTokens, reasoningTokens, true);
+    if (opts.layer) recordCostCall(provider, model, opts.layer, user.length, outputTokens, reasoningTokens);
     opts.logger?.warn(
       `[memory] LLM 调用失败 ${provider}/${model}（${((Date.now() - startedAt) / 1000).toFixed(1)}s）: ${errDetail(err)}`,
     );
     throw err;
   }
   if (opts.layer) recordDistillCall(opts.layer, user.length, outputTokens, reasoningTokens, false);
+  if (opts.layer) recordCostCall(provider, model, opts.layer, user.length, outputTokens, reasoningTokens);
   const out = (blockText || deltaText).trim();
   if (out.length === 0) {
     // 空输出是最难排查的失败：流正常结束但一个字没吐。必须记录 finish 原因、
