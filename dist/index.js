@@ -41,7 +41,7 @@ import { registerMemoryTools } from './tools/index.js';
 import { errDetail, withFileLog } from './util/filelog.js';
 import { resolveModelRoute, invalidateEffortCache } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
-import { initTokenCost } from './token-cost.js';
+import { initTokenCost, resetTokenCost } from './token-cost.js';
 export const name = 'dsh-memory-plugin';
 /** 硬依赖：蒸馏要用 llm，工具注册要用 tools，召回注入要用 systemPrompt。 */
 export const inject = ['llm', 'tools', 'systemPrompt'];
@@ -327,6 +327,7 @@ export async function apply(ctx, config) {
         return (async () => {
             await flushL0?.();
             db.close();
+            resetTokenCost();
         })();
     });
 }

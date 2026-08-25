@@ -2883,16 +2883,22 @@ window.__ModuleLoader__.load({
       var layerState = react.useState("");
       var layer = layerState[0];
       var setLayer = layerState[1];
+      var rangeState = react.useState(0);
+      var rangeDays = rangeState[0];
+      var setRangeDays = rangeState[1];
+      var rangeOpenState = react.useState(false);
+      var rangeOpen = rangeOpenState[0];
+      var setRangeOpen = rangeOpenState[1];
 
       var load = react.useCallback(function () {
         setError(null);
-        rpc("dsh-memory/token-cost", { granularity: granularity })
+        rpc("dsh-memory/token-cost", { granularity: granularity, rangeDays: rangeDays })
           .then(function (r) {
             if (r && r.ok) setData(r.value);
             else setError(r && r.error ? r.error.message : "RPC error");
           })
           .catch(function (e) { setError(String((e && e.message) || e)); });
-      }, [rpc, granularity]);
+      }, [rpc, granularity, rangeDays]);
 
       react.useEffect(function () {
         load();
@@ -2901,6 +2907,7 @@ window.__ModuleLoader__.load({
       }, [load]);
 
       var fmtInt = function (n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); };
+      var fmtModel = function (p, m) { return p ? p + "/" + m : m; };
       var fmtDate = function (ts) {
         try {
           var d = new Date(ts);
@@ -2976,9 +2983,27 @@ window.__ModuleLoader__.load({
           "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
           react.createElement(Segmented, { value: layer, options: LAYER_OPTS, onChange: setLayer }),
           react.createElement(Segmented, { value: granularity, options: GRAN_OPTS, onChange: setGranularity }),
+          react.createElement(NButton, { onClick: function () { setRangeOpen(!rangeOpen); } }, rangeDays > 0 ? "近 " + rangeDays + " 天" : "近N天"),
           react.createElement("div", { style: S.grow }),
           react.createElement(NButton, { onClick: load }, "刷新"),
         ),
+        rangeOpen
+          ? react.createElement(
+              "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
+              react.createElement("span", { style: S.muted }, "展示近 N 天（1~365 整数，清空=默认窗口）"),
+              react.createElement(NInput, {
+                value: rangeDays === 0 ? "" : String(rangeDays),
+                placeholder: "如 30",
+                style: { width: 90 },
+                onChange: function (e) {
+                  var v = String(e.target.value || "").trim();
+                  if (v === "") { setRangeDays(0); return; }
+                  var n = Number(v);
+                  if (Number.isInteger(n) && n > 0 && n <= 365) setRangeDays(n);
+                },
+              }),
+            )
+          : null,
         error
           ? react.createElement("div", { style: S.error }, "成本读取失败：" + error)
           : null,
@@ -2998,7 +3023,7 @@ window.__ModuleLoader__.load({
                 }),
               ),
             )
-          : react.createElement("p", { style: S.muted }, data ? "当前层级暂无趋势数据。" : "加载中…"),
+          : react.createElement("p", { style: S.muted }, data ? "暂无成本数据（触发一次蒸馏后这里会出现趋势）。" : "加载中…"),
         react.createElement("div", { style: S.panelLabel }, "层级成本（输出 token）"),
         react.createElement(
           "table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 } },
@@ -3097,9 +3122,10 @@ window.__ModuleLoader__.load({
               "div", null,
               react.createElement("div", { style: S.panelLabel }, "按模型（累计）"),
               byModel.map(function (m) {
+                var label = fmtModel(m.provider, m.model);
                 return react.createElement(
-                  "div", { key: "m-" + m.model, style: S.infoRow },
-                  react.createElement("span", { style: S.infoKey }, m.model),
+                  "div", { key: "m-" + label, style: S.infoRow },
+                  react.createElement("span", { style: S.infoKey }, label),
                   react.createElement("span", { style: S.infoVal }, m.calls + " 次 · 输出 " + fmtInt(m.outputTokens) + " · 思考 " + fmtInt(m.reasoningTokens)),
                 );
               }),

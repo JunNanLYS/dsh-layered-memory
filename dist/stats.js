@@ -152,7 +152,10 @@ async function handleEndpoint(endpoint, payload, deps) {
         case 'dsh-memory/token-cost': {
             const p = (payload ?? {});
             const granularity = p.granularity === 'week' || p.granularity === 'month' ? p.granularity : 'day';
-            return snapshotTokenCost(granularity);
+            // rangeDays 须为 1~365 的正整数（存储上限 365 天），否则回退默认窗口
+            const rawDays = p.rangeDays;
+            const rangeDays = typeof rawDays === 'number' && Number.isInteger(rawDays) && rawDays > 0 && rawDays <= 365 ? rawDays : 0;
+            return snapshotTokenCost(granularity, rangeDays);
         }
         case 'dsh-memory/session-mode-get': {
             if (!modes)

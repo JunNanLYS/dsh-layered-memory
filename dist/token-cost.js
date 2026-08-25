@@ -3,11 +3,15 @@ let db = null;
 export function initTokenCost(d) {
     db = d;
 }
-/** 记录一次蒸馏调用成本（callLLM 出口调用；model 由调用方传入）。 */
-export function recordCostCall(model, layer, inputChars, outputTokens, reasoningTokens) {
+/** 插件卸载时清空 db 引用（index.ts 的 ctx.effect 清理里调用，防悬空引用）。 */
+export function resetTokenCost() {
+    db = null;
+}
+/** 记录一次蒸馏调用成本（callLLM 出口调用；provider/model 由调用方传入）。 */
+export function recordCostCall(provider, model, layer, inputChars, outputTokens, reasoningTokens) {
     if (!db)
         return;
-    db.insertCostCall(model, layer, inputChars, outputTokens, reasoningTokens);
+    db.insertCostCall(provider, model, layer, inputChars, outputTokens, reasoningTokens);
 }
 /** 四窗口定义：range + 回看毫秒数（all 的 ms 恒 0）。 */
 const WINDOW_DEFS = [
@@ -33,6 +37,10 @@ function medianOf(sorted) {
     const mid = Math.floor(n / 2);
     return n % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
+/** provider/model 复合键（避免跨 provider 同名 model 在聚合里混淆）。 */
+function modelKey(provider, model) {
+    return provider + '/' + model;
+}
 /** 从某模型某粒度的 bucket 序列算均值/中位数（活跃桶口径：只除有调用的桶数）。 */
 function statOf(rows) {
     const active = rows.filter((r) => r.calls > 0);
@@ -46,23 +54,23 @@ function statOf(rows) {
         medianOutput: medianOf(active.map((r) => r.outputTokens).sort((a, b) => a - b)),
     };
 }
-/** 从 day/week/month 三组 bucket 行组装每个模型的统计指标。 */
+/** 从 day/week/month 三组 bucket 行组装每个模型的统计指标（provider/model 复合键）。 */
 function buildModelMetrics(dayRows, weekRows, monthRows) {
-    const models = new Set();
+    const keys = new Set();
     for (const r of dayRows)
-        models.add(r.model);
+        keys.add(modelKey(r.provider, r.model));
     for (const r of weekRows)
-        models.add(r.model);
+        keys.add(modelKey(r.provider, r.model));
     for (const r of monthRows)
-        models.add(r.model);
-    return Array.from(models)
+        keys.add(modelKey(r.provider, r.model));
+    return Array.from(keys)
         .sort()
-        .map((model) => {
-        const d = statOf(dayRows.filter((r) => r.model === model));
-        const w = statOf(weekRows.filter((r) => r.model === model));
-        const m = statOf(monthRows.filter((r) => r.model === model));
+        .map((key) => {
+        const d = statOf(dayRows.filter((r) => modelKey(r.provider, r.model) === key));
+        const w = statOf(weekRows.filter((r) => modelKey(r.provider, r.model) === key));
+        const m = statOf(monthRows.filter((r) => modelKey(r.provider, r.model) === key));
         return {
-            model,
+            model: key,
             dayCalls: d.avgCalls,
             weekCalls: w.avgCalls,
             monthCalls: m.avgCalls,
@@ -75,10 +83,9 @@ function buildModelMetrics(dayRows, weekRows, monthRows) {
         };
     });
 }
-/** 从某层级某粒度的 bucket 行生成连续趋势桶（空桶补 0）。 */
-function buildTrend(rows, granularity, now) {
+/** 从某层级某粒度的 bucket 行生成连续趋势桶（空桶补 0；count 为桶数，由调用方按展示范围算）。 */
+function buildTrend(rows, granularity, now, count) {
     const bucketMs = TREND_MS[granularity];
-    const count = TREND_COUNT[granularity];
     const offset = localOffsetMs();
     const cur = Math.floor((now + offset) / bucketMs);
     const buckets = [];
@@ -92,12 +99,13 @@ function buildTrend(rows, granularity, now) {
             continue;
         const tb = buckets[idx];
         tb.total += r.outputTokens;
-        tb.byModel[r.model] = (tb.byModel[r.model] ?? 0) + r.outputTokens;
+        const key = modelKey(r.provider, r.model);
+        tb.byModel[key] = (tb.byModel[key] ?? 0) + r.outputTokens;
     }
     return buckets;
 }
-/** 读成本看板快照（db 未注入/降级时返回全零结构，不抛错）。 */
-export function snapshotTokenCost(granularity) {
+/** 读成本看板快照（db 未注入/降级时返回全零结构，不抛错；rangeDays>0 = 趋势展示近 N 天）。 */
+export function snapshotTokenCost(granularity, rangeDays) {
     const now = Date.now();
     const emptyWindow = (range, ms) => ({
         range,
@@ -149,16 +157,19 @@ export function snapshotTokenCost(granularity) {
             };
         }),
     }));
-    // 每层级模型统计 + 趋势
+    // 每层级模型统计（全量历史口径）+ 趋势（按展示范围）
     const offset = localOffsetMs();
     const byLayerStats = [];
     const trendByLayer = { l1: [], l2: [], l3: [] };
+    // 趋势展示范围：rangeDays > 0 = 近 N 天（since + 桶数按 N 折算）；否则用默认窗口
+    const trendSince = rangeDays > 0 ? now - rangeDays * 24 * 3600_000 : 0;
+    const trendCount = rangeDays > 0 ? Math.max(1, Math.ceil((rangeDays * 24 * 3600_000) / TREND_MS[granularity])) : TREND_COUNT[granularity];
     for (const layer of LAYERS) {
         const dayRows = d.aggregateByBucket(TREND_MS.day, offset, 0, layer);
         const weekRows = d.aggregateByBucket(TREND_MS.week, offset, 0, layer);
         const monthRows = d.aggregateByBucket(TREND_MS.month, offset, 0, layer);
         byLayerStats.push({ layer, models: buildModelMetrics(dayRows, weekRows, monthRows) });
-        trendByLayer[layer] = buildTrend(d.aggregateByBucket(TREND_MS[granularity], offset, 0, layer), granularity, now);
+        trendByLayer[layer] = buildTrend(d.aggregateByBucket(TREND_MS[granularity], offset, trendSince, layer), granularity, now, trendCount);
     }
     return { windows, byModel, byLayer, byLayerStats, trend: { granularity, byLayer: trendByLayer } };
 }

@@ -11,8 +11,10 @@ import type { DistillLayer } from './llm-usage.js';
 import type { CostByModel, MemoryDb } from './store/sqlite.js';
 /** 插件启动时注入 db（index.ts 调用）。 */
 export declare function initTokenCost(d: MemoryDb): void;
-/** 记录一次蒸馏调用成本（callLLM 出口调用；model 由调用方传入）。 */
-export declare function recordCostCall(model: string, layer: DistillLayer, inputChars: number, outputTokens: number, reasoningTokens: number): void;
+/** 插件卸载时清空 db 引用（index.ts 的 ctx.effect 清理里调用，防悬空引用）。 */
+export declare function resetTokenCost(): void;
+/** 记录一次蒸馏调用成本（callLLM 出口调用；provider/model 由调用方传入）。 */
+export declare function recordCostCall(provider: string, model: string, layer: DistillLayer, inputChars: number, outputTokens: number, reasoningTokens: number): void;
 /** 成本看板单个时间窗口（day/week/month/all）。 */
 export interface CostWindow {
     range: 'day' | 'week' | 'month' | 'all';
@@ -27,7 +29,7 @@ export interface CostWindow {
 }
 /** 成本看板时间粒度（趋势图 + 统计口径共用）。 */
 export type Granularity = 'day' | 'week' | 'month';
-/** 每模型统计指标（层级表格行；均值按活跃桶口径，中位数按活跃桶序列）。 */
+/** 每模型统计指标（层级表格行；均值/中位数按 since=0 全量历史的活跃桶口径，非「最近窗口」）。 */
 export interface ModelMetrics {
     model: string;
     dayCalls: number;
@@ -84,5 +86,5 @@ export interface CostSnapshot {
     /** 趋势图数据。 */
     trend: TrendSnapshot;
 }
-/** 读成本看板快照（db 未注入/降级时返回全零结构，不抛错）。 */
-export declare function snapshotTokenCost(granularity: Granularity): CostSnapshot;
+/** 读成本看板快照（db 未注入/降级时返回全零结构，不抛错；rangeDays>0 = 趋势展示近 N 天）。 */
+export declare function snapshotTokenCost(granularity: Granularity, rangeDays: number): CostSnapshot;

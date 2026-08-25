@@ -53,6 +53,7 @@ export interface CostAggregate {
 
 /** 按 model 分组的成本行（成本看板用）。 */
 export interface CostByModel {
+  provider: string;
   model: string;
   calls: number;
   inputChars: number;
@@ -71,9 +72,10 @@ export interface CostByLayer {
   medianOutputTokens: number;
 }
 
-/** 按时间桶 + model 聚合的扁平行（趋势图与日均/周均/月均 + 中位数统计共用）。 */
+/** 按时间桶 + provider/model 聚合的扁平行（趋势图与日均/周均/月均 + 中位数统计共用）。 */
 export interface BucketRow {
   bucket: number;
+  provider: string;
   model: string;
   calls: number;
   outputTokens: number;
@@ -158,6 +160,9 @@ export class MemoryDb {
   private stmtL1FtsDelete!: StatementLike;
   private stmtL1FtsSearch!: StatementLike;
   private stmtL1FtsSearchFamily!: StatementLike;
+  /** token_cost 明细写入 / 滚动清理语句（构造期 prepare 缓存）。 */
+  private stmtInsertCost!: StatementLike;
+  private stmtDeleteCost!: StatementLike;
 
   private stmtUpsertL0!: StatementLike;
   private stmtGetL0!: StatementLike;
@@ -437,6 +442,7 @@ export class MemoryDb {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS token_cost (
         ts INTEGER NOT NULL,
+        provider TEXT NOT NULL,
         model TEXT NOT NULL,
         layer TEXT NOT NULL,
         input_chars INTEGER NOT NULL DEFAULT 0,
@@ -444,7 +450,15 @@ export class MemoryDb {
         reasoning_tokens INTEGER NOT NULL DEFAULT 0
       )
     `);
+    // 迁移：provider/model 复合键引入前的旧表补 provider 列（历史行回填 unknown）
+    if (this.tableExists('token_cost') && !this.hasColumn('token_cost', 'provider')) {
+      this.db.exec("ALTER TABLE token_cost ADD COLUMN provider TEXT NOT NULL DEFAULT 'unknown'");
+    }
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_token_cost_ts ON token_cost(ts)');
+    this.stmtInsertCost = this.db.prepare(
+      'INSERT INTO token_cost (ts, provider, model, layer, input_chars, output_tokens, reasoning_tokens) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    );
+    this.stmtDeleteCost = this.db.prepare('DELETE FROM token_cost WHERE ts < ?');
 
 
     // ── FTS5 全文索引（建表失败仅停用 FTS，不降级整个库） ──
@@ -1168,17 +1182,23 @@ export class MemoryDb {
 
   /**
    * 记录一次蒸馏调用成本（明细表，365 天滚动清理）。
-   * 失败/成功都记（token 照烧）；记账失败不阻断蒸馏（成本看板是增强能力）。
+   * 失败/成功都记（token 照烧）；记账失败记 warn 但不阻断蒸馏（成本看板是增强能力）。
    */
-  insertCostCall(model: string, layer: string, inputChars: number, outputTokens: number, reasoningTokens: number): void {
+  insertCostCall(provider: string, model: string, layer: string, inputChars: number, outputTokens: number, reasoningTokens: number): void {
     if (this.degraded) return;
     try {
-      this.db.prepare(
-        'INSERT INTO token_cost (ts, model, layer, input_chars, output_tokens, reasoning_tokens) VALUES (?, ?, ?, ?, ?, ?)',
-      ).run(Date.now(), model, layer, Math.max(0, Math.round(inputChars)), Math.max(0, Math.round(outputTokens)), Math.max(0, Math.round(reasoningTokens)));
-      this.db.prepare('DELETE FROM token_cost WHERE ts < ?').run(Date.now() - 365 * 24 * 3600_000);
-    } catch {
-      /* 记账失败不阻断蒸馏 */
+      this.stmtInsertCost.run(
+        Date.now(),
+        provider,
+        model,
+        layer,
+        Math.max(0, Math.round(inputChars)),
+        Math.max(0, Math.round(outputTokens)),
+        Math.max(0, Math.round(reasoningTokens)),
+      );
+      this.stmtDeleteCost.run(Date.now() - 365 * 24 * 3600_000);
+    } catch (err) {
+      this.logger?.warn(`${TAG} token_cost 记账失败: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -1212,11 +1232,11 @@ export class MemoryDb {
         .all(since) as Array<{ output_tokens: number }>;
       const byModel = this.db
         .prepare(
-          `SELECT model, COUNT(*) AS calls,
+          `SELECT provider, model, COUNT(*) AS calls,
                   COALESCE(SUM(input_chars), 0) AS inputChars,
                   COALESCE(SUM(output_tokens), 0) AS outputTokens,
                   COALESCE(SUM(reasoning_tokens), 0) AS reasoningTokens
-             FROM token_cost WHERE ts >= ? GROUP BY model ORDER BY outputTokens DESC`,
+             FROM token_cost WHERE ts >= ? GROUP BY provider, model ORDER BY outputTokens DESC`,
         )
         .all(since) as unknown as CostByModel[];
       return {
@@ -1292,7 +1312,7 @@ export class MemoryDb {
     if (this.degraded) return [];
     try {
       let sql =
-        `SELECT CAST((ts + ?) / ? AS INTEGER) AS bucket, model,
+        `SELECT CAST((ts + ?) / ? AS INTEGER) AS bucket, provider, model,
                 COUNT(*) AS calls,
                 COALESCE(SUM(output_tokens), 0) AS outputTokens,
                 COALESCE(SUM(reasoning_tokens), 0) AS reasoningTokens
@@ -1304,7 +1324,7 @@ export class MemoryDb {
         sql += ` AND layer = ?`;
         params.push(layer);
       }
-      sql += ` GROUP BY bucket, model ORDER BY bucket, model`;
+      sql += ` GROUP BY bucket, provider, model ORDER BY bucket, provider, model`;
       return this.db.prepare(sql).all(...params) as unknown as BucketRow[];
     } catch {
       return [];

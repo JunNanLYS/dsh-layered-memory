@@ -205,14 +205,14 @@ export async function callLLM(ctx, cfg, opts) {
         if (opts.layer)
             recordDistillCall(opts.layer, user.length, outputTokens, reasoningTokens, true);
         if (opts.layer)
-            recordCostCall(model, opts.layer, user.length, outputTokens, reasoningTokens);
+            recordCostCall(provider, model, opts.layer, user.length, outputTokens, reasoningTokens);
         opts.logger?.warn(`[memory] LLM 调用失败 ${provider}/${model}（${((Date.now() - startedAt) / 1000).toFixed(1)}s）: ${errDetail(err)}`);
         throw err;
     }
     if (opts.layer)
         recordDistillCall(opts.layer, user.length, outputTokens, reasoningTokens, false);
     if (opts.layer)
-        recordCostCall(model, opts.layer, user.length, outputTokens, reasoningTokens);
+        recordCostCall(provider, model, opts.layer, user.length, outputTokens, reasoningTokens);
     const out = (blockText || deltaText).trim();
     if (out.length === 0) {
         // 空输出是最难排查的失败：流正常结束但一个字没吐。必须记录 finish 原因、

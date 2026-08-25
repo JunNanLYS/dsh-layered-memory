@@ -49,7 +49,7 @@ import type { MemoryLogger } from './types.js';
 import { errDetail, withFileLog } from './util/filelog.js';
 import { resolveModelRoute, invalidateEffortCache } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
-import { initTokenCost } from './token-cost.js';
+import { initTokenCost, resetTokenCost } from './token-cost.js';
 
 export const name = 'dsh-memory-plugin';
 
@@ -379,6 +379,7 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
     return (async () => {
       await flushL0?.();
       db.close();
+      resetTokenCost();
     })();
   });
 }
