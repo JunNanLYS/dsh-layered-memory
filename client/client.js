@@ -877,6 +877,15 @@ window.__ModuleLoader__.load({
         "  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #61666b);",
         "  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #6e7781);",
         "  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #d0403f);",
+        // 图表系列（成本折线图）：8 档固定色，PALETTE 只引用 var()；1 档锚品牌蓝，8 档中性"其他"
+        "  --dsh-mem-chart-1: #4d6bfe;",
+        "  --dsh-mem-chart-2: #0e9c8f;",
+        "  --dsh-mem-chart-3: #1f9d55;",
+        "  --dsh-mem-chart-4: #a8821c;",
+        "  --dsh-mem-chart-5: #d97a0d;",
+        "  --dsh-mem-chart-6: #d64570;",
+        "  --dsh-mem-chart-7: #7c5cff;",
+        "  --dsh-mem-chart-8: #61666b;",
         // 档位色 = 灰 → 品牌蓝 的渐变阶（chat/work 过渡蓝 / auto 品牌蓝）；
         // 文字对比度按 pill 真实底色（流光内底 = bg-card 97% + 档位色 3%）复算 AA 达标
         "  --dsh-mem-mode-chat: #5a69b0;",
@@ -908,6 +917,14 @@ window.__ModuleLoader__.load({
         "  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #cfd3d6);",
         "  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #8892a6);",
         "  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #f4707b);",
+        "  --dsh-mem-chart-1: #6e85ff;",
+        "  --dsh-mem-chart-2: #35c4b5;",
+        "  --dsh-mem-chart-3: #52c98d;",
+        "  --dsh-mem-chart-4: #d9b23e;",
+        "  --dsh-mem-chart-5: #f59e5b;",
+        "  --dsh-mem-chart-6: #f47ba2;",
+        "  --dsh-mem-chart-7: #a78bfa;",
+        "  --dsh-mem-chart-8: #8892a6;",
         "  --dsh-mem-mode-chat: #97a4ff;",
         "  --dsh-mem-mode-work: #8295ff;",
         "  --dsh-mem-mode-auto: #7b90ff;",
@@ -2894,7 +2911,7 @@ window.__ModuleLoader__.load({
       var RANGE_LABELS = { day: "今日", week: "本周", month: "本月", all: "累计" };
       var LAYER_OPTS = [{ key: "", label: "全部" }, { key: "l1", label: "L1" }, { key: "l2", label: "L2" }, { key: "l3", label: "L3" }];
       var GRAN_OPTS = [{ key: "day", label: "日" }, { key: "week", label: "周" }, { key: "month", label: "月" }];
-      var PALETTE = ["#4f8cff", "#ff7a45", "#34c98e", "#b26bff", "#ffc53d", "#ff5c8a", "#22c1c3", "#8c97a8"];
+      var PALETTE = ["var(--dsh-mem-chart-1)", "var(--dsh-mem-chart-2)", "var(--dsh-mem-chart-3)", "var(--dsh-mem-chart-4)", "var(--dsh-mem-chart-5)", "var(--dsh-mem-chart-6)", "var(--dsh-mem-chart-7)", "var(--dsh-mem-chart-8)"];
 
       var windows = (data && data.windows) || [];
       var byModel = (data && data.byModel) || [];
@@ -2975,7 +2992,7 @@ window.__ModuleLoader__.load({
                 models.map(function (m, mi) {
                   return react.createElement(
                     "span", { key: "lg" + m, style: { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--dsh-mem-text-2)" } },
-                    react.createElement("span", { style: { width: 10, height: 10, borderRadius: 2, background: PALETTE[mi % PALETTE.length], display: "inline-block" } }),
+                    react.createElement("span", { style: { width: 10, height: 10, borderRadius: 4, background: PALETTE[mi % PALETTE.length], display: "inline-block" } }),
                     m,
                   );
                 }),
