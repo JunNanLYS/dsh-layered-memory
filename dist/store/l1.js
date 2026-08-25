@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { familyForType } from '../types.js';
 import { EmbedHelper, NoopEmbeddingService } from './embedding.js';
 import { appendJsonl, dayKey, ensureDir, readJsonl } from './io.js';
-import { RRF_K, rrfMerge } from './search-utils.js';
+import { applyDecayWeight, RRF_K, rrfMerge } from './search-utils.js';
 import { isZeroVector } from './sqlite.js';
 /** 官方过度召回倍数：候选池 = limit × 3（官方 tool 路径同款）。 */
 const CANDIDATE_MULTIPLIER = 3;
@@ -23,7 +23,11 @@ export class L1Store {
     helper;
     embedSvc;
     logger;
-    constructor(dataDir, db, embed = new NoopEmbeddingService(), strategy = 'hybrid', logger) {
+    /** 时效衰减半衰期（天；0=关）。 */
+    decayHalfLifeDays;
+    constructor(dataDir, db, embed = new NoopEmbeddingService(), strategy = 'hybrid', logger, 
+    /** 时效衰减半衰期（天；0=关）。缺省 30 与 config 默认一致。 */
+    decayHalfLifeDays) {
         this.db = db;
         this.strategy = strategy;
         this.recordsDir = path.join(dataDir, 'records');
@@ -31,6 +35,7 @@ export class L1Store {
         this.embedSvc = embed;
         this.helper = new EmbedHelper(embed, logger);
         this.logger = logger;
+        this.decayHalfLifeDays = decayHalfLifeDays ?? 30;
     }
     async init() {
         await ensureDir(this.recordsDir);
@@ -142,17 +147,17 @@ export class L1Store {
             return [];
         if (strategy === 'keyword') {
             const fts = this.db.searchL1Fts(query, candidateK, opts?.family);
-            return this.postProcess(applyFtsThreshold(fts, threshold, limit), opts?.type, limit);
+            return this.postProcess(this.applyDecay(applyFtsThreshold(fts, threshold, limit)), opts?.type, limit);
         }
         if (strategy === 'embedding') {
             const vec = await this.helper.query(query, opts?.embeddingTimeoutMs);
             if (!vec) {
                 // embedding 调用失败：降级 FTS，不阻断
                 const fts = this.db.searchL1Fts(query, candidateK, opts?.family);
-                return this.postProcess(applyFtsThreshold(fts, threshold, limit), opts?.type, limit);
+                return this.postProcess(this.applyDecay(applyFtsThreshold(fts, threshold, limit)), opts?.type, limit);
             }
             const vecHits = this.db.searchL1Vector(vec, candidateK, opts?.family);
-            return this.postProcess(filterScore(vecHits, threshold), opts?.type, limit);
+            return this.postProcess(this.applyDecay(filterScore(vecHits, threshold)), opts?.type, limit);
         }
         // hybrid（官方语义）：双路并行 → 完整列表 RRF 融合（融合前不过滤阈值）
         // → 融合分归一化：rank1 双列表命中 = 1.0，单列表命中 ≤ 0.5，保持 0~1 语义
@@ -162,7 +167,22 @@ export class L1Store {
         ]);
         const vecList = vecRaw ? this.db.searchL1Vector(vecRaw, candidateK, opts?.family) : [];
         const merged = rrfMerge([ftsList, vecList], (h) => h.id);
-        return this.postProcess(merged.map(({ rrfScore, ...h }) => ({ ...h, score: normalizeRrf(rrfScore) })), opts?.type, limit);
+        return this.postProcess(this.applyDecay(merged.map(({ rrfScore, ...h }) => ({ ...h, score: normalizeRrf(rrfScore) }))), opts?.type, limit);
+    }
+    /**
+     * 时效衰减加权（#29）：三路共用的读路径后处理——阈值过滤之后、截断之前
+     * （才能轮转名额，而不只是重排已截断的集合）。updated_at 经主表批量点查
+     * 回填（FTS 表无该列；候选池 ≤ limit×3 条主键查询，微秒级）。关闭时零开销。
+     */
+    applyDecay(hits) {
+        if (!(this.decayHalfLifeDays > 0) || hits.length === 0)
+            return hits;
+        const updatedAtById = new Map();
+        for (const r of this.db.getL1ByIds(hits.map((h) => h.id))) {
+            if (Number.isFinite(r.updatedAt))
+                updatedAtById.set(r.id, r.updatedAt);
+        }
+        return applyDecayWeight(hits, this.decayHalfLifeDays, (h) => updatedAtById.get(h.id));
     }
     /** 浏览列表（UI 用）：无关键词时按更新时间倒序分页。 */
     list(opts) {

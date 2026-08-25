@@ -1,4 +1,5 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
+import { RecallDedupeStore } from '../store/recall-dedupe.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_EMBED_CAP_MS } from '../util/recall-budget.js';
 import { errDetail } from '../util/filelog.js';
 import { blocksToText } from '../util/text.js';
@@ -37,9 +38,20 @@ const MEMORY_TOOLS_GUIDE = `<memory-tools-guide>
 </memory-tools-guide>`;
 /** 新建零值统计（首次出现的会话）。 */
 export function emptyRecallStats(now = Date.now()) {
-    return { injectedTurns: 0, hitTurns: 0, totalHits: 0, timeouts: 0, lastHits: 0, lastDurationMs: 0, updatedAt: now };
+    return {
+        injectedTurns: 0,
+        hitTurns: 0,
+        totalHits: 0,
+        timeouts: 0,
+        suppressedRecalls: 0,
+        lastHits: 0,
+        lastDurationMs: 0,
+        updatedAt: now,
+    };
 }
-export function registerRecall(ctx, cfg, stores, logger, live, modes) {
+export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
+    /** 召回去重存储（同会话已注入的记忆不再重复注入；写穿持久化，重启不丢）。 */
+    const dedupe = new RecallDedupeStore(dataDir, logger);
     /** 每 agent 召回统计（工具指南门控读 lastHits；悬浮卡信息区读全量计数）。 */
     const recallStats = new Map();
     const statFor = (id) => {
@@ -77,9 +89,17 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
     const invalidateProfile = () => {
         void refreshProfile();
     };
-    // agent 销毁时清掉召回统计槽
+    // agent 销毁时清掉召回统计槽（去重记录不随 agent 清——持久化语义：会话恢复后继续压制）
     ctx.on('agent/disposed', (payload) => {
         recallStats.delete(payload.agent.id);
+    });
+    // 上下文压缩/清空 → 已注入内容从模型上下文丢失，重置该会话的去重压制
+    // （resume/startup 不重置：历史仍在，已注入的记忆模型还持有）。
+    ctx.on('agent/session-start', (payload) => {
+        if (payload.source === 'compact' || payload.source === 'clear') {
+            dedupe.reset(payload.agent.id);
+            logger.info(`[memory] 召回去重重置（agent=${payload.agent.id}，source=${payload.source}）`);
+        }
     });
     // ── 1. pre-step 消息侧注入：记忆先行于每一条新的用户输入（ADR-0001） ──
     // prepend 注册 + 先 next() 再改写：不劫持其他监听器（dsh-time-context 官方范式）。
@@ -112,7 +132,7 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
                 const hits = await raceRecallTimeout(stores.l1.search(query, cfg.recall.maxResults, {
                     scoreThreshold: cfg.recall.scoreThreshold,
                     family: mode === 'auto' ? undefined : mode,
-                    // 远程嵌入 fetch 内层钳制：给 FTS 降级留出总预算内的时间（本地推理不钳）
+                    // 嵌入内层钳制：给 FTS 降级留出总预算内的时间（远程限 HTTP fetch；本地经 worker 代理 race 放弃）
                     embeddingTimeoutMs: RECALL_EMBED_CAP_MS,
                 }), cfg.recall.timeoutMs);
                 st.updatedAt = Date.now();
@@ -122,16 +142,28 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes) {
                     return decision;
                 }
                 st.lastDurationMs = Date.now() - searchStart;
-                st.lastHits = hits.length;
-                if (hits.length > 0) {
-                    st.hitTurns++;
-                    st.totalHits += hits.length;
+                // 召回去重：同会话已注入过的记录不再重复注入（模型上下文已持有，省 token）。
+                // 纯过滤——剩几条注几条，全量压制（0 条新鲜命中）是正确状态而非未命中。
+                const seen = dedupe.seen(payload.agent.id);
+                const fresh = hits.filter((h) => !seen.has(h.id));
+                const suppressed = hits.length - fresh.length;
+                st.suppressedRecalls += suppressed;
+                if (suppressed > 0) {
+                    logger.debug?.(`[memory] 召回去重：压制 ${suppressed} 条已注入记忆（agent=${payload.agent.id}，余 ${fresh.length} 条新鲜命中）`);
                 }
-                if (hits.length === 0)
+                if (hits.length > 0) {
+                    // 全量压制轮也计入命中：相关记忆已在模型上下文里，本质是命中
+                    st.hitTurns++;
+                    st.totalHits += fresh.length;
+                }
+                if (fresh.length === 0)
                     return decision;
-                const lines = applyRecallBudget(hits.map((h) => `- [${h.scene_name ? `${h.type}|${h.scene_name}` : h.type}] ${h.content}`), { maxCharsPerMemory: cfg.recall.maxCharsPerMemory, maxTotalRecallChars: cfg.recall.maxTotalRecallChars });
+                const lines = applyRecallBudget(fresh.map((h) => `- [${h.scene_name ? `${h.type}|${h.scene_name}` : h.type}] ${h.content}`), { maxCharsPerMemory: cfg.recall.maxCharsPerMemory, maxTotalRecallChars: cfg.recall.maxTotalRecallChars });
                 if (lines.length === 0)
                     return decision;
+                // 预算截断只丢尾部（前缀保留）：实际注入 = fresh 的前 lines.length 条——只标记模型真实看到的
+                dedupe.mark(payload.agent.id, fresh.slice(0, lines.length).map((h) => h.id));
+                st.lastHits = lines.length;
                 const text = [
                     '<relevant-memories>',
                     '以下是当前对话召回的相关记忆，不代表当前任务进程，仅作为参考：',

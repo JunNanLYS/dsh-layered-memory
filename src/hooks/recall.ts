@@ -22,6 +22,7 @@ import type { MemoryConfig } from '../config.js';
 import type { LiveSettingsHandle } from '../settings.js';
 import type { L1Store } from '../store/l1.js';
 import type { PersonaStore } from '../store/persona.js';
+import { RecallDedupeStore } from '../store/recall-dedupe.js';
 import type { SceneStore } from '../store/scenes.js';
 import type { SessionModeStore } from '../store/session-modes.js';
 import type { L1Hit, MemoryLogger } from '../types.js';
@@ -71,17 +72,21 @@ const MEMORY_TOOLS_GUIDE = `<memory-tools-guide>
 
 /** 单会话召回统计（悬浮卡信息区数据源；每轮 O(1) 记账，agent/disposed 清理）。
  *  口径声明：这是"注入统计"而非 bench 的离线 recall@k——运行时没有 ground truth，
- *  命中率 = hitTurns / injectedTurns（发生过检索的轮次中命中 ≥1 条的占比）。 */
+ *  命中率 = hitTurns / injectedTurns。去重语义（0.8.6）：全量压制轮计入 hitTurns
+ *  （相关记忆已在模型上下文里，本质是命中而非未命中），injectedTurns 仍计全部
+ *  发生过检索的轮次（保住分母语义与悬浮卡口径连续性）。 */
 export interface RecallSessionStats {
-  /** 发生过召回检索的轮次数（含零命中与超时）。 */
+  /** 发生过召回检索的轮次数（含零命中、全量压制与超时）。 */
   injectedTurns: number;
-  /** 命中（≥1 条）轮次数。 */
+  /** 命中（≥1 条实际注入，或有命中但被去重全量压制）轮次数。 */
   hitTurns: number;
-  /** 累计命中条数（预算截断前）。 */
+  /** 累计注入条数（去重过滤后、预算截断前）。 */
   totalHits: number;
   /** 总预算超时跳过次数。 */
   timeouts: number;
-  /** 最近一轮命中条数（0 = 零命中/超时；工具指南门控沿用此信号）。 */
+  /** 累计被去重压制的命中条数（同会话已注入过，不重复注入）。 */
+  suppressedRecalls: number;
+  /** 最近一轮实际注入条数（0 = 零命中/超时/全量压制；工具指南门控沿用此信号）。 */
   lastHits: number;
   /** 最近一轮检索耗时 ms。 */
   lastDurationMs: number;
@@ -91,7 +96,16 @@ export interface RecallSessionStats {
 
 /** 新建零值统计（首次出现的会话）。 */
 export function emptyRecallStats(now = Date.now()): RecallSessionStats {
-  return { injectedTurns: 0, hitTurns: 0, totalHits: 0, timeouts: 0, lastHits: 0, lastDurationMs: 0, updatedAt: now };
+  return {
+    injectedTurns: 0,
+    hitTurns: 0,
+    totalHits: 0,
+    timeouts: 0,
+    suppressedRecalls: 0,
+    lastHits: 0,
+    lastDurationMs: 0,
+    updatedAt: now,
+  };
 }
 
 export interface RecallHooks {
@@ -108,7 +122,10 @@ export function registerRecall(
   logger: MemoryLogger,
   live: LiveSettingsHandle,
   modes: SessionModeStore,
+  dataDir: string,
 ): RecallHooks {
+  /** 召回去重存储（同会话已注入的记忆不再重复注入；写穿持久化，重启不丢）。 */
+  const dedupe = new RecallDedupeStore(dataDir, logger);
   /** 每 agent 召回统计（工具指南门控读 lastHits；悬浮卡信息区读全量计数）。 */
   const recallStats = new Map<string, RecallSessionStats>();
   const statFor = (id: string): RecallSessionStats => {
@@ -149,9 +166,18 @@ export function registerRecall(
     void refreshProfile();
   };
 
-  // agent 销毁时清掉召回统计槽
+  // agent 销毁时清掉召回统计槽（去重记录不随 agent 清——持久化语义：会话恢复后继续压制）
   ctx.on('agent/disposed', (payload) => {
     recallStats.delete(payload.agent.id);
+  });
+
+  // 上下文压缩/清空 → 已注入内容从模型上下文丢失，重置该会话的去重压制
+  // （resume/startup 不重置：历史仍在，已注入的记忆模型还持有）。
+  ctx.on('agent/session-start', (payload) => {
+    if (payload.source === 'compact' || payload.source === 'clear') {
+      dedupe.reset(payload.agent.id);
+      logger.info(`[memory] 召回去重重置（agent=${payload.agent.id}，source=${payload.source}）`);
+    }
   });
 
   // ── 1. pre-step 消息侧注入：记忆先行于每一条新的用户输入（ADR-0001） ──
@@ -187,7 +213,7 @@ export function registerRecall(
             stores.l1.search(query, cfg.recall.maxResults, {
               scoreThreshold: cfg.recall.scoreThreshold,
               family: mode === 'auto' ? undefined : mode,
-              // 远程嵌入 fetch 内层钳制：给 FTS 降级留出总预算内的时间（本地推理不钳）
+              // 嵌入内层钳制：给 FTS 降级留出总预算内的时间（远程限 HTTP fetch；本地经 worker 代理 race 放弃）
               embeddingTimeoutMs: RECALL_EMBED_CAP_MS,
             }),
             cfg.recall.timeoutMs,
@@ -199,17 +225,31 @@ export function registerRecall(
             return decision;
           }
           st.lastDurationMs = Date.now() - searchStart;
-          st.lastHits = hits.length;
-          if (hits.length > 0) {
-            st.hitTurns++;
-            st.totalHits += hits.length;
+          // 召回去重：同会话已注入过的记录不再重复注入（模型上下文已持有，省 token）。
+          // 纯过滤——剩几条注几条，全量压制（0 条新鲜命中）是正确状态而非未命中。
+          const seen = dedupe.seen(payload.agent.id);
+          const fresh = hits.filter((h) => !seen.has(h.id));
+          const suppressed = hits.length - fresh.length;
+          st.suppressedRecalls += suppressed;
+          if (suppressed > 0) {
+            logger.debug?.(
+              `[memory] 召回去重：压制 ${suppressed} 条已注入记忆（agent=${payload.agent.id}，余 ${fresh.length} 条新鲜命中）`,
+            );
           }
-          if (hits.length === 0) return decision;
+          if (hits.length > 0) {
+            // 全量压制轮也计入命中：相关记忆已在模型上下文里，本质是命中
+            st.hitTurns++;
+            st.totalHits += fresh.length;
+          }
+          if (fresh.length === 0) return decision;
           const lines = applyRecallBudget(
-            hits.map((h) => `- [${h.scene_name ? `${h.type}|${h.scene_name}` : h.type}] ${h.content}`),
+            fresh.map((h) => `- [${h.scene_name ? `${h.type}|${h.scene_name}` : h.type}] ${h.content}`),
             { maxCharsPerMemory: cfg.recall.maxCharsPerMemory, maxTotalRecallChars: cfg.recall.maxTotalRecallChars },
           );
           if (lines.length === 0) return decision;
+          // 预算截断只丢尾部（前缀保留）：实际注入 = fresh 的前 lines.length 条——只标记模型真实看到的
+          dedupe.mark(payload.agent.id, fresh.slice(0, lines.length).map((h) => h.id));
+          st.lastHits = lines.length;
           const text = [
             '<relevant-memories>',
             '以下是当前对话召回的相关记忆，不代表当前任务进程，仅作为参考：',

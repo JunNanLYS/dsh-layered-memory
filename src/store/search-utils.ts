@@ -12,6 +12,40 @@ import { tokenize } from '../util/text.js';
 /** 标准 RRF 常数（原论文值）；k 越大越偏向低排名项（分布更平滑）。 */
 export const RRF_K = 60;
 
+/** 衰减地板（#29 时效加权的安全边界）：老记忆最多损失一半排序分，永不沉底。
+ *  内部常量不进配置——它是安全机制不是调参旋钮。 */
+export const DECAY_FLOOR = 0.5;
+
+/**
+ * 时效衰减加权（#29，读路径专用）：score × max(FLOOR, 0.5^(Δ天/半衰期)) 后重排序。
+ *
+ * - Δ 按 updated_at（内容版本时间）起算，缺失/非法按最老 → 地板接管（零特判分支）；
+ * - 乘法保相关性主导：只在相关度相近的候选之间轮转名次（名额新鲜度），不淘汰不
+ *   硬过滤——score≈0 的新记忆乘什么都是 ≈0；hit 的原 score 字段不被改写（排序用
+ *   加权分，展示仍反映检索相关度）；
+ * - halfLifeDays ≤ 0 直接原样返回（开关关闭）；
+ * - 仅用于召回/工具检索；searchCandidates（去重候选）不得应用——写路径找同语义
+ *   旧记录要无视新旧，衰减会让去重漏检（同事实双记录）。
+ */
+export function applyDecayWeight<T extends { score: number }>(
+  hits: T[],
+  halfLifeDays: number,
+  updatedAtOf: (hit: T) => number | undefined,
+  now: number = Date.now(),
+): T[] {
+  if (!(halfLifeDays > 0) || hits.length === 0) return hits;
+  const weight = (h: T): number => {
+    const t = updatedAtOf(h);
+    if (t == null || !Number.isFinite(t)) return DECAY_FLOOR;
+    const days = Math.max(0, (now - t) / 86_400_000);
+    return Math.max(DECAY_FLOOR, 0.5 ** (days / halfLifeDays));
+  };
+  return hits
+    .map((h) => ({ h, weighted: h.score * weight(h) }))
+    .sort((a, b) => b.weighted - a.weighted)
+    .map((x) => x.h);
+}
+
 /**
  * RRF 融合多个已排序列表：每项得分 = 各列表 1/(k + rank + 1) 之和。
  * 出现在多个列表的项得分累加，按得分降序返回（附 rrfScore）。

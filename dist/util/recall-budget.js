@@ -80,6 +80,6 @@ export async function raceRecallTimeout(promise, timeoutMs) {
             clearTimeout(timer);
     }
 }
-/** 召回路径远程嵌入 fetch 的内层钳制（固定值）：给 FTS 降级留出总预算内的时间。
- *  仅作用于远程 HTTP 调用；本地推理不受钳制（进程内 CPU 推理无挂起风险）。 */
+/** 召回路径嵌入调用的内层钳制（固定值）：给 FTS 降级留出总预算内的时间。
+ *  远程作用于 HTTP fetch；本地作用于 worker 代理的等待（race 放弃、迟到回复丢弃）。 */
 export const RECALL_EMBED_CAP_MS = 3_000;

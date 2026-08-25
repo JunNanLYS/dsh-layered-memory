@@ -74,7 +74,7 @@ npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution no
        alt="dsh-layered-memory 运行时数据流：左侧 User 与 Assistant 的会话事件流入插件（L0 捕获、L1–L3 蒸馏、检索召回、记忆工具），插件经 agent/pre-step 把相关记忆注入右侧 DSH 核心；蒸馏复用核心的 ctx.llm，数据双写 ~/.dsh/memory/">
 </p>
 
-插件挂在 dsh 原生事件上（`session/event` 捕获、`agent/pre-step` 注入），蒸馏调用复用宿主 `ctx.llm`。召回以**消息侧注入**呈现：相关记忆作为一条合成消息排在用户新消息之前，会话流里显示为**"上下文注入 · memory"**行（点开看命中内容）——用户能直接看到"记忆生效了"；注入内容有长度预算与时间预算，超限截断/超时跳过，绝不拖慢对话。
+插件挂在 dsh 原生事件上（`session/event` 捕获、`agent/pre-step` 注入），蒸馏调用复用宿主 `ctx.llm`。召回以**消息侧注入**呈现：相关记忆作为一条合成消息排在用户新消息之前，会话流里显示为**"上下文注入 · memory"**行（点开看命中内容）——用户能直接看到"记忆生效了"；注入内容有长度预算与时间预算，超限截断/超时跳过，绝不拖慢对话。**同会话去重**：已注入过的记忆不再重复注入（模型上下文里已经有了，追问同类问题时省 token）；上下文被 `/compact` 压缩或清空时自动重置，记忆可重新注入；被更新的记忆（内容变化换新 id）不受旧压制。**时效加权**：召回排序按 `相关度 × max(0.5, 0.5^(距上次更新天数/30))` 软加权——相关度相近的候选之间新鲜记忆优先（名额自然轮转），相关度足够高的老记忆照常召回（地板保证最多损失一半排序分，长期事实不沉底）；`recall.decayHalfLifeDays` 可调，0=关闭。
 
 **记忆工具(3):**
 - memory_search
@@ -206,7 +206,8 @@ ONNX 量化 **CPU 推理**——无需 API Key，数据不出本机）。本地�
   绕开镜像 CDN 偶发的坏缓存对象），校验失配从零重下、网络错误保留断点续传；
   落盘数据目录 `models/<id>/`，不用了随时在设置页删除；
 - **按需运行时**：首次切换本地档才安装推理运行时（transformers.js，约 100~200MB，
-  装进数据目录 `runtime/`——不进插件依赖树，不碰插件安装目录）；
+  装进数据目录 `runtime/`——不进插件依赖树，不碰插件安装目录）；模型加载与推理在
+  **独立 worker 线程**执行，不冻结宿主事件循环（嵌入计算期间对话与页面交互照常）；
 - **活切换**：一键换源——自动后台全量重嵌（进度可见、可取消，期间检索自动降级
   关键词，不影响对话；维度变化时向量表按新维度重建）；切换失败保持旧源，重启仍按原源运行；
 - **生效规则 = 部署上限 AND 运行时选择**：`embedding.allowLocalModels=false` 可整体
@@ -256,6 +257,7 @@ ONNX 量化 **CPU 推理**——无需 API Key，数据不出本机）。本地�
 | `recall.includeSceneNav` | `true` | 系统提示注入场景导航（`<scene-navigation>`，稳定区） |
 | `recall.strategy` | `hybrid` | 检索策略：`keyword` / `embedding` / `hybrid` |
 | `recall.scoreThreshold` | `0.3` | 召回分数阈值（低于不注入；仅 keyword/embedding 策略生效，hybrid 融合前不过滤；工具路径不过滤） |
+| `recall.decayHalfLifeDays` | `30` | 召回时效衰减半衰期（天，0=关）：排序按 `相关度 × max(0.5, 0.5^(距更新天数/半衰期))` 软加权——相关度相近的候选间新鲜记忆优先（名额轮转），老记忆最多损失一半排序分（地板兜底，长期事实不沉底） |
 | `embedding.enabled` | `false` | 向量检索开关；关闭即纯 FTS 运行 |
 | `embedding.baseUrl` | 空 | OpenAI 兼容 /embeddings 地址（如 `https://api.siliconflow.cn/v1`） |
 | `embedding.apiKey` | 空 | API Key |

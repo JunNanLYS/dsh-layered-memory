@@ -156,7 +156,7 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
 
   const stores = {
     l0: new L0Store(dataDir, db, embed, logger),
-    l1: new L1Store(dataDir, db, embed, config.recall.strategy, logger),
+    l1: new L1Store(dataDir, db, embed, config.recall.strategy, logger, config.recall.decayHalfLifeDays),
     // L2/L3 分族隔离：各自目录与文件（scenes/chat|work、persona-chat|work.md）
     scenes: {
       chat: new SceneStore(dataDir, 'chat', logger),
@@ -328,7 +328,7 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
   if (storageOk) {
     flushL0 = registerCapture(ctx, config, runner, stores.l0, logger, live, modes);
   }
-  const recall = registerRecall(ctx, config, stores, logger, live, modes);
+  const recall = registerRecall(ctx, config, stores, logger, live, modes, dataDir);
   runner.setAfterRun(recall.invalidateProfile);
   registerMemoryTools(ctx, config, stores, logger, modes);
   registerMemoryRpc(

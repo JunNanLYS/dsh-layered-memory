@@ -90,7 +90,16 @@ synthetic message placed right before the user's new message, rendered as a
 **"Context injection · memory"** row in the chat flow (expand to see the hits) — so you
 can see "memory at work" directly. Injected content is bounded by length and
 time budgets — oversized lines are truncated (pointing the model at the memory tools for
-the full text) and a timed-out recall silently skips that turn, never slowing the chat. It
+the full text) and a timed-out recall silently skips that turn, never slowing the chat.
+**Per-session dedupe**: a memory already injected in this session is not injected again
+(the model's context already holds it — follow-up questions on the same topic save
+tokens); the record resets when the context is compacted or cleared, so memories can
+flow back in, and an updated memory (new id after a content change) is never held back
+by the old suppression. **Freshness weighting**: recall ranking applies a soft weight
+`relevance × max(0.5, 0.5^(days since last update / 30))` — among candidates of similar
+relevance the fresh one wins (slots rotate naturally), while a strongly relevant old
+memory still recalls fine (the floor caps its loss at half a ranking score, so
+long-lived facts never sink); tune via `recall.decayHalfLifeDays`, `0` disables. It
 also registers three model-callable memory tools: `memory_search` /
 `conversation_search` / `memory_read_scene`.
 
@@ -243,6 +252,7 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `recall.includeSceneNav` | `true` | Inject scene navigation into the system prompt (`<scene-navigation>`, stable zone) |
 | `recall.strategy` | `hybrid` | Retrieval strategy: `keyword` / `embedding` / `hybrid` |
 | `recall.scoreThreshold` | `0.3` | Recall score threshold (below is not injected; applies to keyword/embedding only, not pre-fusion hybrid; tool path unfiltered) |
+| `recall.decayHalfLifeDays` | `30` | Freshness-decay half-life for recall ranking (days, 0=off): ranking applies `relevance × max(0.5, 0.5^(days since last update / half-life))` — among similarly relevant candidates the fresh one wins (slots rotate), and an old memory loses at most half its ranking score (floor keeps long-lived facts afloat) |
 | `embedding.enabled` | `false` | Vector retrieval switch; off = pure FTS |
 | `embedding.baseUrl` | empty | OpenAI-compatible /embeddings endpoint (e.g. `https://api.siliconflow.cn/v1`) |
 | `embedding.apiKey` | empty | API key |
@@ -299,7 +309,10 @@ with per-file sha256; arbitrary repos cannot be downloaded).
   under `models/<id>/` in the data directory, deletable from the settings page at any time;
 - **On-demand runtime**: the inference runtime (transformers.js, ~100–200MB) is
   installed only on first switch to the local tier, into `runtime/` in the data
-  directory — never in the plugin's dependency tree or install directory;
+  directory — never in the plugin's dependency tree or install directory; model
+  loading and inference run on a **dedicated worker thread**, so the host event
+  loop is never frozen (conversations and page interactions stay responsive while
+  text is being embedded);
 - **Live switching**: one click to swap sources — everything is re-embedded in the
   background (visible progress, cancellable; retrieval silently degrades to keywords
   in the meantime, conversations unaffected; a dimension change rebuilds the vector

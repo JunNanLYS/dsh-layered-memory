@@ -21,7 +21,7 @@ import { NoopEmbeddingService, RemoteEmbeddingService } from './embedding.js';
 import type { L0Store } from './l0.js';
 import type { L1Store } from './l1.js';
 import { catalogById, MODEL_CATALOG } from './model-catalog.js';
-import { LocalEmbeddingService, type TransformersModuleLike } from './local-embedding.js';
+import { LocalEmbeddingService } from './local-embedding.js';
 import { ModelDownloadQueue } from './download-queue.js';
 import { RuntimeInstaller } from './runtime-installer.js';
 import type { MemoryDb } from './sqlite.js';
@@ -143,23 +143,22 @@ export async function resolveInitialEmbedding(
   return { svc, dims: cfg.embedding.dimensions, providerInfo: svc.getProviderInfo() };
 }
 
-/** 本地服务构造工厂（index.ts 的初始解析与 Manager 共用一份实现，防漂移）。 */
+/** 本地服务构造工厂（index.ts 的初始解析与 Manager 共用一份实现，防漂移）。
+ *  推理在 worker 线程（见 local-embedding.ts）；此处只传 runtime 目录与模型目录。 */
 export function makeLocalServiceFactory(
   installer: RuntimeInstaller,
   downloader: ModelDownloadQueue,
   logger?: MemoryLogger,
   maxInputChars?: number,
 ): (modelId: string) => LocalEmbeddingService | null {
-  return (modelId: string) => {
+  return (modelId) => {
     const entry = catalogById(modelId);
     if (!entry) return null;
-    return new LocalEmbeddingService(
-      entry,
-      downloader.modelsDir(entry.id),
-      () => Promise.resolve(installer.resolveModule() as TransformersModuleLike),
+    return new LocalEmbeddingService(entry, downloader.modelsDir(entry.id), {
+      runtimeDir: installer.runtimeDir,
       logger,
       maxInputChars,
-    );
+    });
   };
 }
 

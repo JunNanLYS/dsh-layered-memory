@@ -7,6 +7,8 @@ import { createHash } from 'node:crypto';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { fileURLToPath } from 'node:url';
+import { Worker } from 'node:worker_threads';
 import type { SessionEvent } from '@deepseek-ai/dsh-session';
 import type { MemoryConfig } from './config.js';
 import { memorySchema } from './config.js';
@@ -23,14 +25,19 @@ import {
 } from './store/embedding-source.js';
 import { L0Store } from './store/l0.js';
 import { L1Store } from './store/l1.js';
-import { LocalEmbeddingService } from './store/local-embedding.js';
+import {
+  LocalEmbeddingService,
+  type EmbedWorkerCall,
+  type EmbedWorkerChannel,
+  type EmbedWorkerReply,
+} from './store/local-embedding.js';
 import { catalogById, catalogTotalBytes, MODEL_CATALOG, type CatalogEntry } from './store/model-catalog.js';
 import { PersonaStore } from './store/persona.js';
 import { RuntimeInstaller, type SpawnImpl } from './store/runtime-installer.js';
 import { SceneStore, sanitizeFilename } from './store/scenes.js';
 import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
-import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts } from './store/search-utils.js';
+import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts, applyDecayWeight, DECAY_FLOOR } from './store/search-utils.js';
 import { liveSettingsSchema, registerLiveSettings, type LiveSettingsHandle, type MemoryLiveSettings } from './settings.js';
 import { callLLM, decideSendableEffort, layerMaxTokens, resolveLayerTokens } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
@@ -40,13 +47,14 @@ import { StateStore } from './store/state.js';
 import { dayKey } from './store/io.js';
 import { familyForType, normExtractedFamily, resolveRecordFamily } from './types.js';
 import { CaptureBuffers, isCaptureRelevant, registerCapture, trimBuffer } from './hooks/capture.js';
+import { RecallDedupeStore, RECALL_DEDUPE_IDS_CAP, RECALL_DEDUPE_SESSION_CAP } from './store/recall-dedupe.js';
 import { buildRecallQuery, registerRecall, type RecallSessionStats } from './hooks/recall.js';
 import { sanitizeText, shouldCaptureL0, stripCodeBlocks } from './util/sanitize.js';
 import { errDetail, SIZE_CHECK_INTERVAL, withFileLog } from './util/filelog.js';
 import { parseJson } from './llm.js';
 import { chunkByCharBudget } from './pipeline/l1.js';
 import { MemoryRunner, pickNextTaskIndex } from './pipeline/runner.js';
-import { advanceWarmupThreshold, effectiveExtractThreshold, idleSessionsToFlush, modeSwitchAction, pickSessionBackground } from './pipeline/trigger.js';
+import { advanceWarmupThreshold, effectiveExtractThreshold, extractionBackoffMs, idleSessionsToFlush, modeSwitchAction, pickSessionBackground } from './pipeline/trigger.js';
 import { estimateCalls, groupL0Sessions, RebuildController } from './pipeline/rebuild.js';
 import { BENCH_CONTROL_SERVICE, registerBenchControl } from './bench-control.js';
 import { recordDistillCall, snapshotDistillUsage } from './llm-usage.js';
@@ -393,12 +401,15 @@ async function main(): Promise<void> {
   const tmp3 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-legacy-'));
   try {
     const oldRecord = { id: 'old1', content: '旧版单文件里的记忆', type: 'work_fact', priority: 80, scene_name: '迁移', timestamps: [Date.now()], createdAt: Date.now(), updatedAt: Date.now() };
+    // #28 回归：旧代写入器产出的缺字段记录（type/priority/scene_name 全缺）——
+    // 绑定层无兜底时 undefined 进 node:sqlite 被拒，导入逐条全挂、每次启动无限重试
+    const deficientRecord = { id: 'old2', content: '缺字段旧记录', timestamps: [Date.now()], createdAt: Date.now(), updatedAt: Date.now() };
     await fs.mkdir(path.join(tmp3, 'l1'), { recursive: true });
-    await fs.writeFile(path.join(tmp3, 'l1', 'records.jsonl'), `${JSON.stringify(oldRecord)}\n`, 'utf-8');
+    await fs.writeFile(path.join(tmp3, 'l1', 'records.jsonl'), `${JSON.stringify(oldRecord)}\n${JSON.stringify(deficientRecord)}\n`, 'utf-8');
     await fs.mkdir(path.join(tmp3, 'l0'), { recursive: true });
     await fs.writeFile(
       path.join(tmp3, 'l0', '2026-01-01.jsonl'),
-      `${JSON.stringify({ sessionId: 'old-sess', recordedAt: new Date().toISOString(), id: 'om1', role: 'user', content: '旧格式消息内容', timestamp: Date.now() })}\n`,
+      `${JSON.stringify({ sessionId: 'old-sess', recordedAt: new Date().toISOString(), id: 'om1', role: 'user', content: '旧格式消息内容', timestamp: Date.now() })}\n${JSON.stringify({ id: 'om2', content: '缺字段旧消息' })}\n`,
       'utf-8',
     );
     const db3 = new MemoryDb(path.join(tmp3, 'memory.db'), 0);
@@ -407,8 +418,19 @@ async function main(): Promise<void> {
     await l0L.init();
     const l1L = new L1Store(tmp3, db3);
     await l1L.init();
-    assert(l1L.size === 1, '旧 L1 records.jsonl 导入检索库');
-    assert((await l0L.search('旧格式', 5)).length === 1, '旧 L0 目录导入并可检索');
+    assert(l1L.size === 2, '旧 L1 records.jsonl 导入检索库（含缺字段记录）');
+    const imported2 = l1L.all().find((r) => r.id === 'old2')!;
+    assert(imported2.type === '' && imported2.priority === 50 && imported2.scene_name === '' && imported2.family === 'chat', `缺字段记录按 schema 列默认兜底（type=${imported2.type} priority=${imported2.priority} family=${imported2.family}）`);
+    assert((await l1L.search('缺字段', 5)).length === 1, '兜底导入的缺字段记录可被 FTS 检索');
+    assert((await l0L.search('旧格式', 5)).some((r) => r.id === 'om1'), '旧 L0 目录导入并可检索');
+    assert((await l0L.search('缺字段', 5)).length === 1, '缺字段 L0 记录同款兜底入库可检索');
+    {
+      const om2 = (await l0L.search('缺字段', 5)).find((r) => r.id === 'om2')!;
+      assert(
+        om2.sessionId === 'default' && (om2.role as string) === '' && om2.recordedAt === '' && om2.timestamp === 0,
+        `缺字段 L0 记录兜底值逐字段断言（sess=${om2.sessionId} role=${om2.role} ts=${om2.timestamp}）`,
+      );
+    }
     assert(existsSync(path.join(tmp3, 'l1', 'records.jsonl.imported')), '旧 L1 文件改名 .imported');
     assert(existsSync(path.join(tmp3, 'l0.imported')), '旧 L0 目录改名 l0.imported/');
     db3.close();
@@ -511,7 +533,7 @@ async function main(): Promise<void> {
 
       // session-stats 数据源 stub：召回统计给已知值，runnerView 按 (sess-x, work) 给攒批/挂起视图
       const recallStatsStub = new Map<string, RecallSessionStats>();
-      recallStatsStub.set('sess-x', { injectedTurns: 4, hitTurns: 3, totalHits: 9, timeouts: 1, lastHits: 2, lastDurationMs: 35, updatedAt: t });
+      recallStatsStub.set('sess-x', { injectedTurns: 4, hitTurns: 3, totalHits: 9, timeouts: 1, suppressedRecalls: 2, lastHits: 2, lastDurationMs: 35, updatedAt: t });
       const sessionInfoStub = {
         recallStats: (sid: string) => recallStatsStub.get(sid),
         runnerView: (sid: string, mode: string) =>
@@ -1227,6 +1249,9 @@ async function main(): Promise<void> {
     assert(effectiveExtractThreshold(0, 6) === 6, '毕业（0）取稳态值');
     assert(advanceWarmupThreshold(1, 6) === 2 && advanceWarmupThreshold(2, 6) === 4, '成功抽取后翻倍');
     assert(advanceWarmupThreshold(4, 6) === 0 && advanceWarmupThreshold(0, 6) === 0, '达稳态毕业（0）且保持');
+    assert(extractionBackoffMs(1) === 60_000 && extractionBackoffMs(2) === 120_000 && extractionBackoffMs(3) === 240_000, '抽取失败退避指数翻倍（60s 起步）');
+    assert(extractionBackoffMs(10) === 30 * 60_000 && extractionBackoffMs(100) === 30 * 60_000, '退避封顶 30 分钟');
+    assert(extractionBackoffMs(0) === 60_000, '非法连败次数按首档处理');
 
     const tmpT3 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-warmup-'));
     try {
@@ -1444,12 +1469,13 @@ async function main(): Promise<void> {
       } as never;
       let searchCalls = 0;
       let hitContent = '命中记忆内容';
+      let hitId = 'h1'; // 可换新 id：模拟新记忆/更新后的记录（去重语义下旧 id 已注入会被压制）
       let personaText = '';
       const storesT5 = {
         l1: {
           search: async () => {
             searchCalls++;
-            return [{ id: 'h1', content: hitContent, type: 'persona', priority: 70, scene_name: '闲聊', score: 0.9, family: 'chat' }];
+            return [{ id: hitId, content: hitContent, type: 'persona', priority: 70, scene_name: '闲聊', score: 0.9, family: 'chat' }];
           },
         },
         scenes: {
@@ -1484,6 +1510,7 @@ async function main(): Promise<void> {
         silentLogger,
         liveT5 as never,
         modesT5,
+        tmpT5,
       );
       assert(contextText['memory:recall'] === undefined, '动态召回槽（memory:recall）已从系统提示撤除');
       assert(typeof contextText['memory:profile'] === 'function', '系统提示稳定区上下文已注册');
@@ -1529,8 +1556,9 @@ async function main(): Promise<void> {
       );
       assert(d3.kind === 'reject' && searchCalls === 1, 'reject 决策原样透传（不检索）');
 
-      // ④ 预算截断：单条 600 字符命中被截到 500 并带工具引导后缀
+      // ④ 预算截断：换新 id（新记忆不被去重压制），单条 600 字符命中被截到 500 并带工具引导后缀
       hitContent = '长'.repeat(600);
+      hitId = 'h2';
       const d4 = await preStep!(
         { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
         () => Promise.resolve(enter([userMsg])),
@@ -1600,6 +1628,7 @@ async function main(): Promise<void> {
         silentLogger,
         liveT5 as never,
         modesT5,
+        tmpT5,
       );
       await new Promise((r) => setTimeout(r, 30)); // 等 profileCache 首刷
       const profileNoTools = contextText2['memory:profile']() ?? '';
@@ -2541,7 +2570,54 @@ async function main(): Promise<void> {
     }
   }
 
-  // ── 23. 本地嵌入服务状态机（#21：懒加载/就绪/失败/释放，假 loader 不触真模型） ──
+  /** 假通道（测试缝）：进程内模拟 worker 协议——首请求触发"加载"，逐条"推理"。
+   *  makeExtractor 抛错 = 模型加载失败路径；延迟 extractor 用于超时钳制测试。 */
+  class FakeEmbedChannel implements EmbedWorkerChannel {
+    private extractor: ((texts: string[]) => Promise<Array<{ data: Float32Array | number[] }>>) | null = null;
+    private loadPromise: Promise<void> | null = null;
+    private terminatedFlag = false;
+    private crashCb: ((error: string) => void) | null = null;
+    constructor(
+      private readonly makeExtractor: () => Promise<(texts: string[]) => Promise<Array<{ data: Float32Array | number[] }>>>,
+    ) {}
+
+    setOnCrash(cb: (error: string) => void): void {
+      this.crashCb = cb;
+    }
+
+    async request(call: EmbedWorkerCall): Promise<EmbedWorkerReply> {
+      if (this.terminatedFlag) throw new Error('嵌入 worker 已释放');
+      if (call.type === 'ping') return { id: -1, ok: true, type: 'pong' };
+      try {
+        if (!this.extractor) {
+          this.loadPromise = this.loadPromise ?? this.makeExtractor().then((ext) => {
+            this.extractor = ext;
+          });
+          await this.loadPromise;
+        }
+      } catch (err) {
+        return { id: -1, ok: false, stage: 'load', error: err instanceof Error ? err.message : String(err) };
+      }
+      if (call.type === 'warmup') return { id: -1, ok: true, type: 'ready' };
+      const vectors: Float32Array[] = [];
+      for (const t of call.texts) {
+        const r = await this.extractor!([t]);
+        vectors.push(new Float32Array(r[0].data));
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      return { id: -1, ok: true, type: 'embedded', vectors };
+    }
+
+    terminate(): void {
+      this.terminatedFlag = true;
+    }
+
+    crash(error: string): void {
+      this.crashCb?.(error);
+    }
+  }
+
+  // ── 23. 本地嵌入服务状态机（#21：懒加载/就绪/失败/释放/超时钳制，假通道不触真 worker） ──
   console.log('== 23. 本地嵌入服务 ==');
   {
     const entry = catalogById('bge-small-zh-v1.5')!;
@@ -2555,8 +2631,11 @@ async function main(): Promise<void> {
       return new Float32Array(Array.from(v).map((x) => x / norm)) as Float32Array;
     };
     const fakeExtractor = async (texts: string[]) => texts.map((t) => ({ data: vec512(t) }));
-    const okLoader = async () => ({ pipeline: async () => fakeExtractor, env: {} });
-    const svc = new LocalEmbeddingService(entry, '/fake/model/dir', okLoader, silentLogger);
+    const svc = new LocalEmbeddingService(entry, '/fake/model/dir', {
+      runtimeDir: '/fake/runtime',
+      channel: new FakeEmbedChannel(async () => fakeExtractor),
+      logger: silentLogger,
+    });
     assert(!svc.isReady() && svc.getState() === 'idle', '初始 idle');
     const vecs = await svc.embedBatch(['你好世界', 'hello world']);
     assert(svc.isReady() && svc.getState() === 'ready', '首次调用触发懒加载 → ready');
@@ -2571,10 +2650,44 @@ async function main(): Promise<void> {
       (e) => assert(/已释放/.test(String(e)), 'terminated 态不可复活（防卸载后模型重载泄漏）'),
     );
 
-    const badLoader = async () => {
-      throw new Error('模块加载爆炸');
-    };
-    const svc2 = new LocalEmbeddingService(entry, '/fake', badLoader, silentLogger);
+    // timeoutMs 内层钳制：慢推理 + 短超时 → 放弃等待（迟到回复丢弃），非阻塞降级
+    const slowChannel = new FakeEmbedChannel(async () => async (texts: string[]) => {
+      await new Promise((r) => setTimeout(r, 200));
+      return texts.map((t) => ({ data: vec512(t) }));
+    });
+    const svcSlow = new LocalEmbeddingService(entry, '/fake', {
+      runtimeDir: '/fake/runtime',
+      channel: slowChannel,
+      logger: silentLogger,
+    });
+    await svcSlow.embed('x', { timeoutMs: 20 }).then(
+      () => assert(false, 'timeoutMs=20 面对慢推理应超时放弃'),
+      (e) => assert(/超时/.test(String(e)), `本地嵌入内层钳制生效（${e}）`),
+    );
+    svcSlow.close();
+
+    // worker 崩溃语义：未决请求已拒 + failed 态（不自愈），后续调用快速失败
+    const crashChannel = new FakeEmbedChannel(async () => fakeExtractor);
+    const svcCrash = new LocalEmbeddingService(entry, '/fake', {
+      runtimeDir: '/fake/runtime',
+      channel: crashChannel,
+      logger: silentLogger,
+    });
+    crashChannel.crash('本地嵌入 worker 线程退出（code=1）');
+    assert(svcCrash.getState() === 'failed' && /退出/.test(svcCrash.getLoadError() ?? ''), '崩溃转入 failed 态带原因');
+    await svcCrash.embed('x').then(
+      () => assert(false, 'failed 态 embed 应抛'),
+      (e) => assert(/加载失败/.test(String(e)), '崩溃后 embed 快速失败'),
+    );
+    svcCrash.close();
+
+    const svc2 = new LocalEmbeddingService(entry, '/fake', {
+      runtimeDir: '/fake/runtime',
+      channel: new FakeEmbedChannel(async () => {
+        throw new Error('模块加载爆炸');
+      }),
+      logger: silentLogger,
+    });
     await svc2.waitForReady().then(
       () => assert(false, '加载失败应 reject'),
       () => assert(true, '加载失败 reject'),
@@ -2656,8 +2769,11 @@ async function main(): Promise<void> {
       await l1s.appendNew([rec24('m1'), rec24('m2')]);
 
       const entry = catalogById('bge-small-zh-v1.5')!;
+      const modelsRoot = dl24.modelsDir(entry.id);
       for (const f of entry.files) {
-        const p = path.join(dl24.modelsDir(entry.id), f.path);
+        // 目录文件路径不变量（防穿越）：resolve 后必须仍落在 models 根目录内
+        const p = path.resolve(modelsRoot, f.path);
+        assert(p.startsWith(modelsRoot + path.sep), `目录文件路径越界（${f.path}）`);
         await fs.mkdir(path.dirname(p), { recursive: true });
         await fs.writeFile(p, Buffer.alloc(f.size, 7));
       }
@@ -2679,7 +2795,6 @@ async function main(): Promise<void> {
         isReady: async () => true,
         ensure: async () => true,
         cancel: () => false,
-        resolveModule: () => ({ pipeline: async () => fakeExtractor24, env: {} }),
       } as unknown as RuntimeInstaller;
 
       const initial24: InitialEmbedding = { svc: new NoopEmbeddingService(), dims: 0 };
@@ -2694,6 +2809,16 @@ async function main(): Promise<void> {
         downloader: dl24,
         initial: initial24,
         logger: silentLogger,
+        // 本地服务注入假通道（worker 线程化后工厂只传 runtimeDir，不再有 resolveModule 缝）
+        makeLocal: (modelId) => {
+          const e24 = catalogById(modelId);
+          if (!e24) return null;
+          return new LocalEmbeddingService(e24, dl24.modelsDir(e24.id), {
+            runtimeDir: fakeInstaller.runtimeDir,
+            channel: new FakeEmbedChannel(async () => fakeExtractor24),
+            logger: silentLogger,
+          });
+        },
       });
 
       const waitApply = async (): Promise<string> => {
@@ -2939,6 +3064,202 @@ async function main(): Promise<void> {
     assert(resolveRecordFamily(undefined, 'chat', 'work_method') === 'chat', '个人语境的计划性事实（work_* 形状）不再被吸进 work 族');
     assert(resolveRecordFamily(undefined, undefined, 'work_fact') === 'work' && resolveRecordFamily(undefined, undefined, 'episodic') === 'chat', '无显式 family 时回落 type 前缀（旧输出兼容）');
     assert(resolveRecordFamily(undefined, '乱写', 'work_fact') === 'work', '非法 family 字符串回落 type 前缀');
+  }
+
+  // ── 29. 嵌入 worker 资产握手（真线程 ping/pong；dist 资产未构建时跳过） ──
+  console.log('== 29. 嵌入 worker ping ==');
+  {
+    const workerAsset = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'embedding-worker.cjs');
+    if (!existsSync(workerAsset)) {
+      console.log('  (skip: dist/embedding-worker.cjs 未构建——先 npm run build 再跑本段)');
+    } else {
+      const w = new Worker(workerAsset, {
+        workerData: { runtimeDir: '', modelDir: '', pooling: 'mean', dtype: 'q8', maxInputChars: 100 },
+      });
+      try {
+        const pong = await new Promise<{ ok?: boolean; type?: string }>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('ping 超时')), 5000);
+          w.on('message', (msg) => {
+            clearTimeout(timer);
+            resolve(msg as { ok?: boolean; type?: string });
+          });
+          w.on('error', reject);
+          w.postMessage({ id: 1, type: 'ping' });
+        });
+        assert(pong.ok === true && pong.type === 'pong', 'worker 资产可加载且协议握手成功');
+      } finally {
+        await w.terminate();
+      }
+    }
+  }
+
+  // ── 30. 召回去重（0.8.6）：同会话已注入的记忆不再重复注入；compact/clear 重置 ──
+  console.log('== 30. 召回去重 ==');
+  {
+    // a. 存储层：持久化往返 / reset / 单会话 id 上限 / 会话 LRU / 坏文件降级
+    const tmpD = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-dedupe-'));
+    try {
+      const st1 = new RecallDedupeStore(tmpD, silentLogger);
+      st1.mark('s1', ['a', 'b']);
+      st1.mark('s2', ['c']);
+      st1.reset('s2');
+      await st1.flush();
+      const st2 = new RecallDedupeStore(tmpD, silentLogger);
+      await st2.flush(); // init 载入链
+      assert(st2.seen('s1').has('a') && st2.seen('s1').has('b'), '持久化往返：mark 后重载可见');
+      assert(!st2.seen('s2').has('c'), 'reset 后条目消失');
+
+      const st3 = new RecallDedupeStore(tmpD, silentLogger);
+      const many = Array.from({ length: RECALL_DEDUPE_IDS_CAP + 10 }, (_, i) => `id-${i}`);
+      st3.mark('s3', many);
+      assert(st3.seen('s3').size === RECALL_DEDUPE_IDS_CAP, `单会话 id 上限生效（${st3.seen('s3').size}）`);
+      assert(!st3.seen('s3').has('id-0') && st3.seen('s3').has(`id-${RECALL_DEDUPE_IDS_CAP + 9}`), '超限按插入序淘汰最旧');
+    } finally {
+      await fs.rm(tmpD, { recursive: true, force: true }).catch(() => {});
+    }
+
+    const tmpL = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-dedupe-lru-'));
+    try {
+      const stL = new RecallDedupeStore(tmpL, silentLogger);
+      for (let i = 0; i < RECALL_DEDUPE_SESSION_CAP + 5; i++) stL.mark(`sess-${i}`, [`x${i}`]);
+      await stL.flush();
+      const stL2 = new RecallDedupeStore(tmpL, silentLogger);
+      await stL2.flush();
+      assert(!stL2.seen('sess-0').has('x0'), '会话 LRU 上限：最旧会话被淘汰');
+      assert(stL2.seen(`sess-${RECALL_DEDUPE_SESSION_CAP + 4}`).has(`x${RECALL_DEDUPE_SESSION_CAP + 4}`), '最新会话保留');
+    } finally {
+      await fs.rm(tmpL, { recursive: true, force: true }).catch(() => {});
+    }
+
+    const tmpB = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-dedupe-bad-'));
+    try {
+      await fs.writeFile(path.join(tmpB, 'recall-dedupe.json'), '{oops', 'utf8');
+      const stBad = new RecallDedupeStore(tmpB, silentLogger);
+      await stBad.flush();
+      assert(stBad.seen('any').size === 0, '坏文件空起步不抛（降级内存态）');
+    } finally {
+      await fs.rm(tmpB, { recursive: true, force: true }).catch(() => {});
+    }
+
+    // b. hook 级：连续追问同命中 → 第二轮压制；compact 重置重新注入；resume 不重置
+    const tmpH = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-dedupe-hook-'));
+    try {
+      type DecisionH = { kind: 'enter'; messages: Array<Record<string, unknown>> } | { kind: 'reject' };
+      let preStepH:
+        | ((
+            payload: { agent: { id: string }; messages: Array<{ content: unknown }>; signal: { aborted: boolean } },
+            next: () => Promise<DecisionH>,
+          ) => Promise<DecisionH>)
+        | undefined;
+      let sessionStartH: ((payload: { agent: { id: string }; source: string }) => void) | undefined;
+      const ctxH = {
+        on: (ev: string, h: typeof preStepH | typeof sessionStartH, _opts?: unknown) => {
+          if (ev === 'agent/pre-step') preStepH = h as typeof preStepH;
+          if (ev === 'agent/session-start') sessionStartH = h as typeof sessionStartH;
+          return () => {};
+        },
+        effect: (f: () => (() => void)) => f(),
+        get: () => undefined,
+      } as never;
+      const hit = { id: 'h1', content: '命中记忆内容', type: 'persona', priority: 70, scene_name: '闲聊', score: 0.9, family: 'chat' };
+      const storesH = {
+        l1: { search: async () => [{ ...hit }] },
+        scenes: { chat: { navigation: async () => '' }, work: { navigation: async () => '' } },
+        persona: { chat: { read: async () => '' }, work: { read: async () => '' } },
+      } as never;
+      const modesH = new SessionModeStore(tmpH, 'auto');
+      await modesH.init();
+      const liveH = { supported: true, get: () => ({ enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' }) };
+      const hooksH = registerRecall(
+        ctxH,
+        {
+          tools: false,
+          recall: {
+            enabled: true,
+            maxResults: 5,
+            maxCharsPerMemory: 500,
+            maxTotalRecallChars: 2000,
+            timeoutMs: 5000,
+            includePersona: false,
+            includeSceneNav: false,
+            strategy: 'keyword',
+            scoreThreshold: 0.3,
+          },
+        } as never,
+        storesH,
+        silentLogger,
+        liveH as never,
+        modesH,
+        tmpH,
+      );
+      const userMsgH = { id: 'u1', role: 'user', content: [{ type: 'text', text: '咖啡 手冲 偏好' }], source: { kind: 'user' }, timestamp: 1 };
+      const stepH = () =>
+        preStepH!(
+          { agent: { id: 'agent-dedup' }, messages: [userMsgH] as never, signal: { aborted: false } },
+          () => Promise.resolve({ kind: 'enter', messages: [userMsgH] }),
+        );
+      const r1 = await stepH();
+      assert(r1.kind === 'enter' && r1.messages.length === 2, '首轮正常注入');
+      const r2 = await stepH();
+      assert(r2.kind === 'enter' && r2.messages.length === 1, '第二轮同命中被去重压制（不注入）');
+      const statsH = hooksH.stats('agent-dedup')!;
+      assert(statsH.injectedTurns === 2 && statsH.hitTurns === 2, `压制轮仍计检索轮与命中轮（inj=${statsH.injectedTurns} hit=${statsH.hitTurns}）`);
+      assert(statsH.suppressedRecalls === 1 && statsH.totalHits === 1, `累计压制/注入计数（sup=${statsH.suppressedRecalls} total=${statsH.totalHits}）`);
+      assert(statsH.lastHits === 0, '全量压制轮 lastHits=0（工具指南门控沿用）');
+      sessionStartH!({ agent: { id: 'agent-dedup' }, source: 'compact' });
+      const r3 = await stepH();
+      assert(r3.kind === 'enter' && r3.messages.length === 2, 'compact 后重置 → 重新注入');
+      sessionStartH!({ agent: { id: 'agent-dedup' }, source: 'resume' });
+      const r4 = await stepH();
+      assert(r4.kind === 'enter' && r4.messages.length === 1, 'resume 不重置 → 继续压制');
+    } finally {
+      await fs.rm(tmpH, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  // ── 31. 时效衰减加权（#29）：相关候选名次轮转 + 地板 + 开关 ──
+  console.log('== 31. 召回时效衰减 ==');
+  {
+    // a. 纯函数：相关性主导（强相关老记忆仍第一）+ 地板轮转（同量级新鲜者胜）+ 缺失按地板 + 关闭原样
+    const now = Date.UTC(2026, 7, 24);
+    const mk = (id: string, score: number, updatedAt?: number) => ({ id, score, updatedAt });
+    const hits = [
+      mk('old-tie', 1.0, now - 300 * 86_400_000), // 300 天 → 0.5^10 → 地板接管
+      mk('old-strong', 2.0, now - 300 * 86_400_000),
+      mk('new-tie', 0.6, now - 1 * 86_400_000),
+      mk('missing', 0.8, undefined), // 缺 updated_at → 按最老 → 地板
+    ];
+    const ordered = applyDecayWeight(hits, 30, (h) => h.updatedAt, now);
+    assert(
+      ordered.map((h) => h.id).join(',') === 'old-strong,new-tie,old-tie,missing',
+      `衰减排序：强相关老记忆第一、同量级新鲜者胜、缺失按地板（${ordered.map((h) => h.id).join(',')}）`,
+    );
+    assert(ordered[0].score === 2.0 && ordered[2].score === 1.0, 'hit 原始 score 不被改写（展示仍反映检索相关度）');
+    assert(applyDecayWeight(hits, 0, (h) => h.updatedAt, now) === hits, '半衰期 0=关：原样返回零开销');
+    assert(DECAY_FLOOR === 0.5, '地板常量 0.5（老记忆最多损失一半排序分）');
+
+    // b. 集成：keyword 检索的同分并列由新鲜度打破（名额轮转）
+    const tmpD31 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-decay-'));
+    try {
+      const db31 = new MemoryDb(path.join(tmpD31, 'memory.db'), 0);
+      db31.init();
+      const t31 = Date.now();
+      const mkRec = (id: string, updatedAt: number) => ({
+        id, content: '时效衰减排序测试', type: 'preference', priority: 60, scene_name: '',
+        timestamps: [updatedAt], createdAt: updatedAt, updatedAt,
+      });
+      db31.upsertL1(mkRec('decay-old', t31 - 300 * 86_400_000));
+      db31.upsertL1(mkRec('decay-new', t31));
+      const l1On = new L1Store(tmpD31, db31, new NoopEmbeddingService(), 'keyword', silentLogger, 30);
+      const hitsOn = await l1On.search('时效衰减排序测试', 5);
+      assert(hitsOn.length === 2 && hitsOn[0].id === 'decay-new', `同分并列由新鲜度打破（首位=${hitsOn[0]?.id}）`);
+      const l1Off = new L1Store(tmpD31, db31, new NoopEmbeddingService(), 'keyword', silentLogger, 0);
+      const hitsOff = await l1Off.search('时效衰减排序测试', 5);
+      assert(hitsOff.length === 2 && hitsOff.some((h) => h.id === 'decay-old') && hitsOff.some((h) => h.id === 'decay-new'), '关闭衰减：两条照常召回');
+      db31.close();
+    } finally {
+      await fs.rm(tmpD31, { recursive: true, force: true }).catch(() => {});
+    }
   }
 
   console.log(failures === 0 ? '\n全部通过 ✅' : `\n${failures} 个失败 ❌`);

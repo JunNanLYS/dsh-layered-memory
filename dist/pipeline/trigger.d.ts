@@ -24,6 +24,8 @@ export declare function modeSwitchAction(oldMode: string, newMode: string): Mode
 export declare function pickSessionBackground<T extends {
     id: string;
 }>(recent: readonly T[], sliceIds: ReadonlySet<string>, n: number): T[];
+/** 连续失败第 failStreak 次后的自动重试等待时长（1 → 60s，2 → 120s，…封顶 30min）。 */
+export declare function extractionBackoffMs(failStreak: number): number;
 export interface IdleSliceInfo {
     sessionId: string;
     /** 该会话跨桶合计的切片条数。 */

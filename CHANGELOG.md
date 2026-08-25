@@ -5,6 +5,70 @@
 
 ## [Unreleased]
 
+## [0.8.6] — 2026-08-24
+
+### 新增
+
+- **召回时效衰减加权（#29 建议 B）**：召回排序按 `相关度 × max(0.5, 0.5^(Δ天/半衰期))`
+  软加权（Δ 按记忆 updated_at）——相关度相近的候选之间新鲜记忆优先，长会话中召回名额
+  随使用自然轮转，陈年条目不再霸占 top-N。设计要点（对照 Generative Agents 与生产级
+  RAG 实践的取舍）：**乘法而非加法**——时效只能在相关度相近的候选间微调名次，永不
+  僭越相关性（加法会让不相关的新记忆靠 recency 上位）；**衰减地板 0.5**——老记忆最多
+  损失一半排序分，长期事实（"三年前写的咖啡偏好"）永不沉底，这让半衰期成为不敏感旋钮；
+  缺 updated_at 的记录按最老处理（地板接管，零特判）。挂载在检索唯一缝
+  （`L1Store.search()` 三路阈值后、截断前），召回注入与 memory_search 工具自动一致；
+  **去重候选召回（searchCandidates）明确不应用**——写路径找同语义旧记录要无视新旧，
+  衰减会让去重漏检。`recall.decayHalfLifeDays` 默认 30 天、0=关闭（bench 基线可比性
+  可 pin 0）；hit 的 score 字段不被改写（排序用加权分，展示仍反映检索相关度）；
+  idf 不单列（BM25 路内建，向量路无此概念）；importance（priority）暂不启用（当前
+  抽取输出近常数，参与排序收益趋零，公式预留位置）。
+- **召回去重（省 token）**：同会话内已注入过的记忆不再重复注入——用户追问相关/
+  类似问题时，检索会再次命中相同记录，而模型上下文里已有这些内容，重复注入纯属
+  浪费（每轮最多 ~2000 字符 ≈ 1000 token）。纯过滤语义：剩几条新鲜命中注几条，
+  全量压制（0 条）是正确状态而非未命中。粒度 = L1 记录 id：去重合并更新会换新 id，
+  内容变化过的记忆天然解除压制重新注入。上下文被 `/compact` 压缩或 `/clear` 清空时
+  （`agent/session-start` 事件）重置记录——注入内容已从模型上下文丢失，记忆可重新
+  注入；`resume` 不重置（历史仍在）。记录持久化在数据目录 `recall-dedupe.json`
+  （写穿串行化原子写，session-modes 同款；会话 LRU 200 条 / 单会话 id 上限 512 /
+  90 天过期，任何 I/O 失败降级内存态绝不阻塞召回路径——热路径新增成本仅 O(hits)
+  的内存 Set 查询）。统计新增 `suppressedRecalls` 累计计数（session-stats RPC 可查），
+  压制发生时打 debug 日志；悬浮卡口径保持连续（全量压制轮计入 hitTurns——相关记忆
+  已在上下文里，本质是命中）。
+
+### 修复
+
+- **旧版 records.jsonl 导入永久卡死（#28）**：旧代写入器产出的记录缺 `type`/`priority`/
+  `scene_name` 任一字段时，`undefined` 进 node:sqlite 绑定层被拒——逐条回退也系统性全挂
+  （同一代写入器产出的缺字段是同批的），文件保留导致每次启动重试、数据永不入库。修复：
+  **绑定层字段兜底**（`upsertL1InTx`/`upsertL0Batch` 归一化局部变量，主表/向量/FTS 共用
+  同源值；默认值取 schema 列默认 `type='' / priority=50 / scene_name=''`，L0 侧
+  `sessionId='default' / role='' / recordedAt='' / timestamp=0`）——一处修覆盖旧版导入、
+  reindex、backfill 与常规写入全部调用方；附带消除 `familyForType(undefined)` 的
+  TypeError 隐患（归一化后回落 chat 族）。L0 旧版导入同时补最小有效性门（缺 id/content
+  坏行读取时丢弃计数，此前零过滤）。注：报告所指"无行级隔离"不成立——逐条回退早已
+  存在（报告日志自证），真正缺的是字段兜底；`.failed` 熔断按共识跳过（已知循环成因
+  已根治，未知形态留待真实出现再做）。
+- **本地嵌入冻结整页（性能事故级）**：transformers.js 的模型加载与 ONNX 推理原先在
+  host 主线程同步执行——onnxruntime-node（v1.24.3）的 `run`/`loadModel` 是
+  setImmediate 回调里的同步调用（Promise 包装不卸载计算），启用本地嵌入
+  （embeddinggemma-300m 实测单条推理 ~0.3-1.3s）后每轮对话的 L0 落盘、召回 query、
+  蒸馏落库、reindex 批次都会冻结事件循环数秒——dsh 页面一切交互无响应。修复：
+  推理整体移入 worker 线程（`resources/embedding-worker.cjs`，主线程只留协议代理
+  `LocalEmbeddingService`）：逐条推理 + 条间让路，单条请求（召回 query）插队不被
+  reindex 批次堵队尾；实测 8 条批量嵌入（旧路径 ~10s 连续冻结）期间主线程采样
+  超期 0.0ms。附带语义增强：召回路径的 `embeddingTimeoutMs` 内层钳制对本地嵌入
+  从"忽略"变为真实生效（race 放弃、迟到回复丢弃）。worker 崩溃不自愈（转 failed
+  态走 FTS 降级链，换源/重启恢复）；`close()` = terminate，terminated 不可复活
+  语义保持。
+- **蒸馏重试风暴（LLM 故障期间连环烧调用）**：L1 抽取失败（如网关 120s 超时）后，
+  闲置兜底每 30s 继续入队 force 蒸馏任务，在 LLM 等待期间堆积成无限连环调用
+  （memory.log 2026-08-24 实证：每 2 分钟一轮 120s 调用不收敛）。修复：按会话
+  指数退避（60s 起步翻倍封顶 30 分钟，成功消费清零；重建轮豁免——用户显式动作
+  有自己的失败/取消 UI），退避期间闲置兜底与阈值触发均跳过该会话。
+- **附带安全加固（语义零变化）**：bench 工具与 smoke 测试的全部文件读写边界改为
+  内联 containment 写法（resolve 后 startsWith 根目录校验 / SAFE_NAME 白名单；
+  目录类环境变量契约断言：绝对路径且无 `..` 段）。
+
 ## [0.8.5] — 2026-08-23
 
 ### 修复

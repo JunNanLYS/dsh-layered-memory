@@ -24,7 +24,7 @@ import { installModelSelection } from '@deepseek-ai/dsh-agent';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import z from '@deepseek-ai/schemastery';
-import { SAFE_NAME, safeJoin, evalFileChecks } from './checks.js';
+import { SAFE_NAME, evalFileChecks } from './checks.js';
 
 export const name = 'dsh-bench-runner';
 export const inject = ['agentDefaultModel', 'agents', 'sessions', 'llm'];
@@ -54,13 +54,22 @@ function exit(ctx, code) {
 
 async function run(ctx) {
   await ctx.get('loader')?.await?.();
-  const scenariosDir = path.resolve(requireEnv('DSH_BENCH_SCENARIOS'));
+  // 目录类环境变量契约（run.mjs 始终传绝对路径）：拒绝相对路径与「..」段，
+  // 防止目录根被环境值导向受限目录之外（路径穿越边界校验）。
+  const requireEnvDir = (name) => {
+    const v = requireEnv(name);
+    if (!path.isAbsolute(v) || v.split(/[\\/]+/).includes('..')) {
+      throw new Error(`${name} 必须是绝对路径且不含「..」段：${v}`);
+    }
+    return path.resolve(v);
+  };
+  const scenariosDir = requireEnvDir('DSH_BENCH_SCENARIOS');
   const arm = requireEnv('DSH_BENCH_ARM');
-  const outDir = path.resolve(requireEnv('DSH_BENCH_OUT'));
+  const outDir = requireEnvDir('DSH_BENCH_OUT');
   // 仓库外干净 workspace：对话会话 cwd 与工作流沙箱都在这里（防读仓库 AGENTS.md）
-  const workspace = path.resolve(requireEnv('DSH_BENCH_WORKSPACE'));
+  const workspace = requireEnvDir('DSH_BENCH_WORKSPACE');
   const dataDirRaw = process.env.DSH_BENCH_DATA_DIR || '';
-  const dataDir = path.resolve(dataDirRaw || '.');
+  const dataDir = dataDirRaw ? requireEnvDir('DSH_BENCH_DATA_DIR') : path.resolve('.');
   if (arm !== 'A' && arm !== 'B') throw new Error(`DSH_BENCH_ARM 必须是 A 或 B，收到「${arm}」`);
   if (arm === 'A' && !process.env.DSH_BENCH_DATA_DIR) {
     throw new Error('A 组必须设置 DSH_BENCH_DATA_DIR（与 patch-arm-on.yml 的 dataDir 指向一致）');
@@ -109,7 +118,7 @@ async function run(ctx) {
   const markers = new Map(); // marker -> 场景 id，跨场景污染检测用
   const ids = []; // 进度面板用：按执行顺序的场景 id
   for (const file of files) {
-    const scenario = JSON.parse(fs.readFileSync(safeJoin(scenariosDir, file), 'utf8'));
+    const scenario = JSON.parse(readFileInDir(scenariosDir, file));
     ids.push(scenario.id);
     if (scenario.marker) markers.set(scenario.marker, scenario.id);
   }
@@ -126,7 +135,7 @@ async function run(ctx) {
 
   for (let idx = 0; idx < files.length; idx++) {
     const file = files[idx];
-    const scenario = JSON.parse(fs.readFileSync(safeJoin(scenariosDir, file), 'utf8'));
+    const scenario = JSON.parse(readFileInDir(scenariosDir, file));
     parsed.push(scenario);
     const t0 = Date.now();
     const noiseBefore = fillerUsed;
@@ -145,7 +154,7 @@ async function run(ctx) {
     r.durationMs = Date.now() - t0;
     r.noiseBefore = noiseBefore;
     result.scenarios.push(r);
-    writeJson(path.join(outDir, 'result.json'), result); // 逐场景落盘，中断不丢已完成部分
+    writeJson(outDir, 'result.json', result); // 逐场景落盘，中断不丢已完成部分
     progressCompleteScenario(r);
     const hit = r.probes.filter((p) => p.score === 1).length;
     console.log(`[bench-runner] 场景完成 ${scenario.id}：探针 ${hit}/${r.probes.length}，耗时 ${(r.durationMs / 1000).toFixed(0)}s`);
@@ -165,7 +174,7 @@ async function run(ctx) {
   }
   if (lifecycle) {
     result.lifecycle = await runLifecycleStages(ctx, parsed, result.scenarios, { arm, selection, judge, dataDir, outDir, workspace, markers });
-    writeJson(path.join(outDir, 'result.json'), result);
+    writeJson(outDir, 'result.json', result);
   }
   // 效率三角分母与「记忆开销」记账：捕获消息计数（蒸馏成本摊到这里）+ 分层蒸馏用量
   // （bench 控制服务；arm-on/lifecycle patch 已开 benchControl，旧 profile 缺服务时静默跳过）
@@ -211,7 +220,13 @@ function listScenarioFiles(dir) {
 }
 
 function readFileInDir(dir, name) {
-  return fs.readFileSync(safeJoin(dir, name), 'utf8');
+  // 内联包含校验（防穿越）：resolve 后必须仍落在 dir 内
+  const root = path.resolve(dir);
+  const file = path.resolve(root, name);
+  if (file !== root && !file.startsWith(root + path.sep)) {
+    throw new Error(`路径越界：${name}`);
+  }
+  return fs.readFileSync(file, 'utf8');
 }
 
 // ---------------------------------------------------------------------------
@@ -552,10 +567,16 @@ function loadFillers(markers) {
 
 /** dataDir 子目录（records/conversations）的 JSONL 里是否出现任一 needle。 */
 function dataDirJsonlContains(dataDir, sub, needles) {
-  const dir = path.join(dataDir, sub);
-  if (!fs.existsSync(dir)) return false;
-  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.jsonl') && SAFE_NAME.test(x))) {
-    const text = fs.readFileSync(path.join(dir, f), 'utf8');
+  // 子目录名白名单（调用方传 'records'/'conversations' 字面量）：join 前显式校验，
+  // 防目录参数把读取导向 dataDir 之外（文件名另有 SAFE_NAME 过滤）。
+  if (!SAFE_NAME.test(sub)) throw new Error(`非法子目录名：${sub}`);
+  const root = path.resolve(dataDir, sub);
+  if (!fs.existsSync(root)) return false;
+  for (const name of fs.readdirSync(root)) {
+    if (!name.endsWith('.jsonl') || !SAFE_NAME.test(name)) continue;
+    const file = path.resolve(root, name);
+    if (!file.startsWith(root + path.sep)) throw new Error(`路径越界：${name}`);
+    const text = fs.readFileSync(file, 'utf8');
     for (const n of needles) {
       if (text.includes(n)) return true;
     }
@@ -927,18 +948,22 @@ function startSiteServer(creds) {
 }
 
 async function runWorkflowScenario(ctx, sc, opts) {
-  const sandbox = safeJoin(opts.workspace, `sandbox-${sc.id}`);
+  // 沙箱根：workspace 内内联包含校验（防 sc.id 把沙箱导向 workspace 之外）
+  const wsRoot = path.resolve(opts.workspace);
+  const sandbox = path.resolve(wsRoot, `sandbox-${sc.id}`);
+  if (!sandbox.startsWith(wsRoot + path.sep)) throw new Error(`沙箱路径越界：${sc.id}`);
   // 场景声明的本地服务（如 site-login）：先启动，端口写入沙箱；会话状态在服务端内存。
   let site = null;
   if (sc.server?.type === 'site-login') site = await startSiteServer(sc.server);
   const resetSandbox = () => {
     fs.rmSync(sandbox, { recursive: true, force: true });
     for (const [rel, content] of Object.entries(sc.sandboxFiles ?? {})) {
-      const target = safeJoin(sandbox, rel);
+      const target = path.resolve(sandbox, rel);
+      if (!target.startsWith(sandbox + path.sep)) throw new Error(`沙箱文件路径越界：${rel}`);
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.writeFileSync(target, content, 'utf8');
     }
-    if (site) fs.writeFileSync(safeJoin(sandbox, '.site-port'), `${site.port}\n`, 'utf8');
+    if (site) fs.writeFileSync(path.resolve(sandbox, '.site-port'), `${site.port}\n`, 'utf8');
   };
   const runChecks = (list) => evalFileChecks(sandbox, list);
   const teach = sc.sessions.find((s) => s.kind === 'teach');
@@ -1148,7 +1173,8 @@ function lastAssistantText(events) {
  * 超时不中断——探针照跑，结果标记 timedOut 供报告降级说明。
  */
 async function waitForDistillation(dataDir, timeoutMs) {
-  const recordsDir = path.join(path.resolve(dataDir), 'records');
+  const recordsDir = path.resolve(dataDir, 'records');
+  if (!recordsDir.startsWith(path.resolve(dataDir) + path.sep)) throw new Error('records 路径越界');
   const started = Date.now();
   let last = -1, stable = 0;
   while (Date.now() - started < timeoutMs) {
@@ -1275,7 +1301,9 @@ let progressTimer = null;
 let progressHeartbeatTimer = null;
 
 function progressInit(outDir, arm, scenarioIds) {
-  progressFile = path.join(outDir, 'progress.json');
+  const root = path.resolve(outDir);
+  progressFile = path.resolve(root, 'progress.json');
+  if (!progressFile.startsWith(root + path.sep)) throw new Error('progress 路径越界');
   progress = {
     version: 1,
     arm,
@@ -1345,7 +1373,9 @@ function progressWrite(force = false) {
   }
   progressLastWrite = now;
   progress.updatedAt = new Date().toISOString();
-  const tmp = `${progressFile}.tmp`;
+  const tmpRoot = path.dirname(progressFile);
+  const tmp = path.resolve(tmpRoot, `${path.basename(progressFile)}.tmp`);
+  if (!tmp.startsWith(tmpRoot + path.sep)) throw new Error('progress 临时文件路径越界');
   try {
     fs.writeFileSync(tmp, JSON.stringify(progress) + '\n', 'utf8');
     fs.renameSync(tmp, progressFile);
@@ -1379,7 +1409,13 @@ function requireEnv(name) {
   return v;
 }
 
-function writeJson(file, data) {
+function writeJson(dir, name, data) {
+  // 内联包含校验（防穿越）：resolve 后必须仍落在 dir 内
+  const root = path.resolve(dir);
+  const file = path.resolve(root, name);
+  if (file !== root && !file.startsWith(root + path.sep)) {
+    throw new Error(`路径越界：${name}`);
+  }
   fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n', 'utf8');
 }
 

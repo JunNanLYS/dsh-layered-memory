@@ -61,6 +61,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         includeSceneNav: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         strategy: import("@deepseek-ai/schemastery").default<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
         scoreThreshold: import("@deepseek-ai/schemastery").default<number, number>;
+        decayHalfLifeDays: import("@deepseek-ai/schemastery").default<number, number>;
     }>, Schemastery.ObjectT<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         maxResults: import("@deepseek-ai/schemastery").default<number, number>;
@@ -71,6 +72,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         includeSceneNav: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         strategy: import("@deepseek-ai/schemastery").default<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
         scoreThreshold: import("@deepseek-ai/schemastery").default<number, number>;
+        decayHalfLifeDays: import("@deepseek-ai/schemastery").default<number, number>;
     }>>;
     embedding: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
@@ -167,6 +169,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         includeSceneNav: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         strategy: import("@deepseek-ai/schemastery").default<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
         scoreThreshold: import("@deepseek-ai/schemastery").default<number, number>;
+        decayHalfLifeDays: import("@deepseek-ai/schemastery").default<number, number>;
     }>, Schemastery.ObjectT<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         maxResults: import("@deepseek-ai/schemastery").default<number, number>;
@@ -177,6 +180,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         includeSceneNav: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         strategy: import("@deepseek-ai/schemastery").default<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
         scoreThreshold: import("@deepseek-ai/schemastery").default<number, number>;
+        decayHalfLifeDays: import("@deepseek-ai/schemastery").default<number, number>;
     }>>;
     embedding: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
         enabled: import("@deepseek-ai/schemastery").default<boolean, boolean>;

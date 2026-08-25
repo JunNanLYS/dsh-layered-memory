@@ -21,7 +21,11 @@ export declare class L1Store {
     private readonly helper;
     private embedSvc;
     private readonly logger?;
-    constructor(dataDir: string, db: MemoryDb, embed?: EmbeddingService, strategy?: RecallStrategy, logger?: MemoryLogger);
+    /** 时效衰减半衰期（天；0=关）。 */
+    private readonly decayHalfLifeDays;
+    constructor(dataDir: string, db: MemoryDb, embed?: EmbeddingService, strategy?: RecallStrategy, logger?: MemoryLogger, 
+    /** 时效衰减半衰期（天；0=关）。缺省 30 与 config 默认一致。 */
+    decayHalfLifeDays?: number);
     init(): Promise<void>;
     /** 旧版单文件 records.jsonl 一次性导入检索库，成功后改名 .imported。 */
     private importLegacy;
@@ -44,6 +48,12 @@ export declare class L1Store {
      * 融合完整列表（融合分已归一化 0~1，可直接用于展示/过滤）。
      */
     search(query: string, limit: number, opts?: L1SearchOptions): Promise<L1Hit[]>;
+    /**
+     * 时效衰减加权（#29）：三路共用的读路径后处理——阈值过滤之后、截断之前
+     * （才能轮转名额，而不只是重排已截断的集合）。updated_at 经主表批量点查
+     * 回填（FTS 表无该列；候选池 ≤ limit×3 条主键查询，微秒级）。关闭时零开销。
+     */
+    private applyDecay;
     /** 浏览列表（UI 用）：无关键词时按更新时间倒序分页。 */
     list(opts: {
         type?: string;
