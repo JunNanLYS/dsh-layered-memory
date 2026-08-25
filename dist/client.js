@@ -2911,7 +2911,9 @@ window.__ModuleLoader__.load({
       var fmtDate = function (ts) {
         try {
           var d = new Date(ts);
-          if (granularity === "month") return (d.getMonth() + 1) + "月";
+          // 近 N 天时后端强制日粒度，用 trend 实际粒度（而非用户选的周/月）格式化横轴
+          var g = data && data.trend ? data.trend.granularity : granularity;
+          if (g === "month") return (d.getMonth() + 1) + "月";
           return (d.getMonth() + 1) + "/" + d.getDate();
         } catch (e) { return ""; }
       };

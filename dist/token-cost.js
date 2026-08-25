@@ -161,15 +161,16 @@ export function snapshotTokenCost(granularity, rangeDays) {
     const offset = localOffsetMs();
     const byLayerStats = [];
     const trendByLayer = { l1: [], l2: [], l3: [] };
-    // 趋势展示范围：rangeDays > 0 = 近 N 天（since + 桶数按 N 折算）；否则用默认窗口
+    // 趋势展示范围：rangeDays > 0 = 近 N 天（强制按「日」粒度出 N 个日桶，不受周/月聚合影响）；否则用默认窗口
+    const trendGranularity = rangeDays > 0 ? 'day' : granularity;
     const trendSince = rangeDays > 0 ? now - rangeDays * 24 * 3600_000 : 0;
-    const trendCount = rangeDays > 0 ? Math.max(1, Math.ceil((rangeDays * 24 * 3600_000) / TREND_MS[granularity])) : TREND_COUNT[granularity];
+    const trendCount = rangeDays > 0 ? rangeDays : TREND_COUNT[granularity];
     for (const layer of LAYERS) {
         const dayRows = d.aggregateByBucket(TREND_MS.day, offset, 0, layer);
         const weekRows = d.aggregateByBucket(TREND_MS.week, offset, 0, layer);
         const monthRows = d.aggregateByBucket(TREND_MS.month, offset, 0, layer);
         byLayerStats.push({ layer, models: buildModelMetrics(dayRows, weekRows, monthRows) });
-        trendByLayer[layer] = buildTrend(d.aggregateByBucket(TREND_MS[granularity], offset, trendSince, layer), granularity, now, trendCount);
+        trendByLayer[layer] = buildTrend(d.aggregateByBucket(TREND_MS[trendGranularity], offset, trendSince, layer), trendGranularity, now, trendCount);
     }
-    return { windows, byModel, byLayer, byLayerStats, trend: { granularity, byLayer: trendByLayer } };
+    return { windows, byModel, byLayer, byLayerStats, trend: { granularity: trendGranularity, byLayer: trendByLayer } };
 }
