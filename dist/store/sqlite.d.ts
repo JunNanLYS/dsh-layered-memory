@@ -9,38 +9,10 @@ export interface StoreCapabilities {
     ftsSearch: boolean;
     vectorSearch: boolean;
 }
-/** token_cost 单窗口成本聚合（成本看板用）。 */
-export interface CostAggregate {
-    calls: number;
-    inputChars: number;
-    outputTokens: number;
-    reasoningTokens: number;
-    /** 单次调用输出 token 均值（无数据为 0）。 */
-    avgOutputTokens: number;
-    /** 单次调用输出 token 中位数（无数据为 0）。 */
-    medianOutputTokens: number;
-}
+import { CostLedger } from './cost-ledger.js';
+import type { BucketRow, CostAggregate, CostByLayer } from './cost-ledger.js';
+export type { BucketRow, CostAggregate, CostByLayer } from './cost-ledger.js';
 import type { CostByModel } from '../contract.js';
-export type { CostByModel } from '../contract.js';
-/** 按层级（l1/l2/l3 归并）分组的成本行。 */
-export interface CostByLayer {
-    layer: string;
-    calls: number;
-    inputChars: number;
-    outputTokens: number;
-    reasoningTokens: number;
-    avgOutputTokens: number;
-    medianOutputTokens: number;
-}
-/** 按时间桶 + provider/model 聚合的扁平行（趋势图与日均/周均/月均 + 中位数统计共用）。 */
-export interface BucketRow {
-    bucket: number;
-    provider: string;
-    model: string;
-    calls: number;
-    outputTokens: number;
-    reasoningTokens: number;
-}
 /** L1 检索命中（含 BM25/余弦归一分数）。 */
 export interface L1SearchHit {
     id: string;
@@ -55,6 +27,7 @@ export interface L1SearchHit {
 export interface L0SearchHit extends L0MessageRecord {
     score: number;
 }
+/** 已排序序列的中位数（偶数个取中间两者平均；空返回 0）。 */
 export declare class MemoryDb {
     private db;
     private degraded;
@@ -76,9 +49,8 @@ export declare class MemoryDb {
     private stmtL1FtsDelete;
     private stmtL1FtsSearch;
     private stmtL1FtsSearchFamily;
-    /** token_cost 明细写入 / 滚动清理语句（构造期 prepare 缓存）。 */
-    private stmtInsertCost;
-    private stmtDeleteCost;
+    /** 成本账本（token_cost 表族；init 内初始化，未就绪时方法返回零值）。 */
+    readonly costLedger: CostLedger;
     private stmtUpsertL0;
     private stmtGetL0;
     /** 主表存在性点查（同 L1：防御性 FTS 删除的前置判断）。 */
@@ -180,31 +152,16 @@ export declare class MemoryDb {
     searchL1Vector(embedding: Float32Array, topK: number, family?: string): L1SearchHit[];
     /** 批量 upsert L0 消息（元数据 + FTS；embeddings 与 records 等长，可省略）。 */
     upsertL0Batch(records: L0MessageRecord[], embeddings?: Array<Float32Array | undefined>): boolean;
-    /**
-     * 记录一次蒸馏调用成本（明细表，写入时按 retentionDays 滚动清理；0 = 永久保留）。
-     * 失败/成功都记（token 照烧）；记账失败记 warn 但不阻断蒸馏（成本看板是增强能力）。
-     */
+    /** 记录一次蒸馏调用成本（委托 cost-ledger；语义见 CostLedger.insertCostCall）。 */
     insertCostCall(provider: string, model: string, layer: string, inputChars: number, outputTokens: number, reasoningTokens: number, retentionDays: number): void;
-    /**
-     * 查询 token_cost 单窗口聚合（成本看板用；since 为毫秒起点，0 = 全量）。
-     * 输入口径：inputChars 是字符（llm 流拿不到输入 token，沿用 llm-usage 的字符折算口径）。
-     * 成本看板是增强能力：降级态/查询异常一律返回零值，不向上抛错。
-     * median 需取 output_tokens 序列在 JS 侧算（SQLite 无内置 median 函数）。
-     */
+    /** 查询 token_cost 单窗口聚合（委托 cost-ledger；降级/异常返回零值）。 */
     aggregateCost(since: number): {
         total: CostAggregate;
         byModel: CostByModel[];
     };
-    /**
-     * 按层级归并聚合（l1 = l1-extract + l1-dedup；成本看板层级表格用）。
-     * 降级/异常返回空数组，不抛错。
-     */
+    /** 按层级归并聚合（委托 cost-ledger；降级/异常返回空数组）。 */
     aggregateCostByLayer(since: number): CostByLayer[];
-    /**
-     * 按时间桶（bucketMs 毫秒）+ model 聚合，返回扁平行。
-     * offsetMs 把桶边界对齐本地时区；layer 为空=全部，'l1' 归并 extract/dedup，其余精确匹配。
-     * 趋势图与「日均/周均/月均 + 中位数」统计共用：JS 侧按不同 bucketMs 调三次再聚合。
-     */
+    /** 按时间桶 + model 聚合（委托 cost-ledger；趋势图与日均/周均/月均共用）。 */
     aggregateByBucket(bucketMs: number, offsetMs: number, since: number, layer: string): BucketRow[];
     countL0(): number;
     /** 统计 recorded_at >= iso 的消息数（状态面板"今日捕获"用）。 */
