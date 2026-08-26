@@ -39,7 +39,7 @@ import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
 import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts, applyDecayWeight, DECAY_FLOOR } from './store/search-utils.js';
 import { liveSettingsSchema, registerLiveSettings, type LiveSettingsHandle, type MemoryLiveSettings } from './settings.js';
-import { callLLM, decideSendableEffort, layerMaxTokens, resolveLayerTokens } from './llm.js';
+import { buildRouteChain, callLLM, decideSendableEffort, layerMaxTokens, resolveLayerTokens } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { registerMemoryRpc } from './stats.js';
 import { registerMemoryTools } from './tools/index.js';
@@ -1873,6 +1873,129 @@ async function main(): Promise<void> {
       assert(captured.maxTokens === 1000, '显式 high 同样只乘一次');
       await callLLM(capCtx, capCfg(''), { system: 's', user: 'u', maxTokens: 1000 });
       assert(captured.maxTokens === 4000 && captured.reasoningEffort === 'xhigh', '自动档解析出高档（模型默认 xhigh）防线补 ×4');
+    }
+
+    // g4. 蒸馏回退链（#31）：链解析纯决策 + effectiveCfg 档位接管 + callLLM 多路由行为
+    {
+      // g4a. buildRouteChain 决策表：拼接 / 去重 / 缺失剔除 / 条目档位覆盖
+      const chain = buildRouteChain(
+        { provider: 'p0', model: 'm0' },
+        [
+          { provider: 'p0', model: 'm0' },                          // 与主路由相同 → 跳过
+          { provider: '', model: 'mx' },                            // provider 缺失 → 剔除
+          { provider: 'p1', model: 'm1', reasoningEffort: 'low' },  // 条目档位覆盖全局
+          { provider: 'p1', model: 'm1' },                          // 与先前条目相同 → 跳过
+          { provider: 'p2', model: 'm2' },                          // 无档位 → 跟随全局
+        ],
+        'high',
+      );
+      assert(chain.length === 3, '回退链 = 主路由 + 有效条目（相同条目与缺失字段剔除）');
+      assert(
+        chain[0].provider === 'p0' && chain[0].effort === 'high' && chain[1].effort === 'low' && chain[2].effort === 'high',
+        '条目档位非空覆盖全局、缺省跟随全局',
+      );
+      assert(buildRouteChain({ provider: 'p', model: 'm' }, undefined, 'high').length === 1, '无回退配置 = 单路由链');
+
+      // g4b. effectiveCfg：运行时档位整体接管同样覆盖回退条目；自动档（''）不压制条目
+      const mkCfgE = (llm: Record<string, unknown>) => ({ family: 'auto', llm }) as never as Parameters<typeof effectiveCfg>[0];
+      const mkLiveE = (patch: Record<string, unknown>) =>
+        ({ get: () => ({ reasoningEffort: '', distillProvider: '', distillModel: '', distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, ...patch }) }) as never;
+      const fbEntry = [{ provider: 'p1', model: 'm1', reasoningEffort: 'low' }];
+      const stamped = effectiveCfg(mkCfgE({ provider: '', model: '', reasoningEffort: 'high', fallbacks: fbEntry }), mkLiveE({ reasoningEffort: 'medium' }));
+      assert(
+        stamped.llm.reasoningEffort === 'medium' && stamped.llm.fallbacks![0].reasoningEffort === 'medium',
+        '运行时档位非空时整体接管（含回退条目）',
+      );
+      const autoKeep = effectiveCfg(mkCfgE({ provider: '', model: '', reasoningEffort: 'high', fallbacks: fbEntry }), mkLiveE({ reasoningEffort: '' }));
+      assert(
+        autoKeep.llm.reasoningEffort === '' && autoKeep.llm.fallbacks![0].reasoningEffort === 'low',
+        '运行时自动档（空串）接管全局静态值但不压制条目档位',
+      );
+
+      // g4c. callLLM 多路由行为：fake stream 按模型编排 chunk 序列并记录每次调用的路由与档位
+      const calls: Array<{ provider: string; model: string; effort?: string }> = [];
+      const fbCtx = {
+        llm: {
+          stream: async function* (o: { provider: string; model: string; reasoningEffort?: string }) {
+            calls.push({ provider: o.provider, model: o.model, effort: o.reasoningEffort });
+            if (o.model === 'dead-m') {
+              yield { type: 'finish', reason: { kind: 'aborted', failure: { message: 'gateway 20s cutoff' } } };
+              return;
+            }
+            if (o.model === 'empty-m') {
+              yield { type: 'usage', usage: { outputTokens: 5, reasoningTokens: 5 } };
+              yield { type: 'finish', reason: { kind: 'stop' } };
+              return;
+            }
+            yield { type: 'block-end', block: { type: 'text', text: `ok-from-${o.model}` } };
+            yield { type: 'finish', reason: { kind: 'stop' } };
+          },
+          resolveModelInfo: async (_p: string, m: string) =>
+            m === 'main-m' || m === 'eff-m'
+              ? { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } }
+              : { reasoning: {} },
+        },
+        get: () => undefined,
+      } as never;
+      const fbCfg = (model: string, fallbacks: unknown[]) =>
+        ({ llm: { provider: 'main-p', model, reasoningEffort: 'high', fallbacks, maxTokens: 2000, temperature: 0.3, maxInputChars: 100_000, timeoutMs: 10_000 } }) as never as MemoryConfig;
+
+      // c1. 主路由 aborted finish → 降级成功；逐次记账（失败 + 成功都计入）
+      calls.length = 0;
+      const before1 = snapshotDistillUsage().layers['l1-extract'] ?? { calls: 0, failures: 0 };
+      const r1 = await callLLM(fbCtx, fbCfg('dead-m', [{ provider: 'fb-p', model: 'ok-m' }]), { system: 's', user: 'u', layer: 'l1-extract' });
+      const after1 = snapshotDistillUsage().layers['l1-extract'];
+      assert(r1 === 'ok-from-ok-m' && calls.length === 2, '主路由 aborted finish 自动降级到回退路由并成功');
+      assert(after1.calls - before1.calls === 2 && after1.failures - before1.failures === 1, '逐次记账：失败尝试与成功尝试都计入该层');
+
+      // c2. 空输出 → 降级成功
+      calls.length = 0;
+      const r2 = await callLLM(fbCtx, fbCfg('empty-m', [{ provider: 'fb-p', model: 'ok-m' }]), { system: 's', user: 'u' });
+      assert(r2 === 'ok-from-ok-m' && calls.length === 2, '空输出视为路由失败并降级');
+
+      // c3. 调用方主动取消 → 单次尝试后原样上抛、不降级
+      calls.length = 0;
+      const ac = new AbortController();
+      ac.abort();
+      let threw = false;
+      try {
+        await callLLM(fbCtx, fbCfg('dead-m', [{ provider: 'fb-p', model: 'ok-m' }]), { system: 's', user: 'u', signal: ac.signal });
+      } catch {
+        threw = true;
+      }
+      assert(threw && calls.length === 1, '调用方取消不降级（一次尝试后原样上抛）');
+
+      // c4. 全部路由失败 → 抛最后一个错误（交由按会话退避接管）
+      calls.length = 0;
+      threw = false;
+      let lastMsg = '';
+      try {
+        await callLLM(fbCtx, fbCfg('dead-m', [{ provider: 'fb2-p', model: 'dead-m' }]), { system: 's', user: 'u' });
+      } catch (e) {
+        threw = true;
+        lastMsg = (e as Error).message;
+      }
+      assert(threw && calls.length === 2 && lastMsg.includes('llm aborted'), '全部路由失败抛最后一个错误');
+
+      // c5. 档位随路由：主路由发全局档位；回退条目档位覆盖全局（各经能力钳制）
+      calls.length = 0;
+      await callLLM(fbCtx, fbCfg('main-m', [{ provider: 'fb-p', model: 'eff-m', reasoningEffort: 'low' }]), { system: 's', user: 'u' });
+      assert(calls.length === 1 && calls[0].effort === 'high', '主路由发送全局档位（模型声明支持照发）');
+      calls.length = 0;
+      await callLLM(fbCtx, fbCfg('dead-m', [{ provider: 'fb-p', model: 'eff-m', reasoningEffort: 'low' }]), { system: 's', user: 'u' });
+      assert(calls.length === 2 && calls[1].effort === 'low', '回退条目档位覆盖全局档位发送');
+
+      // c6. 未配置回退链：单路由；空输出同样抛错（原"返回空串"改判为失败）
+      calls.length = 0;
+      threw = false;
+      let emptyMsg = '';
+      try {
+        await callLLM(fbCtx, fbCfg('empty-m', []), { system: 's', user: 'u' });
+      } catch (e) {
+        threw = true;
+        emptyMsg = (e as Error).message;
+      }
+      assert(threw && calls.length === 1 && emptyMsg.includes('empty output'), '未配置回退链时空输出抛明确错误（不再返回空串）');
     }
 
     // h. 输入预算覆盖：>0 注入 cfg.llm.maxInputChars（L1 分块/callLLM 截断/rebuild 估算全链消费）

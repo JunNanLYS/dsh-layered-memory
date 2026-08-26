@@ -55,6 +55,27 @@ export declare function resolveModelRoute(ctx: Context, cfg: MemoryConfig): Prom
     provider: string;
     model: string;
 }>;
+/** 回退链条目（配置形态；reasoningEffort 为该路由的档位覆盖，'' = 跟随全局）。 */
+export interface FallbackRouteEntry {
+    provider: string;
+    model: string;
+    reasoningEffort?: string;
+}
+/** 链上单条路由（档位候选已解析：条目非空 > 全局静态；发送前仍过能力钳制）。 */
+export interface DistillRoute {
+    provider: string;
+    model: string;
+    effort: string;
+}
+/**
+ * 组装蒸馏路由链（纯决策，smoke 决策表缝）：主路由在前、回退条目按配置顺序在后。
+ * provider/model 缺失的条目剔除；与主路由或先前条目完全相同（provider+model）的
+ * 条目跳过——注定失败的重复尝试不值得占位。每条路由携带生效档位候选。
+ */
+export declare function buildRouteChain(primary: {
+    provider: string;
+    model: string;
+}, fallbacks: FallbackRouteEntry[] | undefined, globalEffort: string): DistillRoute[];
 export interface ModelEffortInfo {
     /** 模型可设置的思考档位 id（适配器声明；空 = 未声明/不可设置） */
     efforts: string[];
@@ -76,8 +97,10 @@ export declare function decideSendableEffort(cap: ModelEffortInfo | null, cfgEff
 /** 探询 + 决策 + 一次性告警（不支持/未声明时提示降级，不刷屏）。 */
 export declare function planDistillEffort(ctx: Context, provider: string, model: string, cfgEffort: string, logger?: MemoryLogger): Promise<EffortDecision>;
 /**
- * 一次完整蒸馏调用：流式收集文本，返回最终字符串。
- * 失败（error/aborted finish）抛错，由调用方兜底。
+ * 一次完整蒸馏调用（带回退链，ADR-0004）：按路由链（主路由 + llm.fallbacks）逐条
+ * 尝试，返回首个成功路由的输出。失败（error/aborted finish、网络异常、空输出）
+ * 降级下一条；调用方主动取消（signal 已中止）原样上抛不降级；全部失败抛最后一个
+ * 错误，由调用方兜底（runner 的按会话指数退避接管重试节奏）。
  *
  * 文本只从 block-end（协议保证携带**组装完成的整块**）取；text-delta 仅在
  * 适配器异常地没有发 block-end 时兜底。两者都累计会把输出翻倍。

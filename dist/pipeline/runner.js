@@ -43,9 +43,14 @@ export function effectiveCfg(cfg, live) {
         }
         : null;
     const maxInput = s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : null;
+    // 运行时档位整体接管同样覆盖回退链条目（用户当下意图压过条目静态值；
+    // '' = 自动档无偏好，不压制条目——链解析时条目非空值优先于全局）
+    const fallbacksTakeover = eff && cfg.llm?.fallbacks?.length
+        ? cfg.llm.fallbacks.map((f) => ({ ...f, reasoningEffort: eff }))
+        : null;
     // 无任何注入且（无 live，或运行时 '' 且静态本就 ''）→ 原引用返回，保持引用稳定性
     const effNoop = eff === '' && (!live || !cfg.llm?.reasoningEffort);
-    if (!override && !budgets && !maxInput && effNoop)
+    if (!override && !budgets && !maxInput && !fallbacksTakeover && effNoop)
         return cfg;
     return {
         ...cfg,
@@ -55,6 +60,7 @@ export function effectiveCfg(cfg, live) {
             ...(override ?? {}),
             ...(budgets ? { budgets } : {}),
             ...(maxInput ? { maxInputChars: maxInput } : {}),
+            ...(fallbacksTakeover ? { fallbacks: fallbacksTakeover } : {}),
         },
     };
 }

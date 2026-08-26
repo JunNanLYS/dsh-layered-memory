@@ -89,6 +89,60 @@ export async function resolveModelRoute(
   );
 }
 
+// ── 蒸馏回退链（#31 / ADR-0004）──
+// 主路由失败（error/aborted finish、网络异常、空输出）按 llm.fallbacks 顺序降级，
+// 每条路由各享全额 timeoutMs；调用方主动取消不降级；全部失败抛最后一个错误，
+// 由 runner 的按会话指数退避接管重试节奏。
+
+/** 回退链条目（配置形态；reasoningEffort 为该路由的档位覆盖，'' = 跟随全局）。 */
+export interface FallbackRouteEntry {
+  provider: string;
+  model: string;
+  reasoningEffort?: string;
+}
+
+/** 链上单条路由（档位候选已解析：条目非空 > 全局静态；发送前仍过能力钳制）。 */
+export interface DistillRoute {
+  provider: string;
+  model: string;
+  effort: string;
+}
+
+/**
+ * 组装蒸馏路由链（纯决策，smoke 决策表缝）：主路由在前、回退条目按配置顺序在后。
+ * provider/model 缺失的条目剔除；与主路由或先前条目完全相同（provider+model）的
+ * 条目跳过——注定失败的重复尝试不值得占位。每条路由携带生效档位候选。
+ */
+export function buildRouteChain(
+  primary: { provider: string; model: string },
+  fallbacks: FallbackRouteEntry[] | undefined,
+  globalEffort: string,
+): DistillRoute[] {
+  const routes: DistillRoute[] = [{ ...primary, effort: globalEffort }];
+  const seen = new Set([`${primary.provider}::${primary.model}`]);
+  for (const f of fallbacks ?? []) {
+    if (!f.provider || !f.model) continue;
+    const key = `${f.provider}::${f.model}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    routes.push({ provider: f.provider, model: f.model, effort: f.reasoningEffort || globalEffort });
+  }
+  return routes;
+}
+
+/** 单路由持续失败的一次性告警去重表（effortWarned 同款；拓扑变化随能力缓存一起失效）。 */
+const routeDeadWarned = new Set<string>();
+
+function warnRouteDeadOnce(route: DistillRoute, logger?: MemoryLogger): void {
+  if (!logger) return;
+  const key = `${route.provider}::${route.model}`;
+  if (routeDeadWarned.has(key)) return;
+  routeDeadWarned.add(key);
+  logger.warn(
+    `[memory] 蒸馏路由 ${route.provider}/${route.model} 失败（每路由仅告警一次；逐次失败原因与降级去向见后续日志）`,
+  );
+}
+
 // ── 思考档位能力探询（ADR：跨供应商 effort 兼容）──
 // dsh-llm 契约对不支持的显式档位【不做 clamp/aliasing】：pi-ai 本地抛
 // UNSUPPORTED_REASONING_EFFORT，openai-responses 网关则把 'off' 等值透传上游吃 400
@@ -108,6 +162,7 @@ const effortCache = new Map<string, ModelEffortInfo>();
 export function invalidateEffortCache(): void {
   effortCache.clear();
   effortWarned.clear();
+  routeDeadWarned.clear();
 }
 
 /** 探询某模型的思考档位能力；失败返回 null（调用方保持旧发送行为，不改判）。 */
@@ -197,18 +252,45 @@ export async function planDistillEffort(
 }
 
 /**
- * 一次完整蒸馏调用：流式收集文本，返回最终字符串。
- * 失败（error/aborted finish）抛错，由调用方兜底。
+ * 一次完整蒸馏调用（带回退链，ADR-0004）：按路由链（主路由 + llm.fallbacks）逐条
+ * 尝试，返回首个成功路由的输出。失败（error/aborted finish、网络异常、空输出）
+ * 降级下一条；调用方主动取消（signal 已中止）原样上抛不降级；全部失败抛最后一个
+ * 错误，由调用方兜底（runner 的按会话指数退避接管重试节奏）。
  *
  * 文本只从 block-end（协议保证携带**组装完成的整块**）取；text-delta 仅在
  * 适配器异常地没有发 block-end 时兜底。两者都累计会把输出翻倍。
  */
 export async function callLLM(ctx: Context, cfg: MemoryConfig, opts: LlmCallOptions): Promise<string> {
-  const { provider, model } = await resolveModelRoute(ctx, cfg);
+  const primary = await resolveModelRoute(ctx, cfg);
+  const routes = buildRouteChain(primary, cfg.llm.fallbacks, cfg.llm.reasoningEffort);
+  let lastErr: unknown;
+  for (let i = 0; i < routes.length; i++) {
+    const route = routes[i];
+    try {
+      return await callRoute(ctx, cfg, opts, route);
+    } catch (err) {
+      // 调用方主动取消（重建取消/进程关闭）不是路由失败——不降级，原样上抛
+      if (opts.signal?.aborted) throw err;
+      lastErr = err;
+      warnRouteDeadOnce(route, opts.logger);
+      const next = routes[i + 1];
+      if (next) {
+        opts.logger?.info(
+          `[memory] 蒸馏路由降级 ${route.provider}/${route.model} → ${next.provider}/${next.model}（${errDetail(err)}）`,
+        );
+      }
+    }
+  }
+  throw lastErr;
+}
+
+/** 单路由一次尝试（callLLM 循环体；每路由新建超时信号 = 各享全额 timeoutMs）。 */
+async function callRoute(ctx: Context, cfg: MemoryConfig, opts: LlmCallOptions, route: DistillRoute): Promise<string> {
+  const { provider, model } = route;
   const signal = opts.signal ?? AbortSignal.timeout(cfg.llm.timeoutMs);
   // 档位按模型能力决策（跨供应商 effort 兼容）：不支持的档位不传 + 告警一次，
-  // 空配置 = 自动（模型默认档 → high）；详见 decideSendableEffort
-  const effort = await planDistillEffort(ctx, provider, model, cfg.llm.reasoningEffort, opts.logger);
+  // 空配置 = 自动（模型默认 → high）；路由的档位候选已在链解析时定好（条目 > 全局）
+  const effort = await planDistillEffort(ctx, provider, model, route.effort, opts.logger);
 
   // 输入预算兜底：任何蒸馏调用的用户 prompt 不超过 maxInputChars
   // （L1 已在数据层分块，这里是 L2/L3 与异常场景的最后一道网）
@@ -281,12 +363,12 @@ export async function callLLM(ctx: Context, cfg: MemoryConfig, opts: LlmCallOpti
     );
     throw err;
   }
-  if (opts.layer) recordDistillCall(opts.layer, user.length, outputTokens, reasoningTokens, false);
-  if (opts.layer) recordCostCall(provider, model, opts.layer, user.length, outputTokens, reasoningTokens);
   const out = (blockText || deltaText).trim();
   if (out.length === 0) {
     // 空输出是最难排查的失败：流正常结束但一个字没吐。必须记录 finish 原因、
     // token 计数与块分布，才能区分"模型只产出了 reasoning"vs"服务端返回空响应"。
+    if (opts.layer) recordDistillCall(opts.layer, user.length, outputTokens, reasoningTokens, true);
+    if (opts.layer) recordCostCall(provider, model, opts.layer, user.length, outputTokens, reasoningTokens);
     opts.logger?.warn(
       `[memory] LLM 空输出 ${provider}/${model}（${((Date.now() - startedAt) / 1000).toFixed(1)}s，finish=${finishKind || '无 finish 块'}` +
         `，输出 tokens=${outputTokens}${reasoningTokens > 0 ? `/reasoning ${reasoningTokens}` : ''}，` +
@@ -294,7 +376,12 @@ export async function callLLM(ctx: Context, cfg: MemoryConfig, opts: LlmCallOpti
         `block-end: ${[...blockEndTypes.entries()].map(([t, n]) => `${t}×${n}`).join(', ') || '无'}）` +
         (reasoningHead ? `，reasoning 摘录: ${reasoningHead}…` : ''),
     );
+    // 空输出按路由失败处理（#31）：交给回退链降级或上抛——原先返回空串只是把失败
+    // 推迟到下游 JSON/Markdown 解析，诊断信息更差
+    throw new Error(`llm empty output: ${provider}/${model} 流正常结束但输出 0 字符`);
   }
+  if (opts.layer) recordDistillCall(opts.layer, user.length, outputTokens, reasoningTokens, false);
+  if (opts.layer) recordCostCall(provider, model, opts.layer, user.length, outputTokens, reasoningTokens);
   opts.logger?.info(
     `[memory] LLM 调用 ${provider}/${model}：输入 ${user.length} 字符 → 输出 ${out.length} 字符（${((Date.now() - startedAt) / 1000).toFixed(1)}s，finish=${finishKind || '无'}）`,
   );
