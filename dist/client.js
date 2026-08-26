@@ -2024,7 +2024,7 @@ window.__ModuleLoader__.load({
         wrap: { padding: "8px 0" },
         row: { background: "var(--dsh-mem-bg-inset)", borderRadius: 8, padding: 8, marginBottom: 8, border: "1px solid transparent" },
         rowErr: { border: "1px solid var(--dsh-mem-danger)" },
-        badge: { flexShrink: 0, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "var(--dsh-mem-accent-weak)", color: "var(--dsh-mem-accent-text)", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" },
+        badge: { flexShrink: 0, width: 20, height: 18, borderRadius: 999, background: "var(--dsh-mem-accent-weak)", color: "var(--dsh-mem-accent-text)", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" },
         head: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 },
         foot: { display: "flex", alignItems: "center", gap: 8 },
         ico: { padding: 0, width: 26, height: 26, minWidth: 26, fontSize: 13, lineHeight: "20px" },
@@ -2147,6 +2147,8 @@ window.__ModuleLoader__.load({
           ),
           react.createElement(
             "div", { style: STY.foot },
+            // 前导占位 = 徽标宽（20）+ 行内间距（8）：档位下拉与上一行的供应商下拉左对齐
+            react.createElement("div", { style: { flexShrink: 0, width: 28 } }),
             react.createElement(NSel, {
               style: { width: 150 },
               options: effortOptions,
