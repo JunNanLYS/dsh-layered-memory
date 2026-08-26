@@ -1,8 +1,8 @@
 # global-spec — 全局设计规范
 
-适用范围：`client/client.js`（dsh 插件浏览器半边，手写 plain-JS / ES5，无打包器）。
-本目录是已落地实现的**事实记录**，改 UI 前先读；令牌终值与 `client.js` 注入样式表
-一字不差，冲突时以代码为准并同步本文。
+适用范围：`client/src/`（dsh 插件浏览器半边，TS/TSX 多文件源码，esbuild 打包为
+单文件 dist/client.js）。本目录是已落地实现的**事实记录**，改 UI 前先读；令牌终值与
+`client/src/theme.ts` 注入样式表一字不差，冲突时以代码为准并同步本文。
 
 品牌基调：DeepSeek 品牌蓝 `#4D6BFE`；克制的产品 UI（设置面板 + 输入栏控件），
 单强调色、信息密度适中、动效只做反馈不做表演。
@@ -184,9 +184,8 @@ smoke 第 21 节机械断言：inline `borderRadius` 与 CSS `border-radius` 只
 4. **圆角只取集合** `{4, 8, 10, 12, 999}`（+圆点 `50%`），smoke 机械拦截。
 5. **交互态三件套**：hover / active(按压) / focus(-visible)，照 `settings-spec.md` 的配方。
 6. **带 transition 的新类**：同步加进末尾 reduced-motion 压制名单（"动效"节）。
-7. **ES5 纯度**：var / function / 无箭头 / 无模板字符串（官方 handoff 外壳
-   `factory: (require) =>` 是既有豁免）。
-8. **可见文案零 em-dash**；中文注释；保持手写 bundle 风格，不引打包器。
-9. 改完跑全链：`node --check client/client.js` → 重建 dist-smoke → `npm run smoke`
-   （第 21 节会拦令牌 / 圆角 / em-dash / 类接线 / 档位名回归）→ `npm run build`
-   → 确认 `dist/client.js` 同步。
+7. ~~ES5 纯度~~（已废除：client 已迁 TS/TSX + esbuild，见 AGENTS.md 代码约定）。
+8. **可见文案零 em-dash**；中文注释；RPC 端点/载荷类型一律取 `src/contract.ts` 契约。
+9. 改完跑全链：`npm run typecheck`（client 侧 strict 双检）→ 重建 dist-smoke →
+   `npm run smoke`（第 21 节对 dist/client.js 产物拦令牌 / 圆角 / em-dash / 类接线 /
+   档位名 / handoff 协议回归）→ `npm run build` 产出最新 dist/client.js。

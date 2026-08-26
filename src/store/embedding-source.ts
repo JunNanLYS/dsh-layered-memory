@@ -26,7 +26,11 @@ import { ModelDownloadQueue } from './download-queue.js';
 import { RuntimeInstaller } from './runtime-installer.js';
 import type { MemoryDb } from './sqlite.js';
 
-export type EmbeddingSourceKind = 'remote' | 'local' | 'off';
+// EmbeddingSourceKind/ApplyPhase/ReindexProgressState/EmbeddingStateView 已迁入契约单一
+// 事实源（src/contract.ts）——embedding-state-get 端点与 client 嵌入区块共享同一形状；
+// import type 供本地使用，re-export 不断裂既有引用。
+import type { ApplyPhase, EmbeddingSourceKind, EmbeddingStateView, ReindexProgressState } from '../contract.js';
+export type { ApplyPhase, EmbeddingSourceKind, EmbeddingStateView, ReindexProgressState } from '../contract.js';
 
 export interface EmbeddingSourceState {
   source: EmbeddingSourceKind;
@@ -163,26 +167,6 @@ export function makeLocalServiceFactory(
 }
 
 // ── 活切换管理器 ──
-
-export type ApplyPhase =
-  | 'idle'
-  | 'installing-runtime'
-  | 'warming'
-  | 'switching'
-  | 'reindexing'
-  | 'done'
-  | 'error';
-
-export interface ReindexProgressState {
-  running: boolean;
-  l1Done: number;
-  l1Total: number;
-  l0Done: number;
-  l0Total: number;
-  startedAt: number;
-  cancelled: boolean;
-  error?: string;
-}
 
 export interface EmbeddingManagerDeps {
   dataDir: string;
@@ -516,32 +500,3 @@ export class EmbeddingManager {
   }
 }
 
-export interface EmbeddingStateView {
-  source: EmbeddingSourceKind;
-  activeModel: string | null;
-  ceilings: { remote: boolean; local: boolean };
-  runtime: {
-    targetVersion: string;
-    phase: 'idle' | 'installing' | 'ready' | 'error' | 'cancelled';
-    installedVersion: string | null;
-    elapsedMs: number;
-    lastLines: string[];
-    error?: string;
-  };
-  models: Array<{
-    id: string;
-    name: string;
-    dims: number;
-    contextTokens: number;
-    tags: string[];
-    description: string;
-    totalBytes: number;
-    bytesOnDisk: number;
-    state: 'none' | 'partial' | 'downloaded';
-  }>;
-  download: ReturnType<ModelDownloadQueue['getProgress']>;
-  apply: { phase: ApplyPhase; message: string; startedAt: number; busy: boolean };
-  local: { state: 'idle' | 'loading' | 'ready' | 'failed' | 'terminated'; error: string | null } | null;
-  reindex: ReindexProgressState;
-  activeNote?: string;
-}

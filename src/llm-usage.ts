@@ -11,7 +11,9 @@
  * 见 config.ts maxInputChars 注释），报告侧如实标注。
  */
 
-export type DistillLayer = 'l1-extract' | 'l1-dedup' | 'l2' | 'l3';
+// DistillLayer 已迁入契约单一事实源（src/contract.ts）
+import type { DistillLayer } from './contract.js';
+export type { DistillLayer } from './contract.js';
 
 export interface DistillLayerUsage {
   calls: number;

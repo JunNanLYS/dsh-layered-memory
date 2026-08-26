@@ -77,6 +77,18 @@ function assert(cond: boolean, label: string): void {
   }
 }
 
+/** 条件轮询等待（替代固定睡眠）：固定毫秒在慢速 CI runner 上会与异步管线（含 fs I/O 的
+ *  pending.json 原子落盘、任务队列入桶）赛跑产生假失败（2026-08-26 PR 事件实测：同树
+ *  push 绿 / PR 红）。超时抛错中断——状态未就位时后续断言只会连环误报，直接给出明确原因。 */
+async function waitFor(cond: () => boolean | Promise<boolean>, what: string, timeoutMs = 4000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await cond()) return;
+    if (Date.now() > deadline) throw new Error(`[smoke] waitFor 超时（${timeoutMs}ms）：${what}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
 const silentLogger = {
   debug: () => {},
   info: () => {},
@@ -1324,38 +1336,43 @@ async function main(): Promise<void> {
 
       // 爬坡起点 1：A 首条消息立即触发抽取，切片消费、warmup→2
       runnerT3.enqueue('A', [msg('a1', 1)], 'chat');
-      await settle();
+      await waitFor(() => llmCalls === 1 && runnerT3.pendingCount === 0, '首轮抽取完成');
       assert(llmCalls === 1 && runnerT3.pendingCount === 0, `首轮即出记忆（calls=${llmCalls}，桶清空）`);
       // 阈值 2：B 插入 1 条不触发（B 切片 1 < 2）；A 再 1 条（A 切片 1 < 2）也不触发
       runnerT3.enqueue('B', [msg('b1', 2)], 'chat');
-      await settle();
+      await waitFor(() => runnerT3.pendingCount === 1, 'B 首条入桶');
       runnerT3.enqueue('A', [msg('a2', 3)], 'chat');
-      await settle();
+      await waitFor(() => runnerT3.pendingCount === 2, 'A 第二条入桶');
       assert(llmCalls === 1 && runnerT3.pendingCount === 2, `未达阈值不触发，两会话切片并存（calls=${llmCalls}，桶 ${runnerT3.pendingCount}）`);
       // A 第 3 条 → A 切片 2 ≥ 2 触发：只抽 A 的切片，B 的 1 条留存；warmup→4
       runnerT3.enqueue('A', [msg('a3', 4)], 'chat');
-      await settle();
+      await waitFor(() => llmCalls === 2 && runnerT3.pendingCount === 1, '第二次抽取完成');
       assert(llmCalls === 2 && runnerT3.pendingCount === 1, `只消费 A 切片，B 切片留存（calls=${llmCalls}，桶 ${runnerT3.pendingCount}）`);
-      // 爬坡状态持久化：重读 pending.json 验证 chat=4
-      const { warmup: wReload } = await loadPending(pendingPathFor(tmpT3), silentLogger);
-      assert(wReload.chat === 4, `warmup 随 pending.json 持久化（chat=${wReload.chat}）`);
+      // 爬坡状态持久化：轮询重读 pending.json 直到 warmup=4 可见（原子写落盘与本断言赛跑
+      // 是 13g 曾在 CI 假失败的直接原因——内存态已就位 ≠ 文件已刷盘）
+      let wReloadChat = -1;
+      await waitFor(async () => {
+        wReloadChat = (await loadPending(pendingPathFor(tmpT3), silentLogger)).warmup.chat;
+        return wReloadChat === 4;
+      }, 'warmup=4 落盘可见');
+      assert(wReloadChat === 4, `warmup 随 pending.json 持久化（chat=${wReloadChat}）`);
 
       // 档位切换同步：切 off 挂起（切片留存、无 LLM 调用）；切回按捕获档位落袋
       runnerT3.enqueue('B', [msg('b2', 5)], 'chat'); // B 切片 2 条（阈值 4 攒批中）
-      await settle();
+      await waitFor(() => runnerT3.pendingCount === 2 && llmCalls === 2, 'B 第二条入桶（不触发抽取）');
       assert(runnerT3.pendingCount === 2 && llmCalls === 2, '切换前 B 攒批中（不触发）');
       runnerT3.onModeChange('B', 'chat', 'off');
-      await settle();
+      await settle(); // 挂起断言是"什么都不发生"：前置状态已就位，短睡兜底即可
       assert(llmCalls === 2 && runnerT3.pendingCount === 2, `切 off 挂起：切片留存不蒸馏（calls=${llmCalls}）`);
       runnerT3.onModeChange('B', 'off', 'chat');
-      await settle();
+      await waitFor(() => llmCalls === 3 && runnerT3.pendingCount === 0, '切回落袋完成');
       assert(llmCalls === 3 && runnerT3.pendingCount === 0, `切回按捕获档位落袋（calls=${llmCalls}，桶清空）`);
       // 非 off 档间切换同样立即落袋
       runnerT3.enqueue('A', [msg('a4', 6)], 'chat');
-      await settle();
+      await waitFor(() => runnerT3.pendingCount === 1, 'A 新切片入桶');
       assert(runnerT3.pendingCount === 1, 'A 新切片 1 条（阈值 4 攒批中）');
       runnerT3.onModeChange('A', 'chat', 'work');
-      await settle();
+      await waitFor(() => llmCalls === 4 && runnerT3.pendingCount === 0, '切走落袋完成');
       assert(llmCalls === 4 && runnerT3.pendingCount === 0, `切走按捕获档位（chat 桶）落袋（calls=${llmCalls}）`);
 
       runnerT3.stop();
@@ -1459,7 +1476,7 @@ async function main(): Promise<void> {
       runner2.enqueue('s', [], 'chat');
       runner2.enqueue('s', [], 'chat');
       runner2.stop(); // 同步置位：drain 在首任务完成后退出
-      await new Promise((r) => setTimeout(r, 50));
+      await waitFor(() => ran === 1, 'stop 后首任务完成');
       assert(ran === 1, `stop 后不再取新任务（完成 ${ran} 个）`);
       db4.close();
     } finally {
@@ -1666,7 +1683,7 @@ async function main(): Promise<void> {
         modesT5,
         tmpT5,
       );
-      await new Promise((r) => setTimeout(r, 30)); // 等 profileCache 首刷
+      await waitFor(() => (contextText2['memory:profile']() ?? '').includes('用户画像内容'), 'profileCache 首刷可见');
       const profileNoTools = contextText2['memory:profile']() ?? '';
       assert(profileNoTools.includes('用户画像内容') && !profileNoTools.includes('记忆工具调用指南'), '工具关闭 → 画像照常、指南不注入');
       personaText = '';
@@ -2332,9 +2349,26 @@ async function main(): Promise<void> {
     }
   }
 
-  // ── 21. client bundle 主题化静态断言（#15-#18 验收） ──
+  // ── 21. client bundle 产物静态断言（#15-#18 验收；断言对象是 esbuild 产物
+  //    dist/client.js 而非手写源码——断言"发布给宿主的东西"） ──
   {
-    const clientSrc = await fs.readFile(new URL('../client/client.js', import.meta.url), 'utf8');
+    // 产物缺失时跳过本节（与 worker ping 同款约定：先 npm run build 再跑 smoke 才生效）
+    const clientUrl = new URL('../dist/client.js', import.meta.url);
+    if (!(await fs.stat(clientUrl).then(() => true, () => false))) {
+      console.log('  ⏭ 21. client bundle 产物缺失（先 npm run build），跳过');
+    } else {
+    const clientSrc = await fs.readFile(clientUrl, 'utf8');
+    // handoff 协议：wrapper 头 + id=包名 + factory(require) 返回 module.exports
+    assert(clientSrc.startsWith('window.__ModuleLoader__.load({'), 'handoff 协议包装头');
+    assert(clientSrc.includes('id: "dsh-layered-memory"'), 'loader id = 包名（三处同步）');
+    assert(clientSrc.includes('factory: (require) =>'), 'factory(require) 签名');
+    // esbuild 具名导出会 getter 化 module.exports，wrapper 尾部摊平回普通对象（官方同款）
+    assert(clientSrc.includes('for (var __k in module.exports) __flat[__k] = module.exports[__k];'), 'factory 返回摊平后的 exports 对象');
+    assert(clientSrc.includes('Object.defineProperty(__flat, Symbol.toStringTag'), 'exports 对象带 Module toStringTag');
+    // react/jsx-runtime/官方原语全部 external（require 注入，绝不打入 bundle——防双 react 实例）
+    assert(clientSrc.includes('require("react")'), 'react 走宿主 require（external）');
+    assert(clientSrc.includes('require("react/jsx-runtime")'), 'jsx-runtime 走宿主 require');
+    assert(clientSrc.includes('hostRequire("@deepseek-ai/dsh-client-ui-primitives")'), '官方原语 guarded require');
     // 令牌层：双主题变量块 + DeepSeek 品牌蓝
     assert(clientSrc.includes(':root {') && clientSrc.includes('--dsh-mem-accent:'), '浅色令牌块存在');
     assert(clientSrc.includes('body[data-ds-dark-theme] {') && clientSrc.includes('--dsh-mem-accent-text:'), '暗色令牌块存在');
@@ -2354,10 +2388,10 @@ async function main(): Promise<void> {
     assert((clientSrc.match(/:focus-visible/g) ?? []).length >= 3, 'focus-visible 焦点环（btn/tab/pill 两态）');
     // 档位显示名中文化（配置键 off/chat/work/auto 保持英文——键值对并存断言）
     for (const label of ['关闭', '日常', '工作', '智能']) {
-      assert(clientSrc.includes('label: "' + label + '"'), `档位显示名：${label}`);
+      assert(clientSrc.includes(`label: "${label}"`), `档位显示名：${label}`);
     }
     for (const key of ['"off"', '"chat"', '"work"', '"auto"']) {
-      assert(clientSrc.includes('key: ' + key), `档位配置键保留：${key}`);
+      assert(clientSrc.includes(`key: ${key}`), `档位配置键保留：${key}`);
     }
     assert(clientSrc.includes('"记忆 · "'), 'pill 文本为"记忆 · 档位名"格式');
     // 悬浮板：dsw 原生菜单同配方浮层 + 拖动气泡 + 粗滑轨包裹圆球
@@ -2370,7 +2404,7 @@ async function main(): Promise<void> {
     assert((clientSrc.match(/clip-path: polygon\(0 0, 100% 0, 50% 100%\)/g) ?? []).length >= 2, '气泡下尖角为双 clip-path 倒三角');
     assert(clientSrc.includes('bottom: calc(100% + 8px)'), '气泡贴近圆球（悬停 8px）');
     assert(!clientSrc.includes('--dsw-alias-tooltip-bg, #2c2c2e'), '不随主题的 tooltip-bg 硬底已弃用');
-    assert(clientSrc.includes('var RAIL_H = 22') && clientSrc.includes('var THUMB = 16'), '粗滑轨（RAIL_H 22 > THUMB 16）');
+    assert(clientSrc.includes('RAIL_H = 22') && clientSrc.includes('THUMB = 16'), '粗滑轨（RAIL_H 22 > THUMB 16）');
     assert(clientSrc.includes('linear-gradient(90deg, var(--dsh-mem-fill-1), var(--dsh-mem-fill-2))'), '滑轨填充左浅右深渐变（球侧最深）');
     assert(!clientSrc.includes('var(--dsh-mem-fill-2), var(--dsh-mem-fill-1)'), '渐变端色序未被反转');
     // 填充：从滑轨左端铺到圆球右缘（重合无割裂）；off 档不渲染（auto 恰全轨蓝不超界）
@@ -2379,7 +2413,7 @@ async function main(): Promise<void> {
     assert(!clientSrc.includes('right: 0,'), '右侧填充锚定公式已移除');
     assert(clientSrc.includes('activeIdx > 0 || drag !== null'), '静态关闭档不渲染填充，拖拽中恒显示');
     // 粒子层：点阵粒子场（仓库B 路线）+ 档位分级 + 拖拽全套增强
-    assert(clientSrc.includes('react.createElement("canvas"'), '粒子层 canvas 元素');
+    assert(/jsx\)\(\s*"canvas"/.test(clientSrc), '粒子层 canvas 元素（JSX 自动运行时）');
     assert(clientSrc.includes('cancelAnimationFrame') && clientSrc.includes('requestAnimationFrame'), 'rAF 循环带清理');
     assert(clientSrc.includes('ctx.roundRect') && clientSrc.includes('height / 2)'), '胶囊形裁剪（roundRect 半径 = 半轨高）');
     assert(clientSrc.includes('FIELD_TIERS') && clientSrc.includes('tier: activeIdx'), '场强按档位分级（与填充/气泡同源）');
@@ -2397,18 +2431,18 @@ async function main(): Promise<void> {
     assert(clientSrc.includes('dsh-memory/session-stats'), 'session-stats 端点接线（信息区数据通道）');
     assert(clientSrc.includes('.dsh-mem-sinfo-grid'), '信息区 2×2 指标网格类');
     assert(clientSrc.includes('.dsh-mem-sinfo-warn'), '信息区降级警示行类');
-    assert(clientSrc.includes('busyRef.current ? 2000 : 5000'), '自适应轮询（忙 2s / 静 5s）');
+    // esbuild 数值规范化：2000/5000 印作 2e3/5e3
+    assert(clientSrc.includes('busyRef.current ? 2e3 : 5e3'), '自适应轮询（忙 2s / 静 5s）');
     assert(clientSrc.includes('alive = false'), '轮询随浮层卸载停止（cleanup 置停）');
     // pill：off 档透明化（压掉 UA 按钮默认底/边框，hover 淡底）、其余三档共用流光
     assert(clientSrc.includes('.dsh-mem-pill-off { border: none; background: transparent; }'), 'off 档透明按钮类');
     assert(clientSrc.includes('.dsh-mem-pill-off:hover { background: var(--dsh-mem-bg-hover); }'), 'off 档 hover 淡底');
     assert(clientSrc.includes('.dsh-mem-flow:focus-visible'), '流光态焦点环（与 off 态对称）');
     assert(clientSrc.includes('"dsh-mem-pill-off"'), 'off 档类接线到 pill');
-    assert(clientSrc.includes('var isFlow = loaded && !isOff'), 'off 档排除流光');
+    assert(clientSrc.includes('isFlow = loaded && !isOff'), 'off 档排除流光');
     assert(clientSrc.includes('--dsh-mem-pill-tint'), '流光内底混色通道');
     assert(!clientSrc.includes('.dsh-mem-glass'), '玻璃浮层类已移除（换原生实底浮层）');
     // 原生组件复用：guarded require + 三个包装器（含回退）
-    assert(clientSrc.includes('require("@deepseek-ai/dsh-client-ui-primitives")'), '原生 primitives require');
     assert(
       clientSrc.includes('function NButton') && clientSrc.includes('function NInput') && clientSrc.includes('function NModal'),
       '原生组件包装器 NButton/NInput/NModal',
@@ -2434,6 +2468,7 @@ async function main(): Promise<void> {
     // 图表系列色接线（成本看板折线）：8 档令牌双主题定义 + PALETTE 只引用 var()
     for (let i = 1; i <= 8; i++) assert(clientSrc.includes(`--dsh-mem-chart-${i}: #`), `图表令牌定义：chart-${i}`);
     assert(clientSrc.includes('"var(--dsh-mem-chart-1)"'), 'PALETTE 引用 chart 令牌（非裸 hex）');
+    }
   }
 
   // ── 22. 模型目录 + 下载器（#20：目录即完整性契约 + 断点续传状态机） ──
@@ -3179,7 +3214,7 @@ async function main(): Promise<void> {
         }) as SpawnImpl;
         const insD = new RuntimeInstaller(path.join(tmp25, 'd'), '1.0.0', { logger: silentLogger, spawnImpl: dImpl, lockfileSource: lockSrc });
         const dPromise = insD.ensure();
-        await new Promise((r) => setTimeout(r, 30)); // 等 ci 起跑
+        await waitFor(() => dCalls.length === 1, 'ci 子进程起跑');
         assert(insD.cancel() === true, 'ci 阶段取消被接受');
         assert((await dPromise) === false, '取消后 ensure 返回 false');
         assert(dCalls.length === 1 && dCalls[0].args[0] === 'ci', `取消后不回退 install（实际调用 ${dCalls.map((x) => x.args[0]).join(',')}）`);

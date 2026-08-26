@@ -5,6 +5,7 @@
  */
 import Schema from '@deepseek-ai/schemastery';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
+import type { EffortChoice, StaticFallbackEntry } from './contract.js';
 import type { ExtractMode } from './types.js';
 
 /**
@@ -13,7 +14,8 @@ import type { ExtractMode } from './types.js';
  * schema（config/settings）、运行时解析（settings.resolveSettings）与 RPC
  * 写入门（stats.settings-set）共用，勿在别处再抄字面量表。
  */
-export const EFFORT_CHOICES = ['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+// satisfies 反向锁定：词汇表扩词必须同步契约的 EffortChoice 联合（host 与 TS 化的 client 共用）
+export const EFFORT_CHOICES = ['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const satisfies readonly EffortChoice[];
 
 export interface MemoryConfig {
   /** 数据目录；留空则用 $DSH_HOME/memory。 */
@@ -104,7 +106,7 @@ export interface MemoryConfig {
      *  条目 reasoningEffort 非空时覆盖全局档位（未配置运行时链 distillChain 时，
      *  旧档位键 reasoningEffort 的整体接管——含给条目盖章——仍对存量值生效）；
      *  空数组（缺省）= 单路由行为不变。 */
-    fallbacks?: Array<{ provider: string; model: string; reasoningEffort?: string }>;
+    fallbacks?: StaticFallbackEntry[];
     /** 单次蒸馏调用的输出 token 上限（推理模型的 reasoning 与正文共享该预算）。 */
     maxTokens: number;
     /** 蒸馏调用的思考档位；空串不传（跟随模型默认）。 */

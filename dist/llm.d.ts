@@ -24,8 +24,9 @@ export declare const LAYER_MAX_TOKENS_DEDUP = 8000;
 export declare const LAYER_MAX_TOKENS_L2 = 32000;
 /** L3 画像（完整 persona 文档）。 */
 export declare const LAYER_MAX_TOKENS_L3 = 16000;
-/** 分层输出预算键（运行时设置 / UI 与内置默认共用同一套键名）。 */
-export type DistillBudgetLayer = 'extract' | 'dedup' | 'l2' | 'l3';
+/** 分层输出预算键（已迁入契约 src/contract.ts；import type 供本地使用，re-export 不断裂既有引用）。 */
+import type { DistillBudgetLayer } from './contract.js';
+export type { DistillBudgetLayer } from './contract.js';
 /** 各层内置默认预算（设置页"0 = 跟随默认"的默认值来源）。 */
 export declare const LAYER_DEFAULT_BUDGETS: Record<DistillBudgetLayer, number>;
 /**

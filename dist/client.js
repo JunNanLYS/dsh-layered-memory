@@ -1,3433 +1,3018 @@
-/**
- * dsh-layered-memory — browser half（手写 plain-JS bundle，无打包器）。
- *
- * 1. 输入栏（conversation.input.left，模式选择器右侧）：会话记忆档位 pill
- *    （关闭/日常/工作/智能 四态，配置键 off/chat/work/auto），点击展开滑动选择器；
- * 2. 设置 → 记忆：多 Tab 记忆浏览器（概览+开关 / L1 记忆 / L2 场景 / L3 画像 / 运行日志，
- *    两族混合视图）。
- * 数据通道：ctx.connection.rpc.call('/rpc', 'dsh-memory/*', payload) → Host 侧 RPC 端点。
- *
- * 结构对齐官方 client bundle 的 handoff 协议：
- *   window.__ModuleLoader__.load({ id, factory })，
- *   factory(require) 返回 { apply, inject }。
- */
 window.__ModuleLoader__.load({
-  id: "dsh-layered-memory",
-  factory: (require) => {
-    var module = { exports: {} };
-    var exports = module.exports;
-    Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-    var react = require("react");
-
-    // ── dsh 原生 UI 组件（官方 seed 模块 @deepseek-ai/dsh-client-ui-primitives，
-    // 与宿主视觉完全一致）。宿主未注册该模块（老版本 dsh）时静默回退到
-    // 本 bundle 的等效实现——degrade-don't-crash，与插件整体降级哲学一致。 ──
-    var P = null;
-    try {
-      P = require("@deepseek-ai/dsh-client-ui-primitives");
-    } catch (e) {
-      P = null;
-    }
-
-    /** 原生 Button（size sm）优先；回退 .dsh-mem-btn 类按钮（剥离原生专属 props）。 */
-    function NButton(props) {
-      if (P && P.Button) return react.createElement(P.Button, Object.assign({ size: "sm" }, props));
-      var rest = Object.assign({}, props);
-      delete rest.variant;
-      delete rest.icon;
-      rest.className = "dsh-mem-btn" + (rest.className ? " " + rest.className : "");
-      return react.createElement("button", rest);
-    }
-
-    /** 原生 Input 优先；回退 .dsh-mem-input 类输入框。
-     * 原生 Input 是 span>input 结构且 rest 摊给内层 input——布局属性（flex/minWidth
-     * 等）必须路由到外层，否则搜索框在 flex 工具栏里不再撑满。 */
-    function NInput(props) {
-      if (P && P.Input) {
-        var inner = Object.assign({}, props);
-        var layoutStyle = inner.style;
-        delete inner.style;
-        return react.createElement("span", { style: layoutStyle }, react.createElement(P.Input, inner));
-      }
-      var rest = Object.assign({}, props);
-      rest.className = "dsh-mem-input" + (rest.className ? " " + rest.className : "");
-      return react.createElement("input", rest);
-    }
-
-    /** 原生 Modal 优先；回退 .dsh-mem-rb-overlay/.dsh-mem-rb-modal 模态。 */
-    function NModal(props) {
-      if (props.open === false) return null;
-      if (P && P.Modal) return react.createElement(P.Modal, Object.assign({ closeLabel: "关闭" }, props));
-      return react.createElement(
-        "div",
-        {
-          className: "dsh-mem-rb-overlay",
-          onClick: function (e) {
-            if (e.target === e.currentTarget && props.onClose) props.onClose();
-          },
-        },
-        react.createElement(
-          "div",
-          { className: "dsh-mem-rb-modal" },
-          props.title
-            ? react.createElement("div", { style: { fontSize: 15, fontWeight: 600, marginBottom: 10 } }, props.title)
-            : null,
-          props.children,
-          props.footer
-            ? react.createElement(
-                "div",
-                { style: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 } },
-                props.footer,
-              )
-            : null,
-        ),
-      );
-    }
-
-    var inject = ["slots", "connection"];
-
-    // ── 通用样式：颜色一律走 --dsh-mem-* 令牌（随 Light/Dark 主题自动切换）；
-    // 视觉与交互态（hover/active/focus）在注入样式表的类里，这里只留布局 ──
-    var S = {
-      section: { padding: "0 4px" },
-      heading: { fontSize: 16, fontWeight: 600, margin: "0 0 4px", color: "var(--dsh-mem-text-1)" },
-      intro: { fontSize: 13, color: "var(--dsh-mem-text-3)", margin: "0 0 12px" },
-      tabbar: { display: "flex", gap: 2, borderBottom: "1px solid var(--dsh-mem-border)", marginBottom: 14 },
-      error: {
-        marginTop: 10,
-        fontSize: 13,
-        color: "var(--dsh-mem-danger)",
-        whiteSpace: "pre-wrap",
-      },
-      hint: { marginTop: 12, fontSize: 12, color: "var(--dsh-mem-text-3)" },
-      toolbar: { display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" },
-      card: {
-        padding: "10px 12px",
-        marginBottom: 8,
-        fontSize: 13,
-      },
-      cardHead: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 },
-      muted: { color: "var(--dsh-mem-text-3)", fontSize: 12 },
-      content: { lineHeight: 1.5, wordBreak: "break-word", color: "var(--dsh-mem-text-1)" },
-      detail: {
-        marginTop: 8,
-        paddingTop: 8,
-        borderTop: "1px dashed var(--dsh-mem-border)",
-        fontSize: 12,
-        fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
-        color: "var(--dsh-mem-text-2)",
-        whiteSpace: "pre-wrap",
-      },
-      pre: {
-        margin: 0,
-        padding: "10px 12px",
-        background: "var(--dsh-mem-bg-inset)",
-        border: "1px solid var(--dsh-mem-border)",
-        borderRadius: 10,
-        fontSize: 12,
-        fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word",
-        lineHeight: 1.6,
-        maxHeight: 480,
-        overflow: "auto",
-      },
-      switchRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 0" },
-      switchLabel: { fontSize: 13, fontWeight: 600, minWidth: 72, color: "var(--dsh-mem-text-1)" },
-      switchDesc: { fontSize: 12, color: "var(--dsh-mem-text-3)" },
-      switch: {
-        width: 36,
-        height: 20,
-        borderRadius: 999,
-        position: "relative",
-        cursor: "pointer",
-        transition: "background .15s",
-        flexShrink: 0,
-      },
-      switchOn: { background: "var(--dsh-mem-accent-fill)" },
-      switchOff: { background: "var(--dsh-mem-border-strong)" },
-      switchDisabled: { opacity: 0.4, cursor: "not-allowed" },
-      knob: {
-        position: "absolute",
-        top: 2,
-        width: 16,
-        height: 16,
-        borderRadius: "50%",
-        background: "var(--dsh-mem-thumb)",
-        transition: "left .15s",
-        boxShadow: "0 1px 2px rgba(0,0,0,.25)",
-      },
-      switchPanel: {
-        border: "1px solid var(--dsh-mem-border)",
-        borderRadius: 10,
-        background: "var(--dsh-mem-bg-card)",
-        boxShadow: "var(--dsh-mem-shadow-card)",
-        padding: "4px 14px",
-        marginBottom: 14,
-      },
-      panelLabel: {
-        fontSize: 12,
-        fontWeight: 600,
-        color: "var(--dsh-mem-text-3)",
-        margin: "12px 0 2px",
-      },
-      statGrid: {
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-        gap: 8,
-        marginBottom: 14,
-      },
-      statTile: { padding: "10px 12px" },
-      statNum: { fontSize: 20, fontWeight: 650, lineHeight: "28px", color: "var(--dsh-mem-text-1)" },
-      statLabel: { fontSize: 12, color: "var(--dsh-mem-text-3)", marginTop: 2 },
-      infoRow: {
-        display: "flex",
-        alignItems: "baseline",
-        gap: 12,
-        padding: "5px 0",
-        borderBottom: "1px solid var(--dsh-mem-border)",
-      },
-      infoKey: { fontSize: 12.5, color: "var(--dsh-mem-text-3)", whiteSpace: "nowrap", minWidth: 96 },
-      infoVal: {
-        fontSize: 12.5,
-        color: "var(--dsh-mem-text-1)",
-        fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
-        wordBreak: "break-all",
-        textAlign: "right",
-        flex: 1,
-      },
-      seg: {
-        display: "inline-flex",
-        border: "1px solid var(--dsh-mem-border)",
-        borderRadius: 8,
-        overflow: "hidden",
-        flexShrink: 0,
-        background: "var(--dsh-mem-bg-inset)",
-      },
-      segBtn: {
-        padding: "4px 12px",
-        fontSize: 12,
-        lineHeight: "16px",
-        cursor: "pointer",
-        background: "transparent",
-        color: "var(--dsh-mem-text-2)",
-        border: "none",
-        borderRight: "1px solid var(--dsh-mem-border)",
-      },
-      segBtnOn: {
-        background: "var(--dsh-mem-accent-fill)",
-        color: "#fff",
-        fontWeight: 600,
-      },
-      flexRow: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
-      grow: { flex: 1 },
-      sceneHead: { display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" },
-      sceneTitle: { fontSize: 13, fontWeight: 600, fontFamily: "ui-monospace, Consolas, monospace", color: "var(--dsh-mem-text-1)" },
-    };
-
-    var TYPE_LABELS = {
-      persona: "画像偏好",
-      episodic: "客观事件",
-      instruction: "全局指令",
-      work_fact: "工作事实",
-      work_task: "工作任务",
-      work_method: "工作方法",
-      work_artifact: "工作资产",
-    };
-
-    function fmtTime(iso) {
-      if (!iso) return "-";
-      try {
-        return new Date(iso).toLocaleString();
-      } catch (e) {
-        return String(iso);
-      }
-    }
-
-    /** 相对时间（悬浮卡摘要行用）：刚刚 / N 分钟前 / N 小时前 / N 天前；无效返回 null。 */
-    function fmtAgo(iso) {
-      if (!iso) return null;
-      try {
-        var t = new Date(iso).getTime();
-        if (!t) return null;
-        var s = Math.floor((Date.now() - t) / 1000);
-        if (s < 0) s = 0;
-        if (s < 45) return "刚刚";
-        if (s < 3600) return Math.floor(s / 60) + " 分钟前";
-        if (s < 86400) return Math.floor(s / 3600) + " 小时前";
-        return Math.floor(s / 86400) + " 天前";
-      } catch (e) {
-        return null;
-      }
-    }
-
-    // ── Switch 组件 ──
-    function Switch(props) {
-      var on = !!props.checked;
-      var disabled = !!props.disabled;
-      var base = Object.assign({}, S.switch, on ? S.switchOn : S.switchOff, disabled ? S.switchDisabled : null);
-      return react.createElement(
-        "div",
-        {
-          style: base,
-          onClick: function () {
-            if (!disabled && props.onChange) props.onChange(!on);
-          },
-        },
-        react.createElement("span", {
-          style: Object.assign({}, S.knob, { left: on ? 18 : 2 }),
-        }),
-      );
-    }
-
-    function SwitchRow(props) {
-      return react.createElement(
-        "div",
-        { style: S.switchRow },
-        react.createElement(Switch, {
-          checked: props.checked,
-          disabled: props.disabled,
-          onChange: props.onChange,
-        }),
-        react.createElement("div", null,
-          react.createElement("div", { style: S.switchLabel }, props.label),
-          react.createElement("div", { style: S.switchDesc }, props.desc || "")),
-      );
-    }
-
-    // ── Segmented 组件：分段选择器（支持逐项禁用：远程档未配四件套时置灰） ──
-    function Segmented(props) {
-      var value = props.value;
-      var disabled = !!props.disabled;
-      return react.createElement(
-        "div",
-        { style: Object.assign({}, S.seg, disabled ? S.switchDisabled : null) },
-        props.options.map(function (opt, i) {
-          var on = opt.key === value;
-          var optDisabled = disabled || !!opt.disabled;
-          return react.createElement(
-            "span",
-            {
-              key: opt.key,
-              title: opt.disabledTitle || "",
-              style: Object.assign(
-                {},
-                S.segBtn,
-                on ? S.segBtnOn : null,
-                i === props.options.length - 1 ? { borderRight: "none" } : null,
-                optDisabled ? { cursor: "not-allowed", opacity: 0.45 } : null,
-              ),
-              onClick: function () {
-                if (!optDisabled && !on && props.onChange) props.onChange(opt.key);
-              },
-            },
-            opt.label,
-          );
-        }),
-      );
-    }
-
-    // ── 会话记忆档位控件（输入栏 pill + 滑动选择器） ──
-    // 档位顺序即滑轨顺序：关闭 → 日常 → 工作 → 智能（默认档"智能"居右）。
-    // 显示名中文；配置键与英文层保持 off/chat/work/auto（session-modes.json 不变）。
-    // 档位色是 CSS 变量引用（--dsh-mem-mode-*，Light/Dark 各一组值，注入样式表定义），
-    // 取值 = 灰 → 品牌蓝 的渐变阶：off 灰、chat/work 过渡蓝、auto 品牌蓝。
-    var MODES = [
-      { key: "off", label: "关闭", color: "var(--dsh-mem-text-2)" },
-      { key: "chat", label: "日常", color: "var(--dsh-mem-mode-chat)" },
-      { key: "work", label: "工作", color: "var(--dsh-mem-mode-work)" },
-      { key: "auto", label: "智能", color: "var(--dsh-mem-mode-auto)" },
-    ];
-    var TRACK_W = 200;
-    var THUMB = 16;
-    var RAIL_H = 22; // 粗滑轨高度 > 圆球直径（圆球被滑轨包裹）
-    var INNER_W = TRACK_W - THUMB;
-    // 点阵粒子场档位参数（参考 DSH-Claude-Style-Reasoning-Slider 的分档场强，
-    // 配色锁品牌蓝单色系）：density 越大点阵越密、alpha 亮度系数、wave 明暗水波纹、
-    // tempo 闪烁节拍倍率。tier0（关闭）不参与——show=false 整层不画
-    var FIELD_TIERS = [
-      { density: 0, alpha: 0, wave: 0, tempo: 1 },
-      { density: 0.34, alpha: 0.5, wave: 0, tempo: 1 }, // 日常：稀疏微光
-      { density: 0.55, alpha: 0.78, wave: 1, tempo: 1.15 }, // 工作：中强 + 水波纹
-      { density: 0.72, alpha: 1, wave: 1, tempo: 1.3 }, // 智能：满场最活跃
-    ];
-
-    /** smoothstep（粒子场展开/揭示用 ease） */
-    function smStep(a, b, x) {
-      var t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-      return t * t * (3 - 2 * t);
-    }
-
-    function modeInfo(key) {
-      for (var i = 0; i < MODES.length; i++) if (MODES[i].key === key) return MODES[i];
-      return MODES[3];
-    }
-
-    function modeLabel(key) {
-      if (key === "auto") return "智能（双族）";
-      if (key === "chat") return "日常（个人）";
-      if (key === "work") return "工作（团队）";
-      return "关闭";
-    }
-
-    function modeIndex(key) {
-      for (var i = 0; i < MODES.length; i++) if (MODES[i].key === key) return i;
-      return 3;
-    }
-
-    /** 滑动选择器浮层（参考 macOS 滑动器：拖拽圆头 1:1 连续跟手，松手按动量投影吸附最近档）。 */
-    function ModeSlider(props) {
-      ensureThemeStyle(); // 主题令牌与浮层/气泡 class 共用同一张注入样式表
-      var trackRef = react.useRef(null);
-      // 拖拽状态：{ x: 圆头连续位置 px, lastX: 上次指针 clientX, t: 时间戳, v: 速度 px/ms（EMA 平滑） }
-      var dragState = react.useState(null);
-      var drag = dragState[0];
-      var setDrag = dragState[1];
-      // 粒子层 canvas ref + 几何快照 ref（rAF 循环跨帧读最新值，不重建 effect）
-      var canvasRef = react.useRef(null);
-      var geoRef = react.useRef(null);
-
-      var clampX = function (x) {
-        if (x < 0) return 0;
-        if (x > INNER_W) return INNER_W;
-        return x;
-      };
-      var xFromClientX = function (clientX) {
-        var rect = trackRef.current.getBoundingClientRect();
-        return clampX(clientX - rect.left - THUMB / 2);
-      };
-
-      var onPointerDown = function (e) {
-        e.preventDefault();
-        e.currentTarget.setPointerCapture(e.pointerId);
-        setDrag({ x: xFromClientX(e.clientX), lastX: e.clientX, t: e.timeStamp, v: 0 });
-      };
-      var onPointerMove = function (e) {
-        if (drag === null) return;
-        var dt = e.timeStamp - drag.t;
-        var instV = dt > 0 ? (e.clientX - drag.lastX) / dt : drag.v;
-        setDrag({
-          x: xFromClientX(e.clientX),
-          lastX: e.clientX,
-          t: e.timeStamp,
-          v: drag.v * 0.7 + instV * 0.3, // EMA：瞬时抖动不放大，松手投影用
-        });
-      };
-      var onPointerUp = function (e) {
-        if (drag === null) return;
-        // 动量投影（Designing Fluid Interfaces）：按松手速度前瞻落点就近吸附；
-        // 投影量 clamp 到半档（±30px）——甩动最多把边界推到相邻档，绝不会跳两档
-        var projected = xFromClientX(e.clientX) + Math.max(-30, Math.min(30, drag.v * 120));
-        var idx = Math.round((clampX(projected) / INNER_W) * (MODES.length - 1));
-        setDrag(null);
-        props.onCommit(MODES[idx].key);
-      };
-
-      // 拖拽中圆头 1:1 跟指针（连续位置，不吸附）；静止时停在档位中心
-      var thumbLeft = drag !== null ? drag.x : (modeIndex(props.mode) / (MODES.length - 1)) * INNER_W;
-      var activeIdx = Math.min(MODES.length - 1, Math.max(0, Math.round((thumbLeft / INNER_W) * (MODES.length - 1))));
-      var info = MODES[activeIdx];
-
-      // 粒子层几何快照：每帧渲染时更新，rAF 循环跨帧读取（避免按帧重建 effect）
-      geoRef.current = {
-        origin: thumbLeft + THUMB / 2, // 密度/亮度中心 = 圆球中心
-        rightEdge: thumbLeft + THUMB, // 粒子活动区右界 = 填充右缘（不越过圆球）
-        tier: activeIdx, // 场强档位（与填充/气泡同源；拖拽预览即时升降级）
-        show: activeIdx > 0 || drag !== null, // 与填充显隐同源
-        dragging: drag !== null,
-      };
-
-      // 粒子层动画循环：DPR 适配 + ResizeObserver + 主题观察；reduced-motion 只画静帧。
-      // 依赖数组为空——几何/拖拽态经 geoRef 传递，effect 全生命周期只建一次
-      react.useEffect(function () {
-        var canvas = canvasRef.current;
-        if (!canvas) return undefined;
-        var ctx = canvas.getContext && canvas.getContext("2d");
-        if (!ctx) return undefined;
-        var reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
-        var width = 1;
-        var height = 1;
-        var frame = 0;
-        var grid = []; // 点阵网格（resize 时预计算静态哈希，逐帧只做时间维运算）
-        var cell = 5;
-        var gap = 1.1;
-        var fieldOn = false; // show 翻转沿：入场展开动画的计时原点
-        var fieldStart = 0;
-        var lastDrawn = 0;
-
-        var resize = function () {
-          var b = canvas.getBoundingClientRect();
-          var ratio = Math.min(window.devicePixelRatio || 1, 2);
-          width = Math.max(1, b.width);
-          height = Math.max(1, b.height);
-          canvas.width = Math.max(1, Math.round(width * ratio));
-          canvas.height = Math.max(1, Math.round(height * ratio));
-          ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-          // 网格：200×22 轨道 → 40 列 × 5 行 ≈ 200 格（哈希来自仓库B 的预计算方案）
-          cell = width < 280 ? 5 : 6;
-          grid = [];
-          for (var row = 0; row * cell < height; row++) {
-            for (var column = 0; column * cell < width; column++) {
-              grid.push({
-                x: column * cell,
-                y: row * cell,
-                base: Math.abs(Math.sin(column * 12.9898 + row * 78.233) * 43758.5453) % 1,
-                tempo: Math.abs(Math.sin(column * 7.13 + row * 19.41) * 19341.731) % 1,
-                phase: Math.abs(Math.sin(column * 31.17 + row * 11.93) * 28437.123) % 1,
-              });
-            }
-          }
-        };
-
-        var draw = function (time) {
-          var st = geoRef.current || { origin: 0, rightEdge: 0, tier: 0, show: false, dragging: false };
-          ctx.clearRect(0, 0, width, height);
-          if (!st.show || st.rightEdge <= 0) {
-            fieldOn = false;
-            return;
-          }
-          if (!fieldOn) {
-            fieldOn = true;
-            fieldStart = time; // 入场展开从这一刻起算（900ms 从圆球向外揭示）
-          }
-          var dark = document.body.hasAttribute("data-ds-dark-theme");
-          var tier = FIELD_TIERS[st.tier] || FIELD_TIERS[1];
-          var elapsed = Math.max(0, time - fieldStart);
-          var reveal = reduced.matches ? 1 : smStep(0, 1, elapsed / 900);
-          var ripplePhase = (elapsed % 1200) / 1200; // 明暗水波纹（1200ms 一轮，从球向外）
-          var tempo = tier.tempo * (st.dragging ? 2 : 1); // 拖拽全档提速
-          // 基色→高亮色：浅色用深蓝（multiply 混合下沉显色）/ 暗色用亮蓝
-          var dim = dark ? [124, 144, 250] : [61, 91, 224];
-          var hot = dark ? [214, 224, 255] : [126, 148, 250];
-
-          ctx.save();
-          ctx.beginPath();
-          // 裁剪到填充区（胶囊形，与滑轨同圆角——矩形裁剪会在圆角末端溢出）
-          if (ctx.roundRect) ctx.roundRect(0, 0, st.rightEdge, height, height / 2);
-          else ctx.rect(0, 0, st.rightEdge, height);
-          ctx.clip();
-
-          for (var i = 0; i < grid.length; i++) {
-            var c = grid[i];
-            var dx = Math.abs(c.x + cell * 0.5 - st.origin) / Math.max(1, st.rightEdge * 0.5);
-            if (dx > 1) continue;
-            var near = Math.min(1, Math.max(0, 1 - dx * 1.1)); // 近球更密更亮
-            if (c.base > tier.density - near * 0.3) continue; // 密度门（近球放行更多格）
-            // 独立随机闪烁：每格按自身 tempo/phase 起伏
-            var flicker = 0.5 + 0.5 * Math.sin(elapsed * 0.012 * tempo + c.tempo * 6.283 + c.phase * 6.283);
-            // 明暗水波纹：从球心向外传播的亮带（tier 未开波纹时给常量底）
-            var wave = tier.wave ? 0.5 + 0.5 * Math.sin((dx * 2 - ripplePhase) * 6.283) : 0.62;
-            // 展开：越靠近球越早亮，向外渐显
-            var revealA = smStep(0, 1, reveal * (1 - dx * 0.85) + dx * 0.15);
-            var alpha = Math.min(1, (0.26 + 0.44 * flicker + near * 0.28) * (0.28 + 0.72 * wave) * revealA * tier.alpha);
-            if (alpha < 0.02) continue;
-            // 亮闪格向高亮色靠（flicker×wave 双高才发白）
-            var glowMix = Math.max(0, flicker * wave - 0.45) * 1.6;
-            ctx.fillStyle = "rgba(" +
-              Math.round(dim[0] + (hot[0] - dim[0]) * glowMix) + "," +
-              Math.round(dim[1] + (hot[1] - dim[1]) * glowMix) + "," +
-              Math.round(dim[2] + (hot[2] - dim[2]) * glowMix) + "," +
-              alpha.toFixed(3) + ")";
-            ctx.fillRect(c.x + gap * 0.5, c.y + gap * 0.5, cell - gap, cell - gap);
-          }
-          ctx.restore();
-        };
-
-        var loop = function (time) {
-          // 33ms 节流（≈30fps）：闪烁/波纹尺度下无可感差异，省电
-          if (time - lastDrawn >= 33) {
-            lastDrawn = time;
-            draw(time);
-          }
-          frame = window.requestAnimationFrame(loop);
-        };
-        var redrawStatic = function () {
-          if (reduced.matches) draw(performance.now());
-        };
-        var ro = new ResizeObserver(function () {
-          resize();
-          redrawStatic();
-        });
-        var themeObs = new MutationObserver(function () {
-          redrawStatic(); // 静帧模式下主题翻转要重画（动画循环每帧自读主题）
-        });
-        ro.observe(canvas);
-        themeObs.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
-        resize();
-        draw(performance.now());
-        if (!reduced.matches) frame = window.requestAnimationFrame(loop);
-        return function () {
-          window.cancelAnimationFrame(frame);
-          ro.disconnect();
-          themeObs.disconnect();
-        };
-      }, []);
-
-      // 停点刻度：轨道上的 4 个小点提示可吸附位置；档位名改由拖动气泡显示
-      var stops = [];
-      for (var i = 0; i < MODES.length; i++) {
-        var stopLeft = (i / (MODES.length - 1)) * INNER_W + THUMB / 2;
-        stops.push(
-          react.createElement("div", {
-            key: "stop" + i,
-            style: {
-              position: "absolute",
-              left: stopLeft - 3,
-              top: (RAIL_H - 6) / 2,
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: "var(--dsh-mem-dot)",
-              zIndex: 2,
-              pointerEvents: "none",
-            },
-          }),
-        );
-      }
-
-      return react.createElement(
-        "div",
-        {
-          // 外壳只负责定位（带 transform 居中悬浮在按钮上方，水平中轴对齐 pill 中心）
-          style: {
-            position: "absolute",
-            bottom: "calc(100% + 8px)",
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 1000,
-          },
-        },
-        react.createElement(
-          "div",
-          // dsh 原生菜单同配方浮层：不透明实底（dsw-specific-menu）+ inverted 描边 + lv3 阴影；
-          // 上下内边距对称（滑轨垂直居中、浮层紧凑），拖动气泡经 overflow: visible 溢出到浮层上方
-          { className: "dsh-mem-popover", style: { position: "relative", padding: "14px 16px" } },
-          react.createElement(
-            "div",
-            {
-              ref: trackRef,
-              style: {
-                position: "relative",
-                // 容器宽 = thumb 活动范围（0..INNER_W + THUMB），点击映射与视觉两端严格对齐
-                width: TRACK_W,
-                height: RAIL_H,
-                borderRadius: 999,
-                background: "var(--dsh-mem-track)",
-                touchAction: "none",
-                cursor: drag === null ? "pointer" : "grabbing",
-              },
-              onPointerDown: onPointerDown,
-              onPointerMove: onPointerMove,
-              onPointerUp: onPointerUp,
-              onPointerCancel: onPointerUp,
-            },
-            // 填充：从滑轨左端铺到圆球右缘（width = thumbLeft + THUMB，整球落在
-            // 填充末端上与其重合，无空隙不割裂；auto 档恰好全轨蓝、不超出轨道）；
-            // 颜色从左往右渐变：左侧浅（fill-1）到球侧深（fill-2）；
-            // 显隐分两支：静态关闭档（off 且未拖拽）不渲染；拖拽中无论预览到哪档
-            // 恒显示（松手落 off 才随提交消失）；
-            // 松手吸附时 width 与圆球 left 同走 120ms ease（防球与填充瞬时分家）
-            activeIdx > 0 || drag !== null
-              ? react.createElement("div", {
-                  style: {
-                    position: "absolute",
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: thumbLeft + THUMB,
-                    borderRadius: 999,
-                    background: "linear-gradient(90deg, var(--dsh-mem-fill-1), var(--dsh-mem-fill-2))",
-                    pointerEvents: "none",
-                    zIndex: 1,
-                    transition: drag === null ? "width 120ms ease" : "none",
-                  },
-                })
-              : null,
-            stops,
-            // 粒子层：点阵粒子场（pointerEvents none 不挡拖拽；拖拽时滤镜增饱和提亮）
-            react.createElement("canvas", {
-              ref: canvasRef,
-              className: "dsh-mem-particles",
-              style: {
-                position: "absolute",
-                left: 0,
-                top: 0,
-                width: "100%",
-                height: "100%",
-                pointerEvents: "none",
-                zIndex: 2,
-                filter: drag !== null ? "saturate(1.45) brightness(1.28) contrast(1.06)" : "none",
-              },
-            }),
-            // 圆球：被粗滑轨包裹（RAIL_H > THUMB），品牌蓝描边，拖拽时阴影加重
-            react.createElement("div", {
-              style: {
-                position: "absolute",
-                left: thumbLeft,
-                top: (RAIL_H - THUMB) / 2,
-                width: THUMB,
-                height: THUMB,
-                borderRadius: "50%",
-                background: "var(--dsh-mem-thumb)",
-                border: "1px solid var(--dsh-mem-accent)",
-                boxShadow: drag !== null
-                  ? "0 2px 8px rgba(0,0,0,0.35)"
-                  : "0 1px 4px rgba(0,0,0,0.25)",
-                pointerEvents: "none",
-                transition: drag === null ? "left 120ms ease" : "none",
-                zIndex: 3,
-              },
-            }),
-            // 拖动气泡：仅拖拽期间显示当前档位名，下尖角指向圆球，松手即消失
-            drag !== null
-              ? react.createElement(
-                  "div",
-                  { className: "dsh-mem-bubble", style: { left: thumbLeft + THUMB / 2, zIndex: 4 } },
-                  info.label,
-                )
-              : null,
-          ),
-          props.error
-            ? react.createElement("div", { style: { fontSize: 11, color: "var(--dsh-mem-danger)", marginTop: 10, whiteSpace: "nowrap" } }, props.error)
-            : null,
-          // 会话信息区（分隔线 + 2×2 指标 + 状态行）：session-stats 热路径端点，
-          // 宿主不支持 / 数据缺失时整体不渲染（best-effort 增强，不占位）
-          props.rpc && props.sessionId
-            ? react.createElement(SessionInfoArea, { rpc: props.rpc, sessionId: props.sessionId })
-            : null,
-        ),
-      );
-    }
-
-    // ── 会话信息区：悬浮卡下半部（召回命中 / 攒批进度 / 会话产出 / 会话消息） ──
-    // 数据通道 dsh-memory/session-stats（宿主侧零文件 I/O：内存注册表 + 索引 COUNT，
-    // 见 slider-spec 数据策略节）；自适应轮询：忙时（攒批/挂起/全局待蒸馏）2s，静默 5s，
-    // 浮层卸载即停（ModeSlider 只在 pill 展开期间挂载）。
-    function sinfoCell(val, label, title) {
-      return react.createElement(
-        "div",
-        { title: title || null },
-        react.createElement("div", { className: "dsh-mem-sinfo-val" }, val),
-        react.createElement("div", { className: "dsh-mem-sinfo-label" }, label),
-      );
-    }
-
-    function SessionInfoArea(props) {
-      var rpc = props.rpc;
-      var sessionId = props.sessionId;
-      // undefined=首帧加载中；null=宿主不支持（整体隐藏）；对象=最新快照
-      var stState = react.useState(undefined);
-      var stats = stState[0];
-      var setStats = stState[1];
-      var busyRef = react.useRef(false);
-
-      react.useEffect(function () {
-        if (!rpc || !sessionId) return undefined;
-        var alive = true;
-        var timer = null;
-        var seq = 0;
-        var tick = function () {
-          var token = ++seq;
-          rpc("dsh-memory/session-stats", { sessionId: sessionId })
-            .then(function (r) {
-              if (!alive || token !== seq) return;
-              if (r && r.ok && r.value && r.value.supported === false) {
-                setStats(null); // 宿主无数据源：整体隐藏
-              } else if (r && r.ok && r.value) {
-                setStats(r.value);
-                var d = r.value.distill || {};
-                var g = r.value.global || {};
-                busyRef.current = (d.pendingSlice || 0) > 0 || (d.parkedSlices || 0) > 0 || (g.pendingTotal || 0) > 0;
-              }
-              // RPC 失败：保持旧快照（信息区不因瞬时错误闪没）
-            })
-            .catch(function () {})
-            .then(function () {
-              if (alive) timer = setTimeout(tick, busyRef.current ? 2000 : 5000);
-            });
-        };
-        tick();
-        return function () {
-          alive = false;
-          if (timer) clearTimeout(timer);
-        };
-      }, [rpc, sessionId]);
-
-      // 首帧占位骨架（防内容跳变）；宿主不支持则整体隐藏
-      if (stats === null) return null;
-      if (stats === undefined) {
-        return react.createElement(
-          "div",
-          { className: "dsh-mem-sinfo" },
-          react.createElement(
-            "div",
-            { className: "dsh-mem-sinfo-grid" },
-            sinfoCell("…", "召回命中"),
-            sinfoCell("…", "攒批进度"),
-            sinfoCell("…", "本会话记忆"),
-            sinfoCell("…", "会话消息"),
-          ),
-        );
-      }
-
-      var rc = stats.recall || {};
-      var di = stats.distill || {};
-      var gl = stats.global || {};
-      var isOff = stats.mode === "off";
-
-      // 召回命中：口径是"注入统计"（命中轮次/检索轮次），停用时显示状态而非误导性 0/0
-      var rcVal;
-      var rcLabel;
-      var rcTitle;
-      if (rc.enabled === false) {
-        rcVal = "停用";
-        rcLabel = "召回命中";
-        rcTitle = "召回已停用（开关关闭 / 档位关闭 / 部署未启用）";
-      } else {
-        rcVal = (rc.hitTurns || 0) + "/" + (rc.injectedTurns || 0);
-        rcLabel = "召回命中 · " + (rc.totalHits || 0) + " 条";
-        rcTitle =
-          "最近一轮命中 " + (rc.lastHits || 0) + " 条，耗时 " + (rc.lastDurationMs || 0) + "ms" +
-          ((rc.timeouts || 0) > 0 ? "，超时跳过 " + rc.timeouts + " 次" : "");
-      }
-
-      // 攒批进度（x/生效阈值，含 warmup 爬坡）；off 档显示挂起切片数
-      var dVal;
-      var dLabel;
-      var dTitle;
-      if (isOff) {
-        dVal = String(di.parkedSlices || 0);
-        dLabel = "挂起切片";
-        dTitle = "档位关闭：未蒸馏切片挂起，切回档位后继续";
-      } else {
-        dVal = (di.pendingSlice || 0) + "/" + (di.threshold != null ? di.threshold : "-");
-        dLabel = (di.parkedSlices || 0) > 0 ? "攒批 · 挂起 " + di.parkedSlices : "攒批进度";
-        dTitle = "达到阈值后自动蒸馏（阈值随使用渐进爬坡到稳态）";
-      }
-
-      var pTitle = di.lastDistillAt ? "最近蒸馏 " + fmtTime(di.lastDistillAt) : "本会话尚未蒸馏";
-      var warn = gl.degraded ? "⚠ 存储不可用，记忆功能已停用" : null;
-      var note = null;
-      if (!gl.degraded) {
-        if (stats.retrieval === "keyword" && !isOff) note = "检索降级：纯关键词（向量不可用）";
-        else if (stats.retrieval === "none") note = "检索不可用（FTS 与向量均失效）";
-      }
-      var ago = fmtAgo(gl.lastExtractAt);
-
-      return react.createElement(
-        "div",
-        { className: "dsh-mem-sinfo" },
-        warn
-          ? react.createElement("div", { className: "dsh-mem-sinfo-warn" }, warn)
-          : null,
-        react.createElement(
-          "div",
-          { className: "dsh-mem-sinfo-grid" },
-          sinfoCell(rcVal, rcLabel, rcTitle),
-          sinfoCell(dVal, dLabel, dTitle),
-          sinfoCell(String(di.producedRecords || 0), "本会话记忆", pTitle),
-          sinfoCell(stats.l0Count != null ? String(stats.l0Count) : "…", "会话消息"),
-        ),
-        note
-          ? react.createElement("div", { className: "dsh-mem-sinfo-note" }, note)
-          : null,
-        react.createElement(
-          "div",
-          { className: "dsh-mem-sinfo-sum" },
-          "待蒸馏 " + (gl.pendingTotal || 0) + " · 上次蒸馏 " + (ago || "尚未蒸馏"),
-        ),
-      );
-    }
-
-    // ── 主题令牌层 + 组件样式：inline style 放不了 @keyframes/@property/伪类/媒体查询，
-    // 惰性注入一次性样式表（id 防重复）。
-    // 主题机制：dsh 前端在 body[data-ds-dark-theme] 切暗色并重定义 --dsw-alias-* 令牌；
-    // 我们的中性色链真实 dsw 令牌（缺省时用自带 fallback），强调色是 DeepSeek 品牌蓝体系：
-    //   accent（图形：下划线/边框/光晕，非文字，3:1 即可）
-    //   accent-text（表面上的强调文字，双主题 ≥4.5:1）
-    //   accent-fill（实底填充 + 白字，双主题 ≥4.5:1）
-    // 设置页挂载即注入（ensureThemeStyle），输入栏 pill / 浮层 / 重建面板共用。 ──
-    var THEME_STYLE_ID = "dsh-mem-theme-style";
-    function ensureThemeStyle() {
-      if (document.getElementById(THEME_STYLE_ID)) return;
-      var el = document.createElement("style");
-      el.id = THEME_STYLE_ID;
-      el.textContent = [
-        // conic 角度动画需要 @property 注册才能插值；不支持 @property 的浏览器里
-        // var(--dsh-mem-angle) 无定义 → conic 层失效 → 整条 background 退化为无背景
-        // （光带边框与内底一并消失，仅剩文字色）。2026 常青浏览器均已支持，仅作记录。
-        "@property --dsh-mem-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }",
-        "@keyframes dshMemFlow { to { --dsh-mem-angle: 360deg; } }",
-        // ── 令牌（浅色）。中性色链【真实存在的】dsw 令牌（design-platform.css 校对）：
-        //    bg-layer-2/3、bg-overlay、border-l1/l2/l3、border-inverted、label-*、
-        //    interactive-bg-hover、state-error-primary、tooltip-bg、dsw-shadow-lv1/lv3 ──
-        ":root {",
-        "  --dsh-mem-accent: #4d6bfe;",
-        "  --dsh-mem-accent-text: #3d5be0;",
-        "  --dsh-mem-accent-fill: #3d5be0;",
-        "  --dsh-mem-accent-weak: rgba(77,107,254,0.10);",
-        "  --dsh-mem-bg-card: var(--dsw-alias-bg-layer-2, #ffffff);",
-        "  --dsh-mem-bg-inset: var(--dsw-alias-bg-overlay, #e9ecf2);",
-        "  --dsh-mem-bg-hover: var(--dsw-alias-interactive-bg-hover, rgba(38,49,72,0.06));",
-        "  --dsh-mem-bg-pop: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-3, #ffffff));",
-        "  --dsh-mem-border: var(--dsw-alias-border-l2, rgba(0,0,0,0.10));",
-        "  --dsh-mem-border-strong: var(--dsw-alias-border-l3, rgba(0,0,0,0.12));",
-        "  --dsh-mem-border-pop: var(--dsw-alias-border-inverted, rgba(0,0,0,0));",
-        "  --dsh-mem-text-1: var(--dsw-alias-label-primary, #0f1115);",
-        "  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #61666b);",
-        "  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #6e7781);",
-        "  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #d0403f);",
-        // 图表系列（成本折线图）：8 档固定色，PALETTE 只引用 var()；1 档锚品牌蓝，8 档中性"其他"
-        "  --dsh-mem-chart-1: #4d6bfe;",
-        "  --dsh-mem-chart-2: #0e9c8f;",
-        "  --dsh-mem-chart-3: #1f9d55;",
-        "  --dsh-mem-chart-4: #a8821c;",
-        "  --dsh-mem-chart-5: #d97a0d;",
-        "  --dsh-mem-chart-6: #d64570;",
-        "  --dsh-mem-chart-7: #7c5cff;",
-        "  --dsh-mem-chart-8: #61666b;",
-        // 档位色 = 灰 → 品牌蓝 的渐变阶（chat/work 过渡蓝 / auto 品牌蓝）；
-        // 文字对比度按 pill 真实底色（流光内底 = bg-card 97% + 档位色 3%）复算 AA 达标
-        "  --dsh-mem-mode-chat: #5a69b0;",
-        "  --dsh-mem-mode-work: #5263ca;",
-        "  --dsh-mem-mode-auto: #3d5be0;",
-        // 滑轨填充渐变（左浅右深）
-        "  --dsh-mem-fill-1: #7b93ff;",
-        "  --dsh-mem-fill-2: #3d5be0;",
-        "  --dsh-mem-thumb: #ffffff;",
-        "  --dsh-mem-track: rgba(128,140,150,0.32);",
-        "  --dsh-mem-dot: rgba(128,140,150,0.55);",
-        "  --dsh-mem-shadow-card: var(--dsw-shadow-lv1, 0 2px 4px 0 rgba(0,0,0,0.05));",
-        "  --dsh-mem-shadow-pop: var(--dsw-shadow-lv3, 0 0 1px 0 rgba(0,0,0,.2), 0 0 4px 0 rgba(0,0,0,.02), 0 12px 32px 0 rgba(0,0,0,.08));",
-        "}",
-        // ── 令牌（暗色：body[data-ds-dark-theme] 是 dsh 前端的暗色开关） ──
-        "body[data-ds-dark-theme] {",
-        "  --dsh-mem-accent: #6e85ff;",
-        "  --dsh-mem-accent-text: #7b90ff;",
-        "  --dsh-mem-accent-fill: #465ce8;",
-        "  --dsh-mem-accent-weak: rgba(110,133,255,0.14);",
-        "  --dsh-mem-bg-card: var(--dsw-alias-bg-layer-2, #2c2c2e);",
-        "  --dsh-mem-bg-inset: var(--dsw-alias-bg-layer-1, #232324);",
-        "  --dsh-mem-bg-hover: var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,0.08));",
-        "  --dsh-mem-bg-pop: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-3, #353638));",
-        "  --dsh-mem-border: var(--dsw-alias-border-l2, rgba(255,255,255,0.12));",
-        "  --dsh-mem-border-strong: var(--dsw-alias-border-l3, rgba(255,255,255,0.16));",
-        "  --dsh-mem-border-pop: var(--dsw-alias-border-inverted, rgba(255,255,255,0.06));",
-        "  --dsh-mem-text-1: var(--dsw-alias-label-primary, #f9fafb);",
-        "  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #cfd3d6);",
-        "  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #8892a6);",
-        "  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #f4707b);",
-        "  --dsh-mem-chart-1: #6e85ff;",
-        "  --dsh-mem-chart-2: #35c4b5;",
-        "  --dsh-mem-chart-3: #52c98d;",
-        "  --dsh-mem-chart-4: #d9b23e;",
-        "  --dsh-mem-chart-5: #f59e5b;",
-        "  --dsh-mem-chart-6: #f47ba2;",
-        "  --dsh-mem-chart-7: #a78bfa;",
-        "  --dsh-mem-chart-8: #8892a6;",
-        "  --dsh-mem-mode-chat: #97a4ff;",
-        "  --dsh-mem-mode-work: #8295ff;",
-        "  --dsh-mem-mode-auto: #7b90ff;",
-        "  --dsh-mem-fill-1: #8fa0ff;",
-        "  --dsh-mem-fill-2: #465ce8;",
-        "  --dsh-mem-thumb: #e8ebf5;",
-        "  --dsh-mem-track: rgba(148,160,180,0.30);",
-        "  --dsh-mem-dot: rgba(148,160,180,0.5);",
-        "  --dsh-mem-shadow-card: var(--dsw-shadow-lv1, 0 2px 4px 0 rgba(0,0,0,0.3));",
-        "  --dsh-mem-shadow-pop: var(--dsw-shadow-lv3, 0 0 1px 0 rgba(0,0,0,.2), 0 0 4px 0 rgba(0,0,0,.02), 0 12px 32px 0 rgba(0,0,0,.08));",
-        "}",
-        // ── 主题切换过渡：只挂颜色/阴影（不碰 transform），让明暗翻转不生硬 ──
-        ".dsh-mem-root, .dsh-mem-root * { transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease; }",
-        // ── 控件：按钮（次级）── 圆角体系：控件 8 / 卡片 10 / 浮层 12 / 胶囊 999
-        ".dsh-mem-btn {",
-        "  padding: 5px 14px; font-size: 13px; line-height: 20px; border-radius: 8px; cursor: pointer;",
-        "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card); color: var(--dsh-mem-text-1);",
-        "  transition: background-color .15s ease, border-color .15s ease, transform .08s ease;",
-        "}",
-        ".dsh-mem-btn:hover:not(:disabled) { border-color: var(--dsh-mem-border-strong); background: var(--dsh-mem-bg-hover); }",
-        ".dsh-mem-btn:active:not(:disabled) { transform: scale(0.98); }",
-        ".dsh-mem-btn:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
-        ".dsh-mem-btn:disabled { opacity: 0.45; cursor: not-allowed; }",
-        // ── 控件：输入框 / 下拉 ──
-        ".dsh-mem-input {",
-        "  padding: 5px 10px; font-size: 13px; border-radius: 8px; color: var(--dsh-mem-text-1);",
-        "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card);",
-        "  transition: border-color .15s ease, box-shadow .15s ease;",
-        "}",
-        ".dsh-mem-input:focus {",
-        "  outline: none; border-color: var(--dsh-mem-accent);",
-        "  box-shadow: 0 0 0 3px var(--dsh-mem-accent-weak);",
-        "}",
-        // ── 下拉（NSel 触发钮）：观感同输入框（8px 圆角/同令牌边框底色），文字
-        //    ellipsis + CSS 描边 chevron（展开旋转 180°）；弹出面板见 .dsh-mem-pop ──
-        ".dsh-mem-select {",
-        "  display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;",
-        "  width: 100%; min-width: 0; padding: 5px 10px; font: inherit; font-size: 13px; line-height: 20px;",
-        "  text-align: left; border-radius: 8px; cursor: pointer; color: var(--dsh-mem-text-1);",
-        "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card);",
-        "  transition: border-color .15s ease, box-shadow .15s ease;",
-        "}",
-        ".dsh-mem-select:focus-visible {",
-        "  outline: none; border-color: var(--dsh-mem-accent);",
-        "  box-shadow: 0 0 0 3px var(--dsh-mem-accent-weak);",
-        "}",
-        ".dsh-mem-select:disabled { opacity: 0.45; cursor: not-allowed; }",
-        ".dsh-mem-select-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
-        // 下拉弹出面板：dsh MenuDropdown 同款——浮层 12 圆角 + menu 底 + lv3 投影，
-        // 选项行 10 圆角 + hover 底色 + 选中打勾（选项 active 由 data-active 标记）
-        ".dsh-mem-sel { position: relative; display: inline-flex; min-width: 0; vertical-align: top; }",
-        ".dsh-mem-sel-chev {",
-        "  width: 8px; height: 8px; flex: none; margin-right: 2px;",
-        "  border-right: 1.5px solid var(--dsh-mem-text-3); border-bottom: 1.5px solid var(--dsh-mem-text-3);",
-        "  transform: rotate(45deg); transition: transform .12s ease;",
-        "}",
-        ".dsh-mem-sel-chev-open { transform: rotate(225deg); }",
-        ".dsh-mem-pop {",
-        "  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;",
-        "  min-width: 100%; width: max-content; max-width: 340px; max-height: 264px;",
-        "  overflow-y: auto; overscroll-behavior: contain; padding: 4px;",
-        "  background: var(--dsh-mem-bg-pop); border: 1px solid var(--dsh-mem-border-pop);",
-        "  border-radius: 12px; box-shadow: var(--dsh-mem-shadow-pop);",
-        "}",
-        ".dsh-mem-pop-opt {",
-        "  display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;",
-        "  min-height: 32px; padding: 5px 10px; font: inherit; font-size: 13px; line-height: 20px;",
-        "  text-align: left; color: var(--dsh-mem-text-1); cursor: pointer;",
-        "  background: none; border: none; outline: none; border-radius: 10px;",
-        "}",
-        ".dsh-mem-pop-opt:hover, .dsh-mem-pop-opt[data-active=\"1\"] { background: var(--dsh-mem-bg-hover); }",
-        ".dsh-mem-pop-opt-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
-        ".dsh-mem-pop-check { flex: none; font-size: 12px; color: var(--dsh-mem-text-1); }",
-        ".dsh-mem-pop-empty { padding: 10px; font-size: 13px; color: var(--dsh-mem-text-3); }",
-        // ── Tab（下划线式）：active 品牌蓝下划线 + 主文字色 ──
-        ".dsh-mem-tab {",
-        "  padding: 6px 12px; font-size: 13px; cursor: pointer; background: none; border: none;",
-        "  color: var(--dsh-mem-text-2); border-bottom: 2px solid transparent; margin-bottom: -1px;",
-        "}",
-        ".dsh-mem-tab:hover { color: var(--dsh-mem-text-1); }",
-        ".dsh-mem-tab-on { font-weight: 600; color: var(--dsh-mem-text-1); border-bottom-color: var(--dsh-mem-accent); }",
-        ".dsh-mem-tab:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: -2px; }",
-        // ── 卡片：悬浮微抬 + 边框加深（只在可交互卡片上用 hover） ──
-        ".dsh-mem-card {",
-        "  border: 1px solid var(--dsh-mem-border); border-radius: 10px; background: var(--dsh-mem-bg-card);",
-        "  box-shadow: var(--dsh-mem-shadow-card);",
-        "}",
-        ".dsh-mem-card-hover:hover { border-color: var(--dsh-mem-border-strong); }",
-        // ── 场景卡折叠箭头：展开态旋转 90°（过渡只做反馈，进 reduced-motion 压制名单） ──
-        ".dsh-mem-scene-chev { display: inline-block; transition: transform .15s ease; color: var(--dsh-mem-text-3); }",
-        // ── 记忆类型标签：tint 风格（彩底淡色 + 彩字），--dsh-mem-tag-c 由类型类给定 ──
-        ".dsh-mem-tag {",
-        "  display: inline-block; padding: 1px 8px; border-radius: 999px;",
-        "  font-size: 11px; font-weight: 600; line-height: 18px; white-space: nowrap;",
-        "  color: var(--dsh-mem-tag-c, var(--dsh-mem-text-2));",
-        "  background: color-mix(in srgb, var(--dsh-mem-tag-c, #8a93a1) 12%, transparent);",
-        "  border: 1px solid color-mix(in srgb, var(--dsh-mem-tag-c, #8a93a1) 28%, transparent);",
-        "}",
-        ".dsh-mem-tag-persona   { --dsh-mem-tag-c: #6f42c1; }",
-        ".dsh-mem-tag-episodic  { --dsh-mem-tag-c: #0757b4; }",
-        ".dsh-mem-tag-instruction, .dsh-mem-tag-work-artifact { --dsh-mem-tag-c: #8a5a00; }",
-        ".dsh-mem-tag-work-fact { --dsh-mem-tag-c: #0757b4; }",
-        ".dsh-mem-tag-work-task { --dsh-mem-tag-c: #116629; }",
-        ".dsh-mem-tag-work-method { --dsh-mem-tag-c: #6f42c1; }",
-        "body[data-ds-dark-theme] .dsh-mem-tag-persona   { --dsh-mem-tag-c: #c297ff; }",
-        "body[data-ds-dark-theme] .dsh-mem-tag-episodic  { --dsh-mem-tag-c: #6cb2ff; }",
-        "body[data-ds-dark-theme] .dsh-mem-tag-instruction, body[data-ds-dark-theme] .dsh-mem-tag-work-artifact { --dsh-mem-tag-c: #e3b341; }",
-        "body[data-ds-dark-theme] .dsh-mem-tag-work-fact { --dsh-mem-tag-c: #6cb2ff; }",
-        "body[data-ds-dark-theme] .dsh-mem-tag-work-task { --dsh-mem-tag-c: #6fca74; }",
-        "body[data-ds-dark-theme] .dsh-mem-tag-work-method { --dsh-mem-tag-c: #c297ff; }",
-        // ── pill 边缘流光（品牌蓝族，chat/work/auto 三档共用；off 无）：border 区画旋转
-        // conic 光带；内部必须是【不透明】底色盖住光带（半透明内层会让 conic 透进按钮
-        // 内部，文字被光斑干扰——实测事故）。不透明底 = 主题底混 3% 档位色
-        // （--dsh-mem-pill-tint 由 pill inline 给定；3% 保证档位色文字 AA，暗色智能档余量 4.63:1）
-        ".dsh-mem-flow {",
-        "  border: 1px solid transparent;",
-        "  background:",
-        "    linear-gradient(",
-        "      color-mix(in srgb, var(--dsh-mem-bg-card, #ffffff) 97%, var(--dsh-mem-pill-tint, #4d6bfe)),",
-        "      color-mix(in srgb, var(--dsh-mem-bg-card, #ffffff) 97%, var(--dsh-mem-pill-tint, #4d6bfe))",
-        "    ) padding-box,",
-        "    conic-gradient(from var(--dsh-mem-angle),",
-        "      rgba(61,91,224,0.9), rgba(77,107,254,0.95), rgba(147,168,255,1),",
-        "      rgba(110,133,255,0.9), rgba(61,91,224,0.9)) border-box;",
-        "  animation: dshMemFlow 3s linear infinite;",
-        "}",
-        // ── off 档 pill：dsh 透明按钮——无底无边框只留文字，hover 才出 interactive 淡底 ──
-        //（button 裸元素会露出 UA 默认灰底+描边，必须显式压掉）
-        ".dsh-mem-pill-off { border: none; background: transparent; }",
-        ".dsh-mem-pill-off:hover { background: var(--dsh-mem-bg-hover); }",
-        ".dsh-mem-pill-off:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
-        // 流光态焦点环（同一物理按钮的两态焦点反馈对称，配方同 .dsh-mem-btn）
-        ".dsh-mem-flow:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
-        // ── 浮层（dsh 原生菜单同配方：不透明实底 + inverted 描边（浅色不可见）+ lv3 阴影） ──
-        ".dsh-mem-popover {",
-        "  border-radius: 12px;",
-        "  border: 1px solid var(--dsh-mem-border-pop);",
-        "  background: var(--dsh-mem-bg-pop);",
-        "  box-shadow: var(--dsh-mem-shadow-pop);",
-        "  color: var(--dsh-mem-text-1);",
-        "}",
-        // ── 拖动气泡：拖拽时显示当前档位名，随圆球移动，下倒三角尖角贴近圆球 ──
-        // 底色走浮层同材质令牌（浅色白底深字 / 暗色深底浅字，随主题翻转；
-        // tooltip-bg 令牌在浅色下仍是深色，不随材质走，已弃用）。
-        // 悬停 8px（尖角尖端距圆球顶约 5px）；气泡 zIndex 4 高于浮层（同层叠上下文内
-        // 数值比较），跨过浮层上缘时盖在其上；描边 + 投影让同材质不融合
-        ".dsh-mem-bubble {",
-        "  position: absolute; bottom: calc(100% + 8px); transform: translateX(-50%);",
-        "  padding: 3px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; line-height: 18px;",
-        "  border: 1px solid var(--dsh-mem-border);",
-        "  background: var(--dsh-mem-bg-pop); color: var(--dsh-mem-text-1); white-space: nowrap;",
-        "  box-shadow: 0 2px 8px rgba(0,0,0,0.18);",
-        "}",
-        // 尖角：clip-path 倒三角（旋转方块会露出上半截成菱形，实测视觉缺陷）。
-        // 双三角叠画：外层描边色大一圈、内层填充色，压在浮层上缘也有轮廓可读
-        ".dsh-mem-bubble::before {",
-        "  content: ''; position: absolute; top: 100%; left: 50%; margin-left: -6px;",
-        "  width: 12px; height: 7px;",
-        "  clip-path: polygon(0 0, 100% 0, 50% 100%);",
-        "  background: var(--dsh-mem-border);",
-        "}",
-        ".dsh-mem-bubble::after {",
-        "  content: ''; position: absolute; top: 100%; left: 50%; margin-left: -5px;",
-        "  width: 10px; height: 6px;",
-        "  clip-path: polygon(0 0, 100% 0, 50% 100%);",
-        "  background: var(--dsh-mem-bg-pop);",
-        "}",
-        // ── 粒子层（点阵场）：浅色 multiply 混合——深蓝点乘在浅蓝填充上沉显对比 ──
-        "body:not([data-ds-dark-theme]) .dsh-mem-particles { mix-blend-mode: multiply; opacity: 0.82; }",
-        // ── 重建面板 ──（模态本体走 NModal：原生 Modal 优先，回退 rb-overlay/rb-modal）
-        ".dsh-mem-rb-card {",
-        "  border: 1px solid var(--dsh-mem-border); border-radius: 10px; background: var(--dsh-mem-bg-card);",
-        "  box-shadow: var(--dsh-mem-shadow-card); padding: 12px 14px; margin-bottom: 14px; font-size: 13px;",
-        "}",
-        ".dsh-mem-rb-bar { height: 8px; border-radius: 4px; overflow: hidden; flex: 1; background: var(--dsh-mem-track); }",
-        ".dsh-mem-rb-fill { height: 100%; border-radius: 4px; background: var(--dsh-mem-accent-fill); transition: width .4s ease; }",
-        ".dsh-mem-rb-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);",
-        "  display: flex; align-items: center; justify-content: center; z-index: 2000; }",
-        ".dsh-mem-rb-modal { width: 440px; max-width: calc(100vw - 48px); border-radius: 12px;",
-        "  padding: 18px 20px; font-size: 13px; line-height: 1.6;",
-        "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card); color: var(--dsh-mem-text-1);",
-        "  box-shadow: 0 16px 48px rgba(0,0,0,0.24); }",
-        "body[data-ds-dark-theme] .dsh-mem-rb-modal { box-shadow: 0 16px 48px rgba(0,0,0,0.6); }",
-        ".dsh-mem-rb-muted { font-size: 12px; color: var(--dsh-mem-text-3); }",
-        // ── 会话信息区（悬浮卡下半部）：分隔线 + 2×2 指标 + 状态行；纯静态 DOM，
-        // 不进粒子层 rAF 循环，轮询数据到达才触发本组件小树 re-render ──
-        ".dsh-mem-sinfo { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--dsh-mem-border); }",
-        ".dsh-mem-sinfo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }",
-        ".dsh-mem-sinfo-val { font-size: 13px; font-weight: 600; color: var(--dsh-mem-text-1); line-height: 18px; font-variant-numeric: tabular-nums; }",
-        ".dsh-mem-sinfo-label { font-size: 11px; color: var(--dsh-mem-text-3); line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
-        ".dsh-mem-sinfo-warn { font-size: 11px; color: var(--dsh-mem-danger); line-height: 16px; margin-bottom: 6px; }",
-        ".dsh-mem-sinfo-note { font-size: 11px; color: var(--dsh-mem-text-3); line-height: 16px; margin-top: 8px; }",
-        ".dsh-mem-sinfo-sum { font-size: 11px; color: var(--dsh-mem-text-3); line-height: 16px; margin-top: 8px; }",
-        // reduced-motion 兜底放样式表末尾：同特异性下后置声明才能压过上面的组件类
-        "@media (prefers-reduced-motion: reduce) {",
-        "  .dsh-mem-root, .dsh-mem-root *, .dsh-mem-btn, .dsh-mem-input, .dsh-mem-select, .dsh-mem-rb-fill, .dsh-mem-scene-chev, .dsh-mem-sel-chev { transition: none; }",
-        "  .dsh-mem-flow { animation: none; }",
-        "}",
-      ].join("\n");
-      document.head.appendChild(el);
-    }
-
-    /** 输入栏 pill：点击展开滑动选择器；props 来自 conversation.input.left 的 zone 注入。 */
-    function MemoryModePill(props) {
-      var rpc = props.rpc;
-      var sessionId = props.sessionId || (props.session && props.session.sessionId);
-      var modeState = react.useState(null);
-      var mode = modeState[0];
-      var setMode = modeState[1];
-      var errState = react.useState(null);
-      var error = errState[0];
-      var setError = errState[1];
-      var openState = react.useState(false);
-      var open = openState[0];
-      var setOpen = openState[1];
-      var wrapRef = react.useRef(null);
-      // 请求序列号：快速切换会话时丢弃旧会话的过期响应（慢响应不得覆盖新会话档位）
-      var seqRef = react.useRef(0);
-
-      var load = react.useCallback(function () {
-        if (!sessionId || !rpc) return;
-        var token = ++seqRef.current;
-        setError(null);
-        rpc("dsh-memory/session-mode-get", { sessionId: sessionId })
-          .then(function (r) {
-            if (token !== seqRef.current) return;
-            if (r && r.ok && r.value) setMode(r.value.mode);
-            else setError(r && r.error ? r.error.message : "RPC error");
-          })
-          .catch(function (e) {
-            if (token !== seqRef.current) return;
-            setError(String((e && e.message) || e));
-          });
-      }, [sessionId, rpc]);
-
-      react.useEffect(function () { load(); }, [load]);
-
-      // 侧边栏书本 icon 补丁由常驻 pill 驱动（MemoryPanel 只在记忆分节激活时挂载，
-      // 覆盖不了"打开设置第一眼"的场景）；body 级观察器全局单例，多实例幂等
-      react.useEffect(function () { watchSidebarIcon(); }, []);
-
-      react.useEffect(function () {
-        if (!open) return;
-        var onDown = function (e) {
-          if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
-        };
-        var onKey = function (e) {
-          if (e.key === "Escape") setOpen(false);
-        };
-        document.addEventListener("mousedown", onDown);
-        document.addEventListener("keydown", onKey);
-        return function () {
-          document.removeEventListener("mousedown", onDown);
-          document.removeEventListener("keydown", onKey);
-        };
-      }, [open]);
-
-      /** 乐观提交：立即更新 UI，RPC 失败回滚并提示。 */
-      var commit = function (next) {
-        if (!rpc || next === mode) return;
-        var prev = mode;
-        setMode(next);
-        setError(null);
-        rpc("dsh-memory/session-mode-set", { sessionId: sessionId, mode: next })
-          .then(function (r) {
-            if (!r || !r.ok) {
-              setMode(prev);
-              setError(r && r.error ? "档位写入失败：" + r.error.message : "档位写入失败");
-            }
-          })
-          .catch(function (e) {
-            setMode(prev);
-            setError("档位写入失败：" + String((e && e.message) || e));
-          });
-      };
-
-      if (!sessionId || !rpc) return null;
-      var info = modeInfo(mode);
-      var loaded = mode !== null;
-      // 关闭档与其余三档二分：关闭 = dsh 透明按钮（无边框无底无光晕）；
-      // 日常/工作/智能 = 同款流光 + 光晕，档位区分靠蓝阶文字色与流光内底混色深度
-      var isOff = loaded && mode === "off";
-      var isFlow = loaded && !isOff;
-
-      ensureThemeStyle();
-
-      var pillStyle = {
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        height: 24,
-        padding: "0 10px",
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 500,
-        lineHeight: "20px",
-        cursor: "pointer",
-        // 流光档的边框/背景由 .dsh-mem-flow 的双层背景提供（流光边 + 不透明内底），
-        // inline 只给文字色 / 光晕 / 流光内底混色通道（--dsh-mem-pill-tint）
-        color: isFlow ? info.color : "var(--dsh-mem-text-2)",
-      };
-      if (isFlow) {
-        pillStyle.boxShadow = "0 0 12px color-mix(in srgb, " + info.color + " 30%, transparent)";
-        pillStyle["--dsh-mem-pill-tint"] = info.color;
-      }
-
-      return react.createElement(
-        "div",
-        { ref: wrapRef, style: { position: "relative", display: "inline-flex" } },
-        react.createElement(
-          "button",
-          {
-            type: "button",
-            title: error ? "档位读取失败：" + error + "（点击重试）" : "本会话记忆档位（点击切换）",
-            onClick: function () {
-              if (error) load();
-              setOpen(!open);
-            },
-            className: isFlow ? "dsh-mem-flow" : "dsh-mem-pill-off",
-            style: pillStyle,
-          },
-          "记忆 · ",
-          react.createElement("span", null, loaded ? info.label : error ? "⚠" : "…"),
-        ),
-        open
-          ? react.createElement(ModeSlider, {
-              mode: mode || "auto",
-              onCommit: commit,
-              error: error,
-              rpc: rpc,
-              sessionId: sessionId,
-            })
-          : null,
-      );
-    }
-
-    // ── 重建面板：从 L0 重导 L1/L2/L3（确认弹窗 + 进度 + 取消；Light/Dark 双主题走 class） ──
-    var RB_PHASE_LABEL = {
-      preparing: "准备中（归档旧数据 · 清空检索库）",
-      distilling: "分块蒸馏中",
-      finalizing: "收尾（强制 L2 场景 + L3 画像）",
-    };
-
-    function RebuildPanel(props) {
-      var rpc = props.rpc;
-      var rbState = react.useState(null);
-      var rb = rbState[0];
-      var setRb = rbState[1];
-      var confirmState = react.useState(false);
-      var confirmOpen = confirmState[0];
-      var setConfirmOpen = confirmState[1];
-      var busyState = react.useState(false);
-      var busy = busyState[0];
-      var setBusy = busyState[1];
-      var errState = react.useState(null);
-      var rbError = errState[0];
-      var setRbError = errState[1];
-
-      var refresh = react.useCallback(function () {
-        rpc("dsh-memory/rebuild-status", {})
-          .then(function (r) {
-            if (r && r.ok) setRb(r.value);
-          })
-          .catch(function () {});
-      }, [rpc]);
-
-      react.useEffect(function () { refresh(); }, [refresh]);
-
-      // 运行中 1.5s 高频轮询进度；空闲不轮询（重新打开 Tab 时挂载刷新一次）
-      var running = !!(rb && rb.running);
-      react.useEffect(function () {
-        if (!running) return;
-        var timer = setInterval(refresh, 1500);
-        return function () { clearInterval(timer); };
-      }, [running, refresh]);
-
-      if (!rb || rb.supported === false) return null;
-      ensureThemeStyle();
-
-      var start = function () {
-        setBusy(true);
-        setRbError(null);
-        rpc("dsh-memory/rebuild-start", {})
-          .then(function (r) {
-            setBusy(false);
-            if (r && r.ok) {
-              setConfirmOpen(false);
-              setRb(r.value);
-            } else {
-              setRbError(r && r.error ? r.error.message : "启动失败");
-            }
-          })
-          .catch(function (e) {
-            setBusy(false);
-            setRbError(String((e && e.message) || e));
-          });
-      };
-      var cancel = function () {
-        setBusy(true);
-        rpc("dsh-memory/rebuild-cancel", {})
-          .then(function (r) {
-            setBusy(false);
-            if (r && r.ok) setRb(r.value);
-          })
-          .catch(function () {
-            setBusy(false);
-          });
-      };
-
-      var empty = !running && (rb.messageCount === 0 || rb.estCalls === 0);
-      var pct = rb.total > 0 ? Math.round((rb.done / rb.total) * 100) : 0;
-
-      var lastNote = null;
-      if (!running && rb.phase === "done") {
-        lastNote =
-          "上次重建：完成（" + rb.done + "/" + rb.total + " 会话，产出 " + rb.recordsBuilt + " 条记录）" +
-          (rb.finishedAt ? " · " + fmtTime(new Date(rb.finishedAt).toISOString()) : "");
-      } else if (!running && rb.phase === "cancelled") {
-        lastNote = "上次重建：已取消（完成 " + rb.done + "/" + rb.total + " 会话，已重建部分保留）";
-      } else if (!running && rb.phase === "failed") {
-        lastNote = "上次重建：失败：" + (rb.error || "未知错误");
-      }
-
-      return react.createElement(
-        "div", { className: "dsh-mem-rb-card" },
-        react.createElement(
-          "div", { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" } },
-          react.createElement("div", { style: { fontWeight: 600, whiteSpace: "nowrap" } }, "重建记忆"),
-          react.createElement(
-            "div", { className: "dsh-mem-rb-muted", style: { flex: 1, minWidth: 180 } },
-            running
-              ? (RB_PHASE_LABEL[rb.phase] || rb.phase) + " · " + rb.done + "/" + rb.total + " 会话（" + pct + "%）"
-              : "从 L0 原始对话重新蒸馏 L1/L2/L3；旧数据先归档（不删除）",
-          ),
-          running
-            ? react.createElement(NButton, {
-                disabled: busy || rb.cancelRequested,
-                onClick: cancel,
-              }, rb.cancelRequested ? "取消中…" : "取消重建")
-            : react.createElement(NButton, {
-                disabled: busy || empty,
-                title: empty ? "L0 无消息，无可重建内容" : "重新蒸馏全部记忆",
-                style: { color: "var(--dsh-mem-danger)" },
-                onClick: function () { setConfirmOpen(true); },
-              }, busy ? "…" : "开始重建"),
-        ),
-        running
-          ? react.createElement(
-              "div", { style: { display: "flex", alignItems: "center", gap: 10, marginTop: 10 } },
-              react.createElement(
-                "div", { className: "dsh-mem-rb-bar" },
-                react.createElement("div", { className: "dsh-mem-rb-fill", style: { width: pct + "%" } }),
-              ),
-              react.createElement(
-                "span", { className: "dsh-mem-rb-muted", style: { whiteSpace: "nowrap" } },
-                "产出 " + rb.recordsBuilt + " 条",
-              ),
-            )
-          : null,
-        lastNote
-          ? react.createElement("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 } }, lastNote)
-          : null,
-        rbError
-          ? react.createElement("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsh-mem-danger)" } }, rbError)
-          : null,
-        confirmOpen
-          ? react.createElement(
-              NModal,
-              {
-                open: true,
-                onClose: function () { setConfirmOpen(false); },
-                title: "确认重建全部记忆？",
-                footer: [
-                  react.createElement(NButton, {
-                    key: "cancel",
-                    onClick: function () { setConfirmOpen(false); },
-                  }, "取消"),
-                  react.createElement(NButton, {
-                    key: "confirm",
-                    variant: "primary",
-                    disabled: busy,
-                    onClick: start,
-                  }, busy ? "启动中…" : "开始重建"),
-                ],
-              },
-              react.createElement(
-                "div", null,
-                "将以 L0 原始对话为事实源重新蒸馏：",
-                react.createElement("b", null, rb.sessionCount + " 个会话 · " + rb.messageCount + " 条消息"),
-                "，预计 ≥" + rb.estCalls + " 次蒸馏调用。",
-              ),
-              react.createElement(
-                "div", { style: { marginTop: 8 } },
-                "现有 L1 记忆 / L2 场景 / L3 画像会整体归档（*.bak.时间戳，可手工找回），随后清空重建；重建期间可正常对话，新对话的蒸馏优先进行；中途可取消，已重建部分保留。",
-              ),
-            )
-          : null,
-      );
-    }
-
-    // ── Tab：概览（开关面板 + 计数） ──
-    function fmtMB(bytes) {
-      if (!bytes || bytes <= 0) return "0MB";
-      if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + "KB";
-      return (bytes / (1024 * 1024)).toFixed(bytes < 100 * 1024 * 1024 ? 1 : 0) + "MB";
-    }
-
-    /** 嵌入源区块（D4 三态单选 + D7 下载进度 + D5 重嵌进度；1.2s 轮询，不能让用户傻等）。 */
-    function EmbeddingSection(props) {
-      var rpc = props.rpc;
-      var stState = react.useState(null);
-      var st = stState[0];
-      var setSt = stState[1];
-      var errState = react.useState(null);
-      var err = errState[0];
-      var setErr = errState[1];
-      // 轮询退避标志（load 维护）：snapshot 每次几十次 fs.stat，空闲常开 1.2s 是白烧
-      var busyPollRef = react.useRef(null);
-
-      var load = react.useCallback(function () {
-        rpc("dsh-memory/embedding-state-get", {})
-          .then(function (r) {
-            if (r && r.ok && r.value && r.value.supported !== false) {
-              var v = r.value;
-              if (busyPollRef.current) {
-                busyPollRef.current.v = !!(
-                  (v.download && (v.download.phase === "downloading" || v.download.phase === "verifying")) ||
-                  v.apply.busy ||
-                  (v.reindex && v.reindex.running) ||
-                  (v.runtime && v.runtime.phase === "installing")
-                );
-              }
-              setSt(v);
-              setErr(null);
-            } else if (r && r.ok && r.value && r.value.supported === false) {
-              setSt(null);
-              setErr("__unsupported__");
-            } else {
-              setErr(r && r.error ? r.error.message : "RPC error");
-            }
-          })
-          .catch(function (e) {
-            setErr(String((e && e.message) || e));
-          });
-      }, [rpc]);
-
-      react.useEffect(function () { load(); }, [load]);
-      react.useEffect(function () {
-        var stopped = false;
-        var busyFlag = { v: false };
-        busyPollRef.current = busyFlag;
-        var tick = function () {
-          if (stopped) return;
-          load();
-          timer = setTimeout(tick, busyFlag.v ? 1200 : 5000);
-        };
-        var timer = setTimeout(tick, 1200);
-        return function () {
-          stopped = true;
-          clearTimeout(timer);
-          busyPollRef.current = null;
-        };
-      }, [load]);
-
-      var call = function (endpoint, payload, confirmText) {
-        if (confirmText && !window.confirm(confirmText)) return;
-        rpc(endpoint, payload)
-          .then(function (r) {
-            if (!r || !r.ok) setErr(r && r.error ? r.error.message : "操作失败");
-            else { setErr(null); load(); }
-          })
-          .catch(function (e) { setErr(String((e && e.message) || e)); });
-      };
-
-      if (err === "__unsupported__") {
-        return react.createElement(
-          "div", { className: "dsh-mem-rb-card" },
-          react.createElement("div", { style: { fontWeight: 600, marginBottom: 4 } }, "语义检索（嵌入）"),
-          react.createElement("div", { className: "dsh-mem-rb-muted" }, "存储处于降级状态，嵌入管理不可用。"),
-        );
-      }
-      if (!st) {
-        return react.createElement(
-          "div", { className: "dsh-mem-rb-card" },
-          react.createElement("div", { className: "dsh-mem-rb-muted" }, err ? "嵌入状态读取失败：" + err : "嵌入状态读取中…"),
-          err ? react.createElement(NButton, { style: { marginTop: 8 }, onClick: load }, "重试") : null,
-        );
-      }
-
-      var switchConfirm = "切换嵌入源后将按新模型重建向量索引（期间语义检索暂退化为关键词匹配，不影响对话）。确定切换？";
-      var onSource = function (key) {
-        if (key === "local") {
-          // 本地档需要具体模型：有已下载模型直接用最新的启用；否则提示先下载
-          var ready = [];
-          for (var i = 0; i < st.models.length; i++) if (st.models[i].state === "downloaded") ready.push(st.models[i].id);
-          if (ready.length === 0) {
-            setErr("请先在下方下载一个本地嵌入模型，再切换到本地档。");
-            return;
-          }
-          // 默认取目录序首个已下载模型（目录按轻→重排序，避免默认选中最重最慢的）
-          var current = st.activeModel && ready.indexOf(st.activeModel) >= 0 ? st.activeModel : ready[0];
-          call("dsh-memory/embedding-source-set", { source: "local", activeModel: current }, switchConfirm);
-          return;
-        }
-        call("dsh-memory/embedding-source-set", { source: key }, key === "remote" ? switchConfirm : null);
-      };
-
-      var dl = st.download;
-      var dlActive = dl && (dl.phase === "downloading" || dl.phase === "verifying");
-      var ap = st.apply;
-      var localInfo = st.local;
-      var rt = st.runtime;
-
-      var runtimeRow = null;
-      if (rt.phase === "installing") {
-        runtimeRow = react.createElement(
-          "div", { style: { marginTop: 8, fontSize: 12 } },
-          react.createElement("div", { style: S.flexRow },
-            react.createElement("span", null, "安装推理运行时中… 已耗时 " + Math.round(rt.elapsedMs / 1000) + "s（约 100~200MB，视网络）"),
-            react.createElement("div", { style: S.grow }),
-            react.createElement(NButton, { onClick: function () { call("dsh-memory/embedding-runtime-cancel", {}); } }, "取消"),
-          ),
-          react.createElement(
-            "pre",
-            { style: Object.assign({}, S.pre, { maxHeight: 68, marginTop: 6, fontSize: 11, opacity: 0.85 }) },
-            (rt.lastLines || []).join("\n") || "等待 npm 输出…",
-          ),
-        );
-      } else if (rt.phase === "error") {
-        runtimeRow = react.createElement(
-          "div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsh-mem-danger)" } },
-          "运行时安装失败：" + (rt.error || "未知") + "（重新切换嵌入源可重试）",
-        );
-      } else if (rt.phase === "ready") {
-        runtimeRow = react.createElement(
-          "div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 } },
-          "推理运行时就绪（transformers.js v" + rt.installedVersion + "）",
-        );
-      } else if (st.source === "local") {
-        runtimeRow = react.createElement(
-          "div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 } },
-          "首次启用本地嵌入时会自动安装推理运行时（约 100~200MB）。",
-        );
-      }
-
-      var applyRow = null;
-      if (ap.phase === "warming") {
-        applyRow = react.createElement("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 } }, "加载嵌入模型中…（首次需数秒）");
-      } else if (ap.phase === "switching") {
-        applyRow = react.createElement("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 } }, "切换嵌入源中…");
-      } else if (ap.phase === "error") {
-        applyRow = react.createElement("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsh-mem-danger)" } }, "切换失败：" + ap.message + "（已保存的嵌入源不变，重启后仍按原源运行）");
-      } else if (st.reindex && st.reindex.running) {
-        var rj = st.reindex;
-        var rDone = rj.l1Done + rj.l0Done;
-        var rTotal = rj.l1Total + rj.l0Total;
-        var rPct = rTotal > 0 ? Math.round((rDone / rTotal) * 100) : 0;
-        applyRow = react.createElement(
-          "div", { style: { marginTop: 8 } },
-          react.createElement("div", { style: S.flexRow },
-            react.createElement("span", { className: "dsh-mem-rb-muted" },
-              "重嵌入中 L1 " + rj.l1Done + "/" + rj.l1Total + " · L0 " + rj.l0Done + "/" + rj.l0Total + "（" + rPct + "%）"),
-            react.createElement("div", { style: S.grow }),
-            react.createElement(NButton, { onClick: function () { call("dsh-memory/embedding-reindex-cancel", {}); } }, "取消"),
-          ),
-          react.createElement(
-            "div", { style: Object.assign({}, S.flexRow, { marginTop: 6 }) },
-            react.createElement("div", { className: "dsh-mem-rb-bar" }, react.createElement("div", { className: "dsh-mem-rb-fill", style: { width: rPct + "%" } })),
-          ),
-        );
-      }
-
-      var modelCards = st.models.map(function (m) {
-        var isActive = st.source === "local" && st.activeModel === m.id;
-        var mDl = dlActive && dl.modelId === m.id;
-        var pct = mDl && dl.overallTotal > 0 ? Math.round((dl.overallReceived / dl.overallTotal) * 100) : 0;
-        var action = null;
-        if (mDl) {
-          action = react.createElement(
-            "div", { style: { flex: 1, minWidth: 200 } },
-            react.createElement("div", { style: S.flexRow },
-              react.createElement("span", { className: "dsh-mem-rb-muted", style: { whiteSpace: "nowrap" } },
-                (dl.phase === "verifying" ? "校验中 " : "") +
-                fmtMB(dl.overallReceived) + " / " + fmtMB(dl.overallTotal) + "（文件 " + dl.fileIndex + "/" + dl.fileCount + "，" + pct + "%" +
-                (dl.speedBps > 0 && dl.phase === "downloading" ? "，" + fmtMB(dl.speedBps) + "/s" : "") + "）"),
-              react.createElement("div", { style: S.grow }),
-              react.createElement(NButton, { onClick: function () { call("dsh-memory/embedding-download-cancel", {}); } }, "取消"),
-            ),
-            react.createElement(
-              "div", { style: Object.assign({}, S.flexRow, { marginTop: 6 }) },
-              react.createElement("div", { className: "dsh-mem-rb-bar" }, react.createElement("div", { className: "dsh-mem-rb-fill", style: { width: pct + "%" } })),
-            ),
-          );
-        } else if (isActive) {
-          action = react.createElement(
-            "div", { style: S.flexRow },
-            react.createElement("span", { className: "dsh-mem-tag dsh-mem-tag-work-task" }, "使用中"),
-            localInfo && localInfo.state === "loading" ? react.createElement("span", { className: "dsh-mem-rb-muted" }, "模型加载中…") : null,
-            localInfo && localInfo.state === "failed"
-              ? react.createElement("span", { style: { fontSize: 12, color: "var(--dsh-mem-danger)" } }, "加载失败：" + (localInfo.error || ""))
-              : null,
-            localInfo && localInfo.state === "ready" ? react.createElement("span", { className: "dsh-mem-rb-muted" }, "已就绪") : null,
-          );
-        } else if (m.state === "downloaded") {
-          action = react.createElement(
-            "div", { style: S.flexRow },
-            react.createElement(NButton, { disabled: ap.busy, onClick: function () {
-              call("dsh-memory/embedding-source-set", { source: "local", activeModel: m.id }, switchConfirm);
-            } }, "启用"),
-            react.createElement(NButton, { disabled: dlActive, onClick: function () {
-              call("dsh-memory/embedding-model-delete", { modelId: m.id }, "删除已下载的 " + m.name + "（" + fmtMB(m.totalBytes) + "）？");
-            } }, "删除"),
-          );
-        } else {
-          action = react.createElement(NButton, {
-            disabled: dlActive || !st.ceilings.local,
-            title: !st.ceilings.local ? "部署已禁用本地嵌入模型" : "",
-            onClick: function () { call("dsh-memory/embedding-download-start", { modelId: m.id }); },
-          }, (m.state === "partial" ? "继续下载 " : "下载 ") + fmtMB(m.totalBytes));
-        }
-        return react.createElement(
-          "div",
-          { key: m.id, style: Object.assign({}, S.flexRow, { padding: "8px 0", borderBottom: "1px solid var(--dsh-mem-border)", flexWrap: "wrap" }) },
-          react.createElement(
-            "div", { style: { minWidth: 150 } },
-            react.createElement("div", { style: { fontWeight: 600 } }, m.name),
-            react.createElement("div", { className: "dsh-mem-rb-muted" }, m.tags.join(" · ") + " · " + m.dims + " 维 · 上下文 " + m.contextTokens),
-          ),
-          react.createElement("div", { style: { flex: 1, minWidth: 180, fontSize: 12, color: "var(--dsh-mem-text-2)" } }, m.description),
-          action,
-        );
-      });
-
-      return react.createElement(
-        "div", { className: "dsh-mem-rb-card" },
-        react.createElement(
-          "div", { style: S.flexRow },
-          react.createElement("div", { style: { fontWeight: 600, whiteSpace: "nowrap" } }, "语义检索（嵌入源）"),
-          react.createElement("div", { style: S.grow }),
-          react.createElement(Segmented, {
-            value: st.source,
-            options: [
-              { key: "off", label: "关闭" },
-              { key: "local", label: "本地", disabled: !st.ceilings.local, disabledTitle: "部署已禁用本地嵌入模型" },
-              { key: "remote", label: "远程", disabled: !st.ceilings.remote, disabledTitle: "部署未配置远程嵌入（baseUrl/apiKey/model/dimensions）" },
-            ],
-            onChange: onSource,
-          }),
-        ),
-        react.createElement(
-          "div", { className: "dsh-mem-rb-muted", style: { marginTop: 4 } },
-          st.source === "off" ? "当前：关键词（BM25）检索，不做向量嵌入"
-            : st.source === "remote" ? "当前：远程嵌入（" + (rt ? "" : "") + "模型由部署配置给定）"
-            : "当前：本地嵌入" + (st.activeModel ? "（" + st.activeModel + "）" : ""),
-        ),
-        st.activeNote
-          ? react.createElement("div", { style: { marginTop: 4, fontSize: 12, color: "var(--dsh-mem-danger)" } }, st.activeNote)
-          : null,
-        err && err !== "__unsupported__"
-          ? react.createElement("div", { style: { marginTop: 6, fontSize: 12, color: "var(--dsh-mem-danger)" } }, err)
-          : null,
-        dl && dl.phase === "error"
-          ? react.createElement("div", { style: { marginTop: 6, fontSize: 12, color: "var(--dsh-mem-danger)" } }, "下载失败：" + (dl.error || ""))
-          : null,
-        runtimeRow,
-        applyRow,
-        react.createElement("div", { style: S.panelLabel }, "本地模型目录（下载后离线可用，不随插件分发）"),
-        modelCards,
-      );
-    }
-
-    // ── 自绘下拉（NSel）：对齐 dsh MenuDropdown（输入栏模型选择器同款）观感。
-    // 原生 <select> 的弹出列表是操作系统绘的（方角、系统高亮色），appearance:none
-    // 只能改闭合态外壳——所以整件换成按钮触发 + 浮层面板：面板 12px 圆角 /
-    // bg-pop / border-pop / shadow-pop，选项行 10px 圆角 + hover 底色 + 选中打勾。
-    // 键盘 ↑↓ 移动（wrap）、回车/空格开面板与选定、Esc/外点/焦点离开收起；
-    // 焦点始终留在触发钮上（keydown 从钮冒泡到包装层统一处理）。 ──
-    function NSel(props) {
-      var options = props.options || [];
-      var value = props.value || "";
-      var disabled = !!props.disabled;
-      var openState = react.useState(false);
-      var open = openState[0];
-      var setOpen = openState[1];
-      var idxState = react.useState(-1);
-      var idx = idxState[0];
-      var setIdx = idxState[1];
-      var wrapRef = react.useRef(null);
-      var listRef = react.useRef(null);
-
-      var selectedLabel = "";
-      for (var si = 0; si < options.length; si++) {
-        if (options[si].id === value) selectedLabel = options[si].label;
-      }
-
-      react.useEffect(function () {
-        if (!open) return undefined;
-        var onDown = function (e) {
-          if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
-        };
-        document.addEventListener("mousedown", onDown);
-        return function () { document.removeEventListener("mousedown", onDown); };
-      }, [open]);
-
-      // 键盘移动后把活动项滚进可视区（鼠标 hover 同步活动项索引）
-      react.useEffect(function () {
-        if (!open || !listRef.current) return;
-        var el = listRef.current.querySelector('[data-active="1"]');
-        if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
-      }, [open, idx]);
-
-      var indexOfValue = function () {
-        for (var i = 0; i < options.length; i++) if (options[i].id === value) return i;
-        return -1;
-      };
-      var closeMenu = function (refocus) {
-        setOpen(false);
-        setIdx(-1);
-        if (refocus && wrapRef.current) {
-          var btn = wrapRef.current.querySelector("button");
-          if (btn && btn.focus) btn.focus();
-        }
-      };
-      var pick = function (id) {
-        closeMenu(true);
-        if (id !== value && props.onChange) props.onChange(id);
-      };
-      var moveActive = function (delta) {
-        var n = options.length;
-        if (n === 0) return;
-        var cur = idx >= 0 ? idx : indexOfValue();
-        if (cur < 0) cur = delta > 0 ? -1 : 0;
-        setIdx(delta > 0 ? (cur + 1) % n : (cur - 1 + n) % n);
-      };
-      var onKey = function (e) {
-        if (disabled) return;
-        if (e.key === "Escape") {
-          if (open) { e.preventDefault(); closeMenu(true); }
-          return;
-        }
-        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-          e.preventDefault();
-          if (!open) { setOpen(true); setIdx(indexOfValue()); }
-          else moveActive(e.key === "ArrowDown" ? 1 : -1);
-          return;
-        }
-        if (!open && (e.key === "Enter" || e.key === " ")) {
-          e.preventDefault();
-          setOpen(true);
-          setIdx(indexOfValue());
-          return;
-        }
-        if (open && e.key === "Enter") {
-          e.preventDefault();
-          var t = idx >= 0 ? idx : indexOfValue();
-          if (t < 0) t = 0;
-          if (options[t]) pick(options[t].id);
-        }
-      };
-      var onBlur = function (e) {
-        if (!open) return;
-        var to = e.relatedTarget;
-        if (!to || (wrapRef.current && !wrapRef.current.contains(to))) setOpen(false);
-      };
-
-      return react.createElement(
-        "div",
-        { className: "dsh-mem-sel", style: props.style, ref: wrapRef, onKeyDown: onKey, onBlur: onBlur },
-        react.createElement(
-          "button",
-          {
-            type: "button",
-            className: "dsh-mem-select" + (open ? " dsh-mem-select-open" : ""),
-            disabled: disabled,
-            "aria-haspopup": "listbox",
-            "aria-expanded": open,
-            onClick: function () {
-              if (open) closeMenu(false);
-              else { setOpen(true); setIdx(-1); }
-            },
-          },
-          react.createElement("span", { className: "dsh-mem-select-label" }, selectedLabel || props.placeholder || "（请选择）"),
-          react.createElement("span", {
-            className: "dsh-mem-sel-chev" + (open ? " dsh-mem-sel-chev-open" : ""),
-            "aria-hidden": true,
-          }),
-        ),
-        open && !disabled
-          ? react.createElement(
-              "div", { className: "dsh-mem-pop", ref: listRef, role: "listbox" },
-              options.length === 0
-                ? react.createElement("div", { className: "dsh-mem-pop-empty" }, "无选项")
-                : options.map(function (o, i) {
-                    return react.createElement(
-                      "button",
-                      {
-                        type: "button",
-                        key: o.id,
-                        className: "dsh-mem-pop-opt" + (o.id === value ? " dsh-mem-pop-opt-on" : ""),
-                        role: "option",
-                        "aria-selected": o.id === value,
-                        "data-active": i === idx ? "1" : "0",
-                        // 阻断 mousedown 默认行为（抢焦点）：焦点留在触发钮上，避免
-                        // blur-关面板把后续 click 吞掉（点选项无反应的事故根因）
-                        onMouseDown: function (e) { if (e.preventDefault) e.preventDefault(); },
-                        onClick: function () { pick(o.id); },
-                        onMouseEnter: function () { if (idx !== i) setIdx(i); },
-                      },
-                      react.createElement("span", { className: "dsh-mem-pop-opt-label" }, o.label),
-                      o.id === value
-                        ? react.createElement("span", { className: "dsh-mem-pop-check" }, "✓")
-                        : null,
-                    );
-                  }),
-            )
-          : null,
-      );
-    }
-
-    // 供应商 → 模型列表缓存（模块级，会话内存活）：切换供应商时缓存命中即时渲染
-    // （后台仍刷新），面板首次加载时预取全部供应商——消除"切换后模型按钮几秒真空期"
-    var modelsCache = {};
-
-    // 档位词表（与 src/config.ts 的 EFFORT_CHOICES 同源——bundle 无法 import host
-    // 代码，词表扩容时两处须同步；适配器声明的表外 id 会被 settings-set 拒收，
-    // 行内下拉在此先过滤，防"能选出、存不进"）
-    var EFFORT_VOCAB = ["", "off", "none", "minimal", "low", "medium", "high", "xhigh", "max"];
-
-    // ── 蒸馏路由链编辑器（统一列表：第 1 行主路由 + 后续回退链）──
-    // 数据源：dsh-memory/llm-providers 的 chain 块（current 运行时链（含旧键投影）/
-    // static 部署回退链 / effective 实际链（去重后、每条带档位候选）/ source 跟随或
-    // 接管）与 dsh-memory/llm-models（模型目录，每模型附 efforts 档位表）。写入走
-    // settings-set 的 distillChain（空数组 = 跟随部署配置与默认模型）。部署静态 pin
-    // （pinned）时整区块只读。旧「蒸馏思考」全局切换器与「蒸馏模型」单路由选择器
-    // 已由本编辑器取代：档位逐路由设置，缺省「跟随部署配置」（部署全局静态档）。
-    function RouteChainEditor(props) {
-      var rpc = props.rpc;
-      var disabled = !!props.disabled;
-
-      var infoState = react.useState(null);
-      var setInfo = infoState[1];
-      // 编辑草稿（null = 跟随态：只读展示 + 「编辑为运行时链」入口）
-      var rowsState = react.useState(null);
-      var rows = rowsState[0];
-      var setRows = rowsState[1];
-      // 行级校验错误（保存时填、任何编辑动作清）与区块级错误文案
-      var rowErrState = react.useState({});
-      var rowErrs = rowErrState[0];
-      var setRowErrs = rowErrState[1];
-      var errState = react.useState(null);
-      var setErr = errState[1];
-      // 手动输入模型 id（供应商未提供目录时）：正在输入的行下标与文本
-      var manualState = react.useState({ idx: -1, text: "" });
-      var manual = manualState[0];
-      var setManual = manualState[1];
-
-      // 写入在途时丢弃轮询响应（在途请求读到的是写入前的旧值，直接 set 会把
-      // 乐观更新闪回）；写入成功后主动拉一次服务器真值收敛
-      var pendingWrites = react.useRef(0);
-
-      var info = infoState[0];
-
-      function copyRow(e) {
-        return { provider: e.provider || "", model: e.model || "", reasoningEffort: e.reasoningEffort || "" };
-      }
-
-      function refreshInfo() {
-        rpc("dsh-memory/llm-providers", {})
-          .then(function (r) {
-            if (r && r.ok && pendingWrites.current === 0) setInfo(r.value);
-          })
-          .catch(function () {});
-      }
-
-      react.useEffect(function () {
-        refreshInfo();
-        var timer = setInterval(refreshInfo, 5000);
-        return function () { clearInterval(timer); };
-      }, [rpc]);
-
-      // 预取各供应商模型目录（含 efforts 档位表）进缓存：行内模型/档位下拉即时渲染
-      react.useEffect(function () {
-        if (!info || !info.providers) return;
-        info.providers.forEach(function (p) {
-          if (!p.id || modelsCache[p.id]) return;
-          rpc("dsh-memory/llm-models", { provider: p.id })
-            .then(function (r) { if (r && r.ok && r.value) modelsCache[p.id] = r.value.models || []; })
-            .catch(function () {});
-        });
-      }, [rpc, info]);
-
-      // 运行时链已存在 → 草稿初始化一次（此后轮询不覆盖本地编辑；清空跟随后退回）
-      react.useEffect(function () {
-        if (rows === null && info && info.chain && info.chain.current.length) {
-          setRows(info.chain.current.map(copyRow));
-        }
-      }, [info, rows]);
-
-      function updateRow(i, patch) {
-        setRows(rows.map(function (r, j) { return j === i ? Object.assign({}, r, patch) : r; }));
-        setRowErrs({});
-      }
-
-      /** 行移动：位置即优先级。第 2 行上移 = 与主路由互换（主路由为空时为顶替：
-       *  空行代表「跟随默认」，落到回退位是非法空条目，直接消失不保留）。 */
-      function moveRow(i, dir) {
-        var next = rows.map(copyRow);
-        if (dir < 0 && i === 1) {
-          if (!next[0].provider) next = next.slice(1);
-          else { var t = next[0]; next[0] = next[1]; next[1] = t; }
-        } else if (dir < 0 && i > 1) {
-          var t2 = next[i - 1]; next[i - 1] = next[i]; next[i] = t2;
-        } else if (dir > 0 && i < next.length - 1 && !(i === 0 && !next[0].provider)) {
-          var t3 = next[i + 1]; next[i + 1] = next[i]; next[i] = t3;
-        }
-        setRows(next);
-        setRowErrs({});
-      }
-
-      function removeRow(i) {
-        // 主路由行的删除语义 = 重置为跟随默认（回退行保留）
-        if (i === 0) setRows([{ provider: "", model: "", reasoningEffort: "" }].concat(rows.slice(1)));
-        else setRows(rows.slice(0, i).concat(rows.slice(i + 1)));
-        setRowErrs({});
-      }
-
-      function addRow() {
-        var defProv = (rows[0] && rows[0].provider) || "";
-        if (!defProv && info.providers && info.providers[0]) defProv = info.providers[0].id;
-        setRows(rows.concat([{ provider: defProv, model: "", reasoningEffort: "" }]));
-        setRowErrs({});
-      }
-
-      /** 跟随态入口：把部署静态回退链拷为可编辑草稿（主路由保持跟随默认），
-       *  保存第一刻起运行时链接管静态链。 */
-      function forkStatic() {
-        var st = (info.chain && info.chain.static) || [];
-        // 静态 fallbacks 无条数上限，fork 截到运行时上限内（1 主路由 + 7 回退 = 8）
-        setRows([{ provider: "", model: "", reasoningEffort: "" }].concat(st.slice(0, 7).map(copyRow)));
-        setRowErrs({});
-      }
-
-      function save() {
-        var errs = {};
-        var seen = {};
-        if ((rows[0].provider && !rows[0].model) || (!rows[0].provider && rows[0].model)) {
-          errs[0] = "主路由行供应商与模型须成对（双空 = 跟随默认模型）";
-        }
-        if (rows[0].provider && rows[0].model) seen[rows[0].provider + "::" + rows[0].model] = 0;
-        for (var i = 1; i < rows.length; i++) {
-          if (!rows[i].provider || !rows[i].model) { errs[i] = "回退路由必须显式选择供应商与模型"; continue; }
-          var key = rows[i].provider + "::" + rows[i].model;
-          if (seen[key] !== undefined) {
-            errs[i] = seen[key] === 0 ? "与主路由完全相同（运行时会跳过，请去重）" : "与第 " + (seen[key] + 1) + " 行重复";
-          } else {
-            seen[key] = i;
-          }
-        }
-        setRowErrs(errs);
-        if (rows.length > 8) {
-          setErr("路由链最多 8 行（含主路由行），请删除多余行");
-          return;
-        }
-        if (Object.keys(errs).length) return;
-        // 乐观更新（写入在途时轮询响应被丢弃），成功后拉真值收敛
-        pendingWrites.current += 1;
-        setInfo(Object.assign({}, info, {
-          chain: Object.assign({}, info.chain, { current: rows.map(copyRow), source: "runtime" }),
-        }));
-        rpc("dsh-memory/settings-set", { distillChain: rows })
-          .then(function (r) {
-            pendingWrites.current -= 1;
-            setErr(!r || r.ok ? null : "路由链保存失败：" + ((r && r.error && r.error.message) || "未知错误"));
-            refreshInfo();
-          })
-          .catch(function (e) {
-            pendingWrites.current -= 1;
-            setErr("路由链保存失败：" + String((e && e.message) || e));
-            refreshInfo();
-          });
-      }
-
-      function clearToFollow() {
-        pendingWrites.current += 1;
-        // 清空链必须连带清旧运行时键——链空时旧键覆盖（distillProvider/distillModel）
-        // 与旧档位接管（reasoningEffort）会立即复活，"跟随部署配置"就成了假承诺
-        // （新 UI 已无旧键编辑入口，不清即永久滞留）
-        rpc("dsh-memory/settings-set", { distillChain: [], distillProvider: "", distillModel: "", reasoningEffort: "" })
-          .then(function (r) {
-            pendingWrites.current -= 1;
-            setRows(null);
-            setRowErrs({});
-            setErr(!r || r.ok ? null : "清空失败，请重试");
-            refreshInfo();
-          })
-          .catch(function (e) {
-            pendingWrites.current -= 1;
-            setErr("清空失败：" + String((e && e.message) || e));
-            refreshInfo();
-          });
-      }
-
-      if (!info) return null;
-
-      var providers = info.providers || [];
-      var providersById = {};
-      providers.forEach(function (p) { providersById[p.id] = p; });
-
-      var STY = {
-        wrap: { padding: "8px 0" },
-        row: { background: "var(--dsh-mem-bg-inset)", borderRadius: 8, padding: 8, marginBottom: 8, border: "1px solid transparent" },
-        rowErr: { border: "1px solid var(--dsh-mem-danger)" },
-        badge: { flexShrink: 0, width: 20, height: 18, borderRadius: 999, background: "var(--dsh-mem-accent-weak)", color: "var(--dsh-mem-accent-text)", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" },
-        // 控件行：供应商/模型/档位；flexWrap 兜底窄面板（放不下时档位自然折行）
-        line: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
-        // 操作按钮行：右下角对齐
-        actions: { display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, marginTop: 6 },
-        ico: { padding: 0, width: 26, height: 26, minWidth: 26, fontSize: 13, lineHeight: "20px" },
-        add: { width: "100%", padding: "7px 0", fontSize: 12.5, color: "var(--dsh-mem-text-3)", background: "transparent", border: "1px dashed var(--dsh-mem-border-strong)", borderRadius: 8 },
-        ghost: { border: "none", background: "transparent", color: "var(--dsh-mem-text-3)" },
-        note: { fontSize: 11, color: "var(--dsh-mem-text-3)", marginTop: 6 },
-        warn: { fontSize: 11, color: "var(--dsh-mem-danger)", marginTop: 6 },
-        mono: { fontSize: 12.5, color: "var(--dsh-mem-text-1)", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-        roRow: { display: "flex", alignItems: "center", gap: 8, background: "var(--dsh-mem-bg-inset)", borderRadius: 8, padding: "7px 10px", marginBottom: 6 },
-      };
-
-      /** 只读行（pinned / 跟随态共用）。 */
-      function roRow(e, i) {
-        return react.createElement(
-          "div", { key: "ro" + i, style: STY.roRow },
-          react.createElement("span", { style: STY.badge }, i === 0 ? "主" : String(i + 1)),
-          react.createElement("span", { style: STY.mono }, e.provider + " / " + e.model),
-          react.createElement("span", { style: { marginLeft: "auto", flexShrink: 0, fontSize: 11, color: "var(--dsh-mem-text-3)" } },
-            e.effort ? "档位 " + e.effort : "跟随部署配置"),
-        );
-      }
-
-      // pinned：整区块只读（部署锁定路由；静态链照常生效但不可在此编辑）
-      if (info.pinned) {
-        var effPin = (info.chain && info.chain.effectiveChain) || [];
-        return react.createElement(
-          "div", { style: STY.wrap },
-          effPin.map(roRow),
-          react.createElement("div", { style: STY.note }, "部署已锁定路由（pin 优先于运行时链）；调整请修改 profile cordis.patch.yml 中 llm 的配置。"),
-        );
-      }
-
-      // 跟随态：未配置运行时链 → 只读展示实际链 +「编辑为运行时链」
-      if (rows === null) {
-        var effFollow = (info.chain && info.chain.effectiveChain) || [];
-        return react.createElement(
-          "div", { style: STY.wrap },
-          effFollow.length === 0
-            ? react.createElement("div", { style: S.switchDesc }, "蒸馏跟随默认模型，未配置回退链。")
-            : effFollow.map(roRow),
-          react.createElement("div", { style: { marginTop: 6 } },
-            react.createElement(NButton, { onClick: forkStatic, disabled: disabled }, "编辑为运行时链")),
-          react.createElement("div", { style: STY.note }, "未配置运行时链时跟随部署配置；「编辑为运行时链」会拷贝部署回退链为草稿，保存起运行时链接管。"),
-        );
-      }
-
-      // 编辑态：统一列表（每行供应商 / 模型 / 档位 + 序调整 + 删除）
-      var capped = rows.length >= 8;
-      var dirty = JSON.stringify(rows) !== JSON.stringify((info.chain && info.chain.current) || []);
-
-      var rowEls = rows.map(function (row, i) {
-        var isPrimary = i === 0;
-        var known = !row.provider || !!providersById[row.provider];
-        var modelsLoaded = row.provider ? Object.prototype.hasOwnProperty.call(modelsCache, row.provider) : false;
-        var modelList = modelsLoaded ? modelsCache[row.provider] : [];
-        // 供应商列表为空数组 = 适配器不提供模型目录：该行降级为手动输入模型 id
-        var manualInput = modelsLoaded && modelList.length === 0;
-        var curEfforts = [];
-        for (var mi = 0; mi < modelList.length; mi++) {
-          if (modelList[mi].id === row.model) { curEfforts = modelList[mi].efforts || []; break; }
-        }
-        var providerOptions = providers.map(function (p) {
-          return { id: p.id, label: p.name !== p.id ? p.name + "（" + p.id + "）" : p.id };
-        });
-        if (isPrimary) {
-          providerOptions = [{
-            id: "",
-            label: info.default ? "跟随默认模型（" + info.default.provider + " / " + info.default.model + "）" : "跟随默认模型",
-          }].concat(providerOptions);
-        }
-        if (row.provider && !providersById[row.provider]) {
-          providerOptions.push({ id: row.provider, label: row.provider + "（已不在列表）" });
-        }
-        var modelOptions = modelList.map(function (m) {
-          return { id: m.id, label: m.name !== m.id ? m.name + "（" + m.id + "）" : m.id };
-        });
-        if (row.model && !modelList.some(function (m) { return m.id === row.model; })) {
-          modelOptions.push({ id: row.model, label: row.model + "（已不在列表）" });
-        }
-        var effortOptions = [{ id: "", label: "跟随部署配置" }].concat(
-          curEfforts
-            .filter(function (k) { return EFFORT_VOCAB.indexOf(k) >= 0; })
-            .map(function (k) { return { id: k, label: k }; })
-        );
-
-        return react.createElement(
-          "div", { key: "row" + i, style: Object.assign({}, STY.row, rowErrs[i] ? STY.rowErr : null) },
-          react.createElement(
-            "div", { style: STY.line },
-            react.createElement("span", { style: STY.badge }, isPrimary ? "主" : String(i + 1)),
-            react.createElement(NSel, {
-              style: { flex: 1, minWidth: 150 },
-              options: providerOptions,
-              value: row.provider,
-              disabled: disabled,
-              placeholder: isPrimary ? "跟随默认模型" : "供应商",
-              onChange: function (v) { updateRow(i, { provider: v, model: "", reasoningEffort: "" }); },
-            }),
-            !row.provider
-              ? null
-              : manualInput
-                ? react.createElement(NInput, {
-                    style: { flex: 1, minWidth: 150 },
-                    placeholder: "模型 id（该供应商未提供列表，输入后回车）…",
-                    // 非编辑态回填已设模型 id：该供应商无目录时 NSel 分支不渲染，
-                    // NInput 是行内唯一的模型展示位（提交后置空会让已设值不可见）
-                    value: manual.idx === i ? manual.text : row.model,
-                    onChange: function (e) { setManual({ idx: i, text: e.target.value }); },
-                    onKeyDown: function (e) {
-                      if (e.key === "Enter") {
-                        var v = (manual.idx === i ? manual.text : "").trim();
-                        if (v) { updateRow(i, { model: v }); setManual({ idx: -1, text: "" }); }
-                      }
-                    },
-                  })
-                : react.createElement(NSel, {
-                    style: { flex: 1, minWidth: 150 },
-                    options: modelOptions,
-                    value: row.model,
-                    disabled: disabled || !modelsLoaded,
-                    placeholder: modelsLoaded ? (isPrimary ? "（选择模型，可留空跟随默认）" : "（选择模型）") : "加载模型列表…",
-                    onChange: function (v) { updateRow(i, { model: v }); },
-                  }),
-            // 档位与供应商/模型同行：词表固定且短（跟随部署配置/off/low/high…），收窄即可
-            react.createElement(NSel, {
-              style: { flexShrink: 0, width: 118 },
-              options: effortOptions,
-              value: row.reasoningEffort,
-              disabled: disabled || !(row.provider && row.model),
-              placeholder: "跟随部署配置",
-              onChange: function (v) { updateRow(i, { reasoningEffort: v }); },
-            }),
-          ),
-          // 序调整/删除按钮独立成行，右下角对齐（不与控件行混排）
-          react.createElement(
-            "div", { style: STY.actions },
-            react.createElement(NButton, {
-              style: STY.ico,
-              disabled: disabled || i === 0,
-              title: i === 1 ? "上移（与主路由互换/顶替为主路由）" : "上移",
-              onClick: function () { moveRow(i, -1); },
-            }, "↑"),
-            react.createElement(NButton, {
-              style: STY.ico,
-              disabled: disabled || i === rows.length - 1 || (i === 0 && !row.provider),
-              title: "下移",
-              onClick: function () { moveRow(i, 1); },
-            }, "↓"),
-            react.createElement(NButton, {
-              style: STY.ico,
-              disabled: disabled,
-              title: isPrimary ? "重置为跟随默认" : "删除",
-              onClick: function () { removeRow(i); },
-            }, "✕"),
-          ),
-          isPrimary && !row.provider
-            ? react.createElement(
-                "div", { style: STY.note },
-                "跟随默认模型" + (info.default ? "：" + info.default.provider + " / " + info.default.model : "") +
-                  "（档位跟随部署配置，选定模型后可单独设置）",
-              )
-            : null,
-          !known
-            ? react.createElement(
-                "div", { style: STY.warn },
-                "⚠ 供应商 " + row.provider + " 已不在已注册路由中：该路由调用会失败并被链跳过（不阻止保存）。",
-              )
-            : null,
-          rowErrs[i]
-            ? react.createElement("div", { style: STY.warn }, "✕ " + rowErrs[i])
-            : null,
-        );
-      });
-
-      var effChain = (info.chain && info.chain.effectiveChain) || [];
-
-      return react.createElement(
-        "div", { style: STY.wrap },
-        react.createElement(
-          "div", { style: Object.assign({}, S.switchDesc, { marginBottom: 8 }) },
-          "路由按序尝试：第 1 行是主路由，失败（报错 / 掐断 / 网络异常 / 空输出）后按序降级；每行档位独立，缺省跟随部署配置。",
-        ),
-        rowEls,
-        react.createElement(NButton, {
-          style: STY.add,
-          disabled: disabled || capped,
-          onClick: addRow,
-        }, capped ? "已达上限（8 条）" : "+ 添加回退路由"),
-        react.createElement(
-          "div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 10 } },
-          react.createElement(NButton, { style: STY.ghost, disabled: disabled, onClick: clearToFollow }, "清空并跟随部署配置"),
-          react.createElement("div", { style: S.grow }),
-          react.createElement(NButton, { variant: "primary", disabled: disabled, onClick: save }, "保存"),
-        ),
-        errState[0]
-          ? react.createElement("div", { style: Object.assign({}, STY.warn, { marginTop: 8 }) }, "✕ " + errState[0])
-          : null,
-        react.createElement(
-          "div", { style: { marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--dsh-mem-border)" } },
-          react.createElement("div", { style: { fontSize: 11, color: "var(--dsh-mem-text-3)", marginBottom: 4 } },
-            "实际链" + (dirty ? "（保存后更新；当前显示已保存值）" : "")),
-          react.createElement(
-            "div", { style: { fontSize: 12, color: "var(--dsh-mem-text-2)", wordBreak: "break-all", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace" } },
-            effChain.map(function (e) { return e.provider + "/" + e.model + (e.effort ? "（" + e.effort + "）" : ""); }).join(" → ") || "（暂无可用路由）",
-          ),
-        ),
-      );
-    }
-
-    // ── 蒸馏预算（分层输出 token 上限 + 输入字符上限）──
-    // 数据源：settings-get 的 budgets（current 运行时覆盖 0=跟随默认 / defaults
-    // 内置默认 / effective 实际生效）与 inputBudget（current 0=跟随配置 /
-    // fallback 静态配置值 / effective）。输出四键经 settings-set 的
-    // distillBudgets 成对提交；输入走 distillMaxInputChars 单键提交。
-    // 思考档 high/xhigh/max 的 ×4 放大只作用于输出预算（提示文案注明）。
-    function BudgetInputs(props) {
-      var rpc = props.rpc;
-      var disabled = !!props.disabled;
-      var data = props.data;
-      var setData = props.setData;
-      var onError = props.onError;
-      var layers = [
-        ["extract", "抽取"],
-        ["dedup", "去重"],
-        ["l2", "L2 场景"],
-        ["l3", "L3 画像"],
-      ];
-      // 输入草稿（string|null）：击键只改本地，blur/回车才提交（input 键 = 输入预算）
-      var draftState = react.useState(null);
-      var draft = draftState[0];
-      var setDraft = draftState[1];
-
-      if (!data || !data.budgets) return null;
-      var cur = data.budgets.current || {};
-      var def = data.budgets.defaults || {};
-      var eff = data.budgets.effective || {};
-      var ib = data.inputBudget || {};
-      var curIn = ib.current || 0;
-      var effIn = ib.effective || ib.fallback || 0;
-
-      var shown = function (key) {
-        if (draft && draft[key] !== undefined) return draft[key];
-        var c = key === "input" ? curIn : cur[key];
-        return c > 0 ? String(c) : "";
-      };
-
-      /** 通用提交：patchKey 为 settings-set 载荷键名；pick 从草稿取值并校验。 */
-      var commitPart = function (keys, buildPayload, applyView) {
-        if (!draft) return;
-        var values = {};
-        for (var i = 0; i < keys.length; i++) {
-          var key = keys[i];
-          var raw = (draft[key] !== undefined ? draft[key] : shown(key)).trim();
-          var n = raw === "" ? 0 : Number(raw);
-          var max = key === "input" ? 1000000 : 1000000;
-          var min = key === "input" ? (raw === "" ? 0 : 1000) : 0;
-          if (!Number.isInteger(n) || n < min || n > max) {
-            onError(key === "input"
-              ? "输入预算须为 0 或 1000~1000000 的整数（留空或 0 = 跟随配置）"
-              : "输出预算须为 0~1000000 的整数（留空或 0 = 跟随默认）");
-            setDraft(null);
-            return;
-          }
-          values[key] = n;
-        }
-        setDraft(null);
-        var prev = data;
-        setData(applyView(prev, values));
-        rpc("dsh-memory/settings-set", buildPayload(values))
-          .then(function (r) {
-            if (!r || !r.ok) {
-              setData(prev);
-              onError(r && r.error ? "预算写入失败：" + r.error.message : "预算写入失败");
-            } else {
-              onError(null);
-            }
-          })
-          .catch(function (e) {
-            setData(prev);
-            onError("预算写入失败：" + String((e && e.message) || e));
-          });
-      };
-
-      /** 输出四键成对提交（distillBudgets）。 */
-      var commitOutputs = function () {
-        commitPart(
-          ["extract", "dedup", "l2", "l3"],
-          function (v) { return { distillBudgets: v }; },
-          function (prev, v) {
-            var effNext = {};
-            for (var j = 0; j < layers.length; j++) {
-              var k = layers[j][0];
-              effNext[k] = v[k] > 0 ? v[k] : (def[k] || 0);
-            }
-            return Object.assign({}, prev, {
-              settings: Object.assign({}, prev.settings, { distillBudgets: v }),
-              budgets: Object.assign({}, prev.budgets, { current: v, effective: effNext }),
-            });
-          },
-        );
-      };
-
-      /** 输入预算单键提交（distillMaxInputChars）。 */
-      var commitInput = function () {
-        commitPart(
-          ["input"],
-          function (v) { return { distillMaxInputChars: v.input }; },
-          function (prev, v) {
-            return Object.assign({}, prev, {
-              settings: Object.assign({}, prev.settings, { distillMaxInputChars: v.input }),
-              inputBudget: Object.assign({}, prev.inputBudget || {}, {
-                current: v.input,
-                effective: v.input > 0 ? v.input : (ib.fallback || 0),
-              }),
-            });
-          },
-        );
-      };
-
-      /** 某组键是否有未提交改动（触发 blur/Enter 提交）。 */
-      var dirty = function (keys) {
-        if (!draft) return false;
-        for (var i = 0; i < keys.length; i++) {
-          var key = keys[i];
-          var want = (draft[key] !== undefined ? draft[key] : "").trim();
-          var was = key === "input"
-            ? (curIn > 0 ? String(curIn) : "")
-            : (cur[key] > 0 ? String(cur[key]) : "");
-          if (want !== was) return true;
-        }
-        return false;
-      };
-      var outKeys = ["extract", "dedup", "l2", "l3"];
-
-      var inputBox = function (key, label, title, width, placeholder, onCommit) {
-        return react.createElement(NInput, {
-          key: key,
-          type: "number",
-          min: 0,
-          max: 1000000,
-          style: { width: width },
-          title: title,
-          placeholder: String(placeholder || ""),
-          value: shown(key),
-          disabled: disabled,
-          onChange: function (e) {
-            var v = e.target.value;
-            var d = Object.assign({}, draft || {});
-            d[key] = v;
-            setDraft(d);
-          },
-          onBlur: function () { if (dirty([key])) onCommit(); },
-          onKeyDown: function (e) { if (e.key === "Enter" && dirty([key])) onCommit(); },
-        });
-      };
-
-      return react.createElement(
-        "div", null,
-        react.createElement(
-          "div", { style: S.switchRow },
-          react.createElement(
-            "div", { style: Object.assign({}, S.flexRow, { gap: 6 }) },
-            layers.map(function (l) {
-              return inputBox(l[0], l[1], l[1] + " 输出预算（token，留空 = 默认 " + (def[l[0]] || "?") + "）", 92, def[l[0]], commitOutputs);
-            }),
-          ),
-          react.createElement("div", null,
-            react.createElement("div", { style: S.switchLabel }, "输出预算"),
-            react.createElement(
-              "div", { style: S.switchDesc },
-              "各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 " +
-                layers.map(function (l) { return eff[l[0]] || "?"; }).join(" / ") +
-                "）；思考档 high/xhigh/max 时实际限额自动 ×4",
-            )),
-        ),
-        react.createElement(
-          "div", { style: S.switchRow },
-          inputBox("input", "输入", "单次蒸馏输入字符上限（≈token，中文 1 字≈1 token；留空 = 跟随配置 " + (ib.fallback || "?") + "）", 120, ib.fallback, commitInput),
-          react.createElement("div", null,
-            react.createElement("div", { style: S.switchLabel }, "输入预算"),
-            react.createElement(
-              "div", { style: S.switchDesc },
-              "单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；" +
-                "留空或 0 = 跟随配置（当前生效 " + (effIn || "?") + "，来自 llm.maxInputChars）",
-            )),
-        ),
-      );
-    }
-
-    // ── Tab：概览（开关面板 + 计数） ──
-    function OverviewTab(props) {
-      var rpc = props.rpc;
-      var statsState = react.useState(null);
-      var stats = statsState[0];
-      var setStats = statsState[1];
-      var settingsState = react.useState(null);
-      var settingsData = settingsState[0];
-      var setSettingsData = settingsState[1];
-      var errState = react.useState(null);
-      var error = errState[0];
-      var setError = errState[1];
-
-      var load = react.useCallback(function () {
-        rpc("dsh-memory/stats", {})
-          .then(function (r) {
-            if (r && r.ok) setStats(r.value);
-            else setError(r && r.error ? r.error.message : "RPC error");
-          })
-          .catch(function (e) { setError(String((e && e.message) || e)); });
-        rpc("dsh-memory/settings-get", {})
-          .then(function (r) {
-            if (r && r.ok) setSettingsData(r.value);
-          })
-          .catch(function () {});
-      }, [rpc]);
-
-      react.useEffect(function () {
-        load();
-        var timer = setInterval(load, 5000);
-        return function () { clearInterval(timer); };
-      }, [load]);
-
-      var toggle = function (key, value) {
-        if (!settingsData) return;
-        // 乐观更新：立即翻 UI，失败回滚
-        var prev = settingsData;
-        var patch = (function () { var o = {}; o[key] = value; return o; })();
-        var next = Object.assign({}, prev, {
-          settings: Object.assign({}, prev.settings, patch),
-        });
-        setSettingsData(next);
-        rpc("dsh-memory/settings-set", patch)
-          .then(function (r) {
-            if (!r || !r.ok) {
-              setSettingsData(prev);
-              setError(r && r.error ? "开关写入失败：" + r.error.message : "开关写入失败");
-            } else {
-              setError(null);
-            }
-          })
-          .catch(function (e) {
-            setSettingsData(prev);
-            setError("开关写入失败：" + String((e && e.message) || e));
-          });
-      };
-
-      // 统计分两段：计数瓦片（一眼可读）+ 明细行（目录/版本/时间线/队列）
-      var tiles = [];
-      var infos = [];
-      if (stats) {
-        var th = stats.thresholds || {};
-        tiles.push({ num: String(stats.l0Today), label: "L0 今日消息" });
-        tiles.push({ num: String(stats.l1Count), label: "L1 原子记忆" });
-        tiles.push({ num: String(stats.sceneCount), label: "L2 场景块" });
-        tiles.push({ num: String(stats.pendingExtract), label: "待重试消息" });
-        infos.push(["数据目录", stats.dataDir]);
-        infos.push(["插件版本", "v" + stats.version]);
-        infos.push(["默认档", modeLabel(stats.family)]);
-        infos.push(["L1 累计抽取", String(stats.l1TotalExtracted)]);
-        infos.push(["L3 画像", stats.personaChars > 0 ? stats.personaChars + " 字符" : "未生成"]);
-        infos.push(["上次 L1 抽取", fmtTime(stats.lastExtractAt)]);
-        infos.push(["上次 L2 整合", fmtTime(stats.lastL2At)]);
-        infos.push(["上次 L3 蒸馏", fmtTime(stats.lastL3At)]);
-        infos.push(["待 L2 新记忆", stats.memoriesSinceL2 + " / " + (th.l2MinNewMemories != null ? th.l2MinNewMemories : 5)]);
-        infos.push(["待 L3 新记忆", stats.memoriesSinceL3 + " / " + (th.l3Interval != null ? th.l3Interval : 20)]);
-      }
-      var degraded = stats && stats.message && stats.message !== "running";
-
-      var master = settingsData && settingsData.settings ? settingsData.settings.enabled : true;
-      var ceilingNote = "";
-      if (settingsData && settingsData.ceilings) {
-        var off = [];
-        if (!settingsData.ceilings.capture) off.push("捕获");
-        if (!settingsData.ceilings.distill) off.push("蒸馏");
-        if (!settingsData.ceilings.recall) off.push("召回");
-        if (off.length > 0) ceilingNote = "注意：部署配置已停用 " + off.join("、") + "（运行时开关无法开启）";
-      }
-
-      return react.createElement(
-        "div", null,
-        settingsData && settingsData.supported === false
-          ? react.createElement("p", { style: S.hint }, "settings 服务不可用，记忆模式开关未启用（记忆保持全开）。")
-          : settingsData
-            ? react.createElement(
-                "div", { style: S.switchPanel },
-                // 分组：记忆模式（总闸与三个分项开关）
-                react.createElement("div", { style: S.panelLabel }, "记忆模式"),
-                react.createElement(SwitchRow, {
-                  label: "记忆模式",
-                  desc: master ? "已开启：捕获对话并蒸馏记忆" : "已关闭：不捕获、不蒸馏、不注入（数据保留）",
-                  checked: master,
-                  onChange: function (v) { toggle("enabled", v); },
-                }),
-                react.createElement(SwitchRow, {
-                  label: "捕获",
-                  desc: "L0：记录原始对话（关闭后蒸馏也无输入）",
-                  checked: settingsData.settings.capture,
-                  disabled: !master,
-                  onChange: function (v) { toggle("capture", v); },
-                }),
-                react.createElement(SwitchRow, {
-                  label: "蒸馏",
-                  desc: "L1 抽取 + L2 场景 + L3 画像",
-                  checked: settingsData.settings.distill,
-                  disabled: !master,
-                  onChange: function (v) { toggle("distill", v); },
-                }),
-                react.createElement(SwitchRow, {
-                  label: "召回",
-                  desc: "对话时注入相关记忆与画像",
-                  checked: settingsData.settings.recall,
-                  disabled: !master,
-                  onChange: function (v) { toggle("recall", v); },
-                }),
-                // 分组：蒸馏参数（统一路由链 + 输出预算）——旧「蒸馏思考」全局切换器
-                // 与「蒸馏模型」单路由选择器已并入 RouteChainEditor（档位逐路由设置）
-                react.createElement("div", { style: S.panelLabel }, "蒸馏参数"),
-                react.createElement(RouteChainEditor, { rpc: rpc, disabled: !master }),
-                react.createElement(BudgetInputs, {
-                  rpc: rpc,
-                  disabled: !master,
-                  data: settingsData,
-                  setData: setSettingsData,
-                  onError: setError,
-                }),
-                ceilingNote
-                  ? react.createElement("p", { style: S.hint }, ceilingNote)
-                  : null,
-              )
-            : null,
-        react.createElement(EmbeddingSection, { rpc: rpc }),
-        react.createElement(RebuildPanel, { rpc: rpc }),
-        degraded
-          ? react.createElement(
-              "div",
-              { style: Object.assign({}, S.error, { marginBottom: 10 }) },
-              "⚠ " + stats.message + "。上方数据为最后一次成功读取的值，记忆功能当前未工作。",
-            )
-          : null,
-        error
-          ? react.createElement("div", { style: S.error }, "获取状态失败：" + error)
-          : !stats
-            ? react.createElement("p", { style: S.intro }, "正在读取记忆状态…")
-            : react.createElement(
-                "div", null,
-                react.createElement("div", { style: S.panelLabel }, "记忆概况"),
-                react.createElement(
-                  "div", { style: S.statGrid },
-                  tiles.map(function (t) {
-                    return react.createElement(
-                      "div",
-                      { key: t.label, className: "dsh-mem-card", style: S.statTile },
-                      react.createElement("div", { style: S.statNum }, t.num),
-                      react.createElement("div", { style: S.statLabel }, t.label),
-                    );
-                  }),
-                ),
-                react.createElement("div", { style: S.panelLabel }, "运行状态"),
-                infos.map(function (row) {
-                  return react.createElement(
-                    "div", { key: row[0], style: S.infoRow },
-                    react.createElement("span", { style: S.infoKey }, row[0]),
-                    react.createElement("span", { style: S.infoVal }, row[1]),
-                  );
-                }),
-              ),
-        react.createElement(
-          "p", { style: S.hint },
-          "浏览各层记忆内容请切换上方 Tab；原始对话（L0）不入浏览器，可由模型侧 conversation_search 工具查询。",
-        ),
-      );
-    }
-
-    // ── Tab：L1 记忆浏览器 ──
-    function RecordsTab(props) {
-      var rpc = props.rpc;
-      var limit = 50;
-
-      var itemsState = react.useState([]);
-      var items = itemsState[0];
-      var setItems = itemsState[1];
-      var moreState = react.useState(false);
-      var hasMore = moreState[0];
-      var setHasMore = moreState[1];
-      var totalState = react.useState(null);
-      var total = totalState[0];
-      var setTotal = totalState[1];
-      var scenesState = react.useState([]);
-      var sceneOptions = scenesState[0];
-      var setSceneOptions = scenesState[1];
-      var loadingState = react.useState(false);
-      var loading = loadingState[0];
-      var setLoading = loadingState[1];
-      var truncState = react.useState(false);
-      var truncated = truncState[0];
-      var setTruncated = truncState[1];
-      var errState = react.useState(null);
-      var error = errState[0];
-      var setError = errState[1];
-      var expandedState = react.useState(null);
-      var expandedId = expandedState[0];
-      var setExpandedId = expandedState[1];
-
-      var queryState = react.useState("");
-      var query = queryState[0];
-      var setQuery = queryState[1];
-      var typeState = react.useState("");
-      var typeFilter = typeState[0];
-      var setTypeFilter = typeState[1];
-      var sceneState = react.useState("");
-      var sceneFilter = sceneState[0];
-      var setSceneFilter = sceneState[1];
-
-      // 最近一次实际查询条件（分页累积用）
-      var lastState = react.useState({ query: "", type: "", scene: "" });
-      var last = lastState[0];
-      var setLast = lastState[1];
-
-      // 请求序列号：快速连续搜索/翻页时丢弃过期响应（慢的旧响应不得覆盖新结果）
-      var seqRef = react.useRef(0);
-
-      var fetchPage = react.useCallback(function (conds, offset, append) {
-        setLoading(true);
-        setError(null);
-        var token = ++seqRef.current;
-        var payload = { limit: limit, offset: offset };
-        if (conds.query) payload.query = conds.query;
-        if (conds.type) payload.type = conds.type;
-        if (conds.scene) payload.scene = conds.scene;
-        rpc("dsh-memory/list-records", payload)
-          .then(function (r) {
-            if (token !== seqRef.current) return;
-            setLoading(false);
-            if (!r || !r.ok) {
-              setError(r && r.error ? r.error.message : "RPC error");
-              return;
-            }
-            var v = r.value;
-            setItems(function (prev) { return append ? prev.concat(v.items) : v.items; });
-            setHasMore(!!v.hasMore);
-            setTotal(v.total === undefined || v.total === null ? null : v.total);
-            setTruncated(!!v.truncated);
-            if (v.scenes) setSceneOptions(v.scenes);
-          })
-          .catch(function (e) {
-            if (token !== seqRef.current) return;
-            setLoading(false);
-            setError(String((e && e.message) || e));
-          });
-      }, [rpc]);
-
-      var search = function () {
-        var conds = { query: query.trim(), type: typeFilter, scene: sceneFilter };
-        setLast(conds);
-        fetchPage(conds, 0, false);
-      };
-
-      react.useEffect(function () {
-        fetchPage({ query: "", type: "", scene: "" }, 0, false);
-      }, [fetchPage]);
-
-      // 混合视图：两族类型都在库里，筛选器给全 7 类
-      var typeChoices = [
-        "persona", "episodic", "instruction",
-        "work_fact", "work_task", "work_method", "work_artifact",
-      ];
-
-      var countText = total !== null ? "共 " + total + " 条" : items.length + " 条" + (hasMore ? "+" : "");
-
-      return react.createElement(
-        "div", null,
-        react.createElement(
-          "div", { style: S.toolbar },
-          react.createElement(NInput, {
-            style: { flex: 1, minWidth: 160 },
-            placeholder: "搜索记忆内容（BM25 关键词）…",
-            value: query,
-            onChange: function (e) { setQuery(e.target.value); },
-            onKeyDown: function (e) { if (e.key === "Enter") search(); },
-          }),
-          react.createElement(NSel, {
-            style: { maxWidth: 200 },
-            options: [{ id: "", label: "全部类型" }].concat(typeChoices.map(function (t) {
-              return { id: t, label: TYPE_LABELS[t] || t };
-            })),
-            value: typeFilter,
-            onChange: setTypeFilter,
-          }),
-          react.createElement(NSel, {
-            style: { maxWidth: 220 },
-            options: [{ id: "", label: "全部情境" }].concat(sceneOptions.map(function (s) {
-              return { id: s, label: s.length > 24 ? s.slice(0, 24) + "…" : s };
-            })),
-            value: sceneFilter,
-            onChange: setSceneFilter,
-          }),
-          react.createElement(NButton, { onClick: search }, "搜索"),
-        ),
-        react.createElement(
-          "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
-          react.createElement("span", { style: S.muted }, loading ? "加载中…" : countText),
-          react.createElement("div", { style: S.grow }),
-          react.createElement(NButton, {
-            onClick: function () { fetchPage(last, 0, false); },
-          }, "刷新"),
-        ),
-        error ? react.createElement("div", { style: S.error }, error) : null,
-        truncated
-          ? react.createElement(
-              "div",
-              { style: S.hint },
-              "搜索分页已达检索上限（200 条），更早的结果未显示。请用更精确的关键词或类型/情境过滤。",
-            )
-          : null,
-        items.length === 0 && !loading && !error
-          ? react.createElement("p", { style: S.intro }, "暂无记忆。对话几轮后，蒸馏管线会自动抽取记忆。")
-          : items.map(function (m) {
-              var open = expandedId === m.id;
-              return react.createElement(
-                "div",
-                {
-                  key: m.id,
-                  className: "dsh-mem-card dsh-mem-card-hover",
-                  style: Object.assign({}, S.card, { cursor: "pointer" }),
-                  onClick: function () { setExpandedId(open ? null : m.id); },
-                },
-                react.createElement(
-                  "div", { style: S.cardHead },
-                  react.createElement(
-                    "span",
-                    { className: "dsh-mem-tag dsh-mem-tag-" + m.type },
-                    TYPE_LABELS[m.type] || m.type,
-                  ),
-                  react.createElement("span", { style: S.muted }, "优先级 " + m.priority),
-                  m.score !== null && m.score !== undefined
-                    ? react.createElement("span", { style: S.muted }, "相关度 " + Number(m.score).toFixed(2))
-                    : null,
-                  react.createElement("div", { style: S.grow }),
-                  react.createElement("span", { style: S.muted }, fmtTime(m.updatedAt)),
-                ),
-                react.createElement("div", { style: S.content }, m.content),
-                open
-                  ? react.createElement(
-                      "div", { style: S.detail },
-                      "id: " + m.id + "\n" +
-                      "情境: " + (m.scene || "-") + "\n" +
-                      "版本: v" + m.version + "（去重合并次数 " + m.version + "）\n" +
-                      "创建: " + fmtTime(m.createdAt) + "\n" +
-                      "活跃时间: " + (m.timestamps && m.timestamps.length > 0 ? m.timestamps.map(fmtTime).join(" → ") : "-") + "\n" +
-                      (m.sourceMessageIds && m.sourceMessageIds.length > 0
-                        ? "来源消息: " + m.sourceMessageIds.join(", ")
-                        : "来源消息: -"),
-                    )
-                  : null,
-              );
-            }),
-        hasMore
-          ? react.createElement(
-              "div", { style: S.flexRow },
-              react.createElement("div", { style: S.grow }),
-              react.createElement(NButton, {
-                disabled: loading,
-                onClick: function () {
-                  if (!loading) fetchPage(last, items.length, true);
-                },
-              }, loading ? "加载中…" : "加载更多"),
-            )
-          : null,
-      );
-    }
-
-    // ── Tab：L2 场景 ──
-    // ── 场景卡：默认收起（头部 + 摘要行），点击头部展开/收起正文——与记忆卡的
-    // 点击展开范式同款（cursor pointer + card-hover 描边），箭头 ▸ 展开态旋转 90°。
-    function SceneCard(props) {
-      var s = props.s;
-      var openState = react.useState(false);
-      var open = openState[0];
-      var setOpen = openState[1];
-      return react.createElement(
-        "div", { className: "dsh-mem-card dsh-mem-card-hover", style: S.card },
-        react.createElement(
-          "div",
-          {
-            style: Object.assign({}, S.sceneHead, { cursor: "pointer", userSelect: "none" }),
-            onClick: function () { setOpen(!open); },
-          },
-          react.createElement(
-            "span",
-            { className: "dsh-mem-scene-chev", style: { transform: open ? "rotate(90deg)" : "none" } },
-            "▸",
-          ),
-          react.createElement("span", { style: S.sceneTitle }, s.path),
-          s.heat ? react.createElement("span", { style: S.muted }, "热度 " + s.heat) : null,
-          react.createElement("div", { style: S.grow }),
-          react.createElement("span", { style: S.muted }, "更新 " + fmtTime(s.updated)),
-        ),
-        s.summary
-          ? react.createElement(
-              "div",
-              { style: Object.assign({}, S.muted, { marginBottom: 6 }) },
-              s.summary,
-            )
-          : null,
-        open
-          ? react.createElement("pre", { style: S.pre }, s.content || "(空)")
-          : null,
-      );
-    }
-
-    function ScenesTab(props) {
-      var rpc = props.rpc;
-      var itemsState = react.useState(null);
-      var items = itemsState[0];
-      var setItems = itemsState[1];
-      var errState = react.useState(null);
-      var error = errState[0];
-      var setError = errState[1];
-
-      var load = react.useCallback(function () {
-        rpc("dsh-memory/scenes", {})
-          .then(function (r) {
-            if (r && r.ok) { setItems(r.value.items); setError(null); }
-            else setError(r && r.error ? r.error.message : "RPC error");
-          })
-          .catch(function (e) { setError(String((e && e.message) || e)); });
-      }, [rpc]);
-
-      react.useEffect(function () { load(); }, [load]);
-
-      return react.createElement(
-        "div", null,
-        react.createElement(
-          "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
-          react.createElement("span", { style: S.muted }, items ? items.length + " 个场景块" : "加载中…"),
-          react.createElement("div", { style: S.grow }),
-          react.createElement(NButton, { onClick: load }, "刷新"),
-        ),
-        error ? react.createElement("div", { style: S.error }, error) : null,
-        items && items.length === 0
-          ? react.createElement("p", { style: S.intro }, "暂无场景块。累计 5 条新记忆后 L2 会自动整合出第一个场景。")
-          : null,
-        (items || []).map(function (s) {
-          return react.createElement(SceneCard, { key: s.path, s: s });
-        }),
-      );
-    }
-
-    // ── Tab：L3 画像 ──
-    function PersonaTab(props) {
-      var rpc = props.rpc;
-      var contentState = react.useState(null);
-      var content = contentState[0];
-      var setContent = contentState[1];
-      var errState = react.useState(null);
-      var error = errState[0];
-      var setError = errState[1];
-
-      var load = react.useCallback(function () {
-        setError(null);
-        rpc("dsh-memory/persona", {})
-          .then(function (r) {
-            if (r && r.ok) setContent(r.value.content);
-            else setError(r && r.error ? r.error.message : "RPC error");
-          })
-          .catch(function (e) { setError(String((e && e.message) || e)); });
-      }, [rpc]);
-
-      react.useEffect(function () { load(); }, [load]);
-
-      return react.createElement(
-        "div", null,
-        react.createElement(
-          "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
-          react.createElement("span", { style: S.muted },
-            error ? "加载失败" : content === null ? "加载中…" : content ? content.length + " 字符" : "未生成画像"),
-          react.createElement("div", { style: S.grow }),
-          react.createElement(NButton, { onClick: load }, "刷新"),
-        ),
-        error
-          ? react.createElement(
-              "div",
-              { style: Object.assign({}, S.error, { marginBottom: 10 }) },
-              "画像读取失败：" + error + "（点右上“刷新”重试）",
-            )
-          : null,
-        content
-          ? react.createElement("pre", { style: S.pre }, content)
-          : content === null
-            ? null
-            : react.createElement("p", { style: S.intro }, "画像尚未生成；蒸馏若干记忆后 L3 会自动产出。"),
-      );
-    }
-
-    // ── Tab：运行日志 ──
-    function LogTab(props) {
-      var rpc = props.rpc;
-      var linesState = react.useState(null);
-      var lines = linesState[0];
-      var setLines = linesState[1];
-      var errState = react.useState(null);
-      var error = errState[0];
-      var setError = errState[1];
-      var preRef = react.useRef(null);
-
-      var load = react.useCallback(function () {
-        setError(null);
-        rpc("dsh-memory/log-tail", { lines: 200 })
-          .then(function (r) {
-            if (r && r.ok) setLines(r.value.lines);
-            else setError(r && r.error ? r.error.message : "RPC error");
-          })
-          .catch(function (e) { setError(String((e && e.message) || e)); });
-      }, [rpc]);
-
-      react.useEffect(function () { load(); }, [load]);
-      // 默认滚到最底：看日志要看最新一条（tail 语义），加载/刷新后贴底
-      react.useEffect(function () {
-        if (lines && preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight;
-      }, [lines]);
-
-      return react.createElement(
-        "div", null,
-        react.createElement(
-          "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
-          react.createElement("span", { style: S.muted }, error ? "加载失败" : lines === null ? "加载中…" : "最近 " + lines.length + " 行（memory.log）"),
-          react.createElement("div", { style: S.grow }),
-          react.createElement(NButton, { onClick: load }, "刷新"),
-        ),
-        error
-          ? react.createElement(
-              "div",
-              { style: Object.assign({}, S.error, { marginBottom: 10 }) },
-              "日志读取失败：" + error + "（点右上“刷新”重试）",
-            )
-          : react.createElement("pre", { style: S.pre, ref: preRef }, (lines || []).join("\n") || "(暂无日志)"),
-      );
-    }
-
-    // ── 折线图 helper：把桶序列画成 SVG 多模型折线 ──
-    function renderCostChart(buckets, models, maxY, fmtDate, fmtInt, palette) {
-      var W = 600, H = 200, L = 46, R = 10, T = 10, B = 26;
-      var iw = W - L - R;
-      var ih = H - T - B;
-      var n = buckets.length;
-      var x = function (i) { return L + (n <= 1 ? iw / 2 : (i / (n - 1)) * iw); };
-      var y = function (v) { return T + ih - (v / maxY) * ih; };
-      var yTicks = [0, maxY / 2, maxY];
-      var xIdx = n > 2 ? [0, Math.floor((n - 1) / 2), n - 1] : n === 2 ? [0, 1] : [0];
-      return react.createElement(
-        "svg",
-        { viewBox: "0 0 " + W + " " + H, style: { width: "100%", height: "auto", display: "block" } },
-        react.createElement("line", { x1: L, y1: y(0), x2: W - R, y2: y(0), stroke: "var(--dsh-mem-border)", strokeWidth: 1 }),
-        yTicks.map(function (v) {
-          return react.createElement("text", { key: "yt" + v, x: L - 6, y: y(v) + 4, textAnchor: "end", fontSize: 10, fill: "var(--dsh-mem-text-3)" }, fmtInt(v));
-        }),
-        xIdx.map(function (i) {
-          return react.createElement("text", { key: "xt" + i, x: x(i), y: H - 8, textAnchor: "middle", fontSize: 10, fill: "var(--dsh-mem-text-3)" }, fmtDate(buckets[i] ? buckets[i].ts : 0));
-        }),
-        models.map(function (m, mi) {
-          var pts = buckets.map(function (b, i) { return x(i) + "," + y(b.byModel[m] || 0); }).join(" ");
-          return react.createElement("polyline", { key: "pl" + m, points: pts, fill: "none", stroke: palette[mi % palette.length], strokeWidth: 2, strokeLinejoin: "round", strokeLinecap: "round" });
-        }),
-      );
-    }
-
-    // ── Tab：蒸馏成本看板（折线图 + 层级×窗口表格 + 总览） ──
-    function CostTab(props) {
-      var rpc = props.rpc;
-      var dataState = react.useState(null);
-      var data = dataState[0];
-      var setData = dataState[1];
-      var errState = react.useState(null);
-      var error = errState[0];
-      var setError = errState[1];
-      var granState = react.useState("day");
-      var granularity = granState[0];
-      var setGranularity = granState[1];
-      var layerState = react.useState("");
-      var layer = layerState[0];
-      var setLayer = layerState[1];
-      var rangeState = react.useState(0);
-      var rangeDays = rangeState[0];
-      var setRangeDays = rangeState[1];
-      var rangeOpenState = react.useState(false);
-      var rangeOpen = rangeOpenState[0];
-      var setRangeOpen = rangeOpenState[1];
-
-      var load = react.useCallback(function () {
-        setError(null);
-        rpc("dsh-memory/token-cost", { granularity: granularity, rangeDays: rangeDays })
-          .then(function (r) {
-            if (r && r.ok) setData(r.value);
-            else setError(r && r.error ? r.error.message : "RPC error");
-          })
-          .catch(function (e) { setError(String((e && e.message) || e)); });
-      }, [rpc, granularity, rangeDays]);
-
-      react.useEffect(function () {
-        load();
-        var timer = setInterval(load, 5000);
-        return function () { clearInterval(timer); };
-      }, [load]);
-
-      var fmtInt = function (n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); };
-      var fmtModel = function (p, m) { return p ? p + "/" + m : m; };
-      var fmtDate = function (ts) {
-        try {
-          var d = new Date(ts);
-          // 近 N 天时后端强制日粒度，用 trend 实际粒度（而非用户选的周/月）格式化横轴
-          var g = data && data.trend ? data.trend.granularity : granularity;
-          if (g === "month") return (d.getMonth() + 1) + "月";
-          return (d.getMonth() + 1) + "/" + d.getDate();
-        } catch (e) { return ""; }
-      };
-      var RANGE_LABELS = { day: "今日", week: "本周", month: "本月", all: "累计" };
-      var LAYER_OPTS = [{ key: "", label: "全部" }, { key: "l1", label: "L1" }, { key: "l2", label: "L2" }, { key: "l3", label: "L3" }];
-      var GRAN_OPTS = [{ key: "day", label: "日" }, { key: "week", label: "周" }, { key: "month", label: "月" }];
-      var PALETTE = ["var(--dsh-mem-chart-1)", "var(--dsh-mem-chart-2)", "var(--dsh-mem-chart-3)", "var(--dsh-mem-chart-4)", "var(--dsh-mem-chart-5)", "var(--dsh-mem-chart-6)", "var(--dsh-mem-chart-7)", "var(--dsh-mem-chart-8)"];
-
-      var windows = (data && data.windows) || [];
-      var byModel = (data && data.byModel) || [];
-      var byLayer = (data && data.byLayer) || [];
-      var trend = data && data.trend ? data.trend : null;
-
-      // 趋势桶（按 layer 过滤/合并；全部 = l1+l2+l3 逐桶相加）
-      var buckets = [];
-      if (trend && trend.byLayer) {
-        if (layer === "l1" || layer === "l2" || layer === "l3") {
-          buckets = trend.byLayer[layer] || [];
-        } else {
-          var seqs = [trend.byLayer.l1 || [], trend.byLayer.l2 || [], trend.byLayer.l3 || []];
-          var n = seqs[0].length;
-          for (var i = 0; i < n; i++) {
-            var merged = { ts: 0, total: 0, byModel: {} };
-            for (var s = 0; s < seqs.length; s++) {
-              var seq = seqs[s];
-              if (seq && seq[i]) {
-                if (merged.ts === 0) merged.ts = seq[i].ts;
-                merged.total += seq[i].total;
-                Object.keys(seq[i].byModel).forEach(function (m) {
-                  merged.byModel[m] = (merged.byModel[m] || 0) + seq[i].byModel[m];
-                });
-              }
-            }
-            buckets.push(merged);
-          }
-        }
-      }
-
-      // 折线模型 + maxY
-      var models = [];
-      var seen = {};
-      buckets.forEach(function (b) {
-        Object.keys(b.byModel).forEach(function (m) {
-          if (!seen[m]) { seen[m] = true; models.push(m); }
-        });
-      });
-      models.sort();
-      var maxY = 1;
-      buckets.forEach(function (b) {
-        if (b.total > maxY) maxY = b.total;
-        models.forEach(function (m) { if ((b.byModel[m] || 0) > maxY) maxY = b.byModel[m]; });
-      });
-
-      // 层级×窗口表格数据（layer → {range: 格子}）
-      var layerTable = byLayer.map(function (lc) {
-        var win = {};
-        lc.windows.forEach(function (w) { win[w.range] = w; });
-        return { layer: lc.layer, win: win };
-      });
-
-      var thFirst = { fontSize: 12, fontWeight: 600, color: "var(--dsh-mem-text-3)", textAlign: "left", padding: "4px 10px", borderBottom: "1px solid var(--dsh-mem-border)" };
-      var thStyle = { fontSize: 12, fontWeight: 600, color: "var(--dsh-mem-text-3)", textAlign: "right", padding: "4px 10px", borderBottom: "1px solid var(--dsh-mem-border)" };
-      var tdFirst = { fontSize: 12.5, fontWeight: 600, color: "var(--dsh-mem-text-1)", textAlign: "left", padding: "4px 10px" };
-      var tdStyle = { fontSize: 12.5, color: "var(--dsh-mem-text-1)", textAlign: "right", padding: "4px 10px", fontFamily: "ui-monospace, Consolas, monospace" };
-
-      return react.createElement(
-        "div", null,
-        react.createElement(
-          "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
-          react.createElement(Segmented, { value: layer, options: LAYER_OPTS, onChange: setLayer }),
-          react.createElement(Segmented, { value: granularity, options: GRAN_OPTS, onChange: setGranularity }),
-          react.createElement(NButton, { onClick: function () { setRangeOpen(!rangeOpen); } }, rangeDays > 0 ? "近 " + rangeDays + " 天" : "近N天"),
-          react.createElement("div", { style: S.grow }),
-          react.createElement(NButton, { onClick: load }, "刷新"),
-        ),
-        rangeOpen
-          ? react.createElement(
-              "div", { style: Object.assign({}, S.flexRow, { marginBottom: 10 }) },
-              react.createElement("span", { style: S.muted }, "展示近 N 天（正整数，清空=默认窗口；超出保留期后端自动回退）"),
-              react.createElement(NInput, {
-                value: rangeDays === 0 ? "" : String(rangeDays),
-                placeholder: "如 30",
-                style: { width: 90 },
-                onChange: function (e) {
-                  var v = String(e.target.value || "").trim();
-                  if (v === "") { setRangeDays(0); return; }
-                  var n = Number(v);
-                  if (Number.isInteger(n) && n > 0 && n <= 3650) setRangeDays(n);
-                },
-              }),
-            )
-          : null,
-        error
-          ? react.createElement("div", { style: S.error }, "成本读取失败：" + error)
-          : null,
-        react.createElement("div", { style: S.panelLabel }, "成本趋势（按模型）"),
-        buckets.length > 0
-          ? react.createElement(
-              "div", null,
-              renderCostChart(buckets, models, maxY, fmtDate, fmtInt, PALETTE),
-              react.createElement(
-                "div", { style: { display: "flex", flexWrap: "wrap", gap: "4px 12px", margin: "6px 0 14px" } },
-                models.map(function (m, mi) {
-                  return react.createElement(
-                    "span", { key: "lg" + m, style: { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--dsh-mem-text-2)" } },
-                    react.createElement("span", { style: { width: 10, height: 10, borderRadius: 4, background: PALETTE[mi % PALETTE.length], display: "inline-block" } }),
-                    m,
-                  );
-                }),
-              ),
-            )
-          : react.createElement("p", { style: S.muted }, data ? "暂无成本数据（触发一次蒸馏后这里会出现趋势）。" : "加载中…"),
-        react.createElement("div", { style: S.panelLabel }, "层级成本（输出 token）"),
-        react.createElement(
-          "table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 } },
-          react.createElement(
-            "thead", null,
-            react.createElement(
-              "tr", null,
-              react.createElement("th", { style: thFirst }, "层级"),
-              ["day", "week", "month", "all"].map(function (r) {
-                return react.createElement("th", { key: r, style: thStyle }, RANGE_LABELS[r]);
-              }),
-            ),
-          ),
-          react.createElement(
-            "tbody", null,
-            layerTable.map(function (lc) {
-              return react.createElement(
-                "tr", { key: lc.layer },
-                react.createElement("td", { style: tdFirst }, lc.layer.toUpperCase()),
-                ["day", "week", "month", "all"].map(function (r) {
-                  var w = lc.win[r];
-                  return react.createElement("td", { key: r, style: tdStyle }, w ? fmtInt(w.outputTokens) : "0");
-                }),
-              );
-            }),
-          ),
-        ),
-        react.createElement("div", { style: S.panelLabel }, "层级成本（单次 avg）"),
-        react.createElement(
-          "table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 } },
-          react.createElement(
-            "thead", null,
-            react.createElement(
-              "tr", null,
-              react.createElement("th", { style: thFirst }, "层级"),
-              ["day", "week", "month", "all"].map(function (r) {
-                return react.createElement("th", { key: r, style: thStyle }, RANGE_LABELS[r] + "-avg");
-              }),
-            ),
-          ),
-          react.createElement(
-            "tbody", null,
-            layerTable.map(function (lc) {
-              return react.createElement(
-                "tr", { key: lc.layer },
-                react.createElement("td", { style: tdFirst }, lc.layer.toUpperCase()),
-                ["day", "week", "month", "all"].map(function (r) {
-                  var w = lc.win[r];
-                  return react.createElement("td", { key: r, style: tdStyle }, w ? fmtInt(w.avgOutputTokens) : "0");
-                }),
-              );
-            }),
-          ),
-        ),
-        react.createElement("div", { style: S.panelLabel }, "层级成本（单次 median）"),
-        react.createElement(
-          "table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 } },
-          react.createElement(
-            "thead", null,
-            react.createElement(
-              "tr", null,
-              react.createElement("th", { style: thFirst }, "层级"),
-              ["day", "week", "month", "all"].map(function (r) {
-                return react.createElement("th", { key: r, style: thStyle }, RANGE_LABELS[r] + "-median");
-              }),
-            ),
-          ),
-          react.createElement(
-            "tbody", null,
-            layerTable.map(function (lc) {
-              return react.createElement(
-                "tr", { key: lc.layer },
-                react.createElement("td", { style: tdFirst }, lc.layer.toUpperCase()),
-                ["day", "week", "month", "all"].map(function (r) {
-                  var w = lc.win[r];
-                  return react.createElement("td", { key: r, style: tdStyle }, w ? fmtInt(w.medianOutputTokens) : "0");
-                }),
-              );
-            }),
-          ),
-        ),
-        react.createElement("div", { style: S.panelLabel }, "时间窗口总览"),
-        react.createElement(
-          "div", { style: S.statGrid },
-          windows.map(function (w) {
-            return react.createElement(
-              "div", { key: w.range, className: "dsh-mem-card", style: S.statTile },
-              react.createElement("div", { style: S.statNum }, fmtInt(w.outputTokens + w.reasoningTokens)),
-              react.createElement("div", { style: S.statLabel }, RANGE_LABELS[w.range] + " · 总输出 token"),
-              react.createElement("div", { style: S.muted }, "文字 " + fmtInt(w.outputTokens) + " · 思考 " + fmtInt(w.reasoningTokens) + " · " + w.calls + " 次调用"),
-            );
-          }),
-        ),
-        byModel.length > 0
-          ? react.createElement(
-              "div", null,
-              react.createElement("div", { style: S.panelLabel }, "按模型（累计）"),
-              byModel.map(function (m) {
-                var label = fmtModel(m.provider, m.model);
-                return react.createElement(
-                  "div", { key: "m-" + label, style: S.infoRow },
-                  react.createElement("span", { style: S.infoKey }, label),
-                  react.createElement("span", { style: S.infoVal }, m.calls + " 次 · 输出 " + fmtInt(m.outputTokens) + " · 思考 " + fmtInt(m.reasoningTokens)),
-                );
-              }),
-            )
-          : null,
-        data
-          ? react.createElement("p", { style: S.hint }, "输入按字符、输出/思考按 token 计；趋势图 Y 轴为输出 token，上方可切换层级与颗粒度。" )
-          : null,
-      );
-    }
-
-    // ── 主面板：Tab 框架 ──
-    var TABS = [
-      ["overview", "概览"],
-      ["records", "记忆"],
-      ["scenes", "场景"],
-      ["persona", "画像"],
-      ["cost", "成本"],
-      ["log", "日志"],
-    ];
-
-    // ── 设置页侧边栏 icon：宿主 navIcon() 按 section id 硬编码白名单（slot 注册对象
-    // 无 icon 字段），"dsh-memory" 落齿轮兜底。受控 DOM 补丁：把侧边栏"记忆"按钮的
-    // 齿轮换成书本 icon。宿主只在分节激活时渲染我们的面板，所以补丁不能依赖
-    // MemoryPanel 挂载——由常驻的输入栏 pill 驱动一个 body 级防抖观察器（全局单例，
-    // 应用生命周期存续，观察 body 子树 childList）：设置页随时打开、侧边栏随时
-    // 重渲染都能打上/重打补丁。找不到或 DOM 结构变化时静默保持原生齿轮。 ──
-    var BOOK_ICON_SVG =
-      '<svg data-mem-icon="1" viewBox="0 0 16 16" width="16" height="16" fill="none" ' +
-      'xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0">' +
-      '<path d="M8 3.4C6.6 2.5 4.6 2.4 2.9 3.1v9.3c1.7-.7 3.7-.6 5.1.3 1.4-.9 3.4-1 5.1-.3V3.1C11.4 2.4 9.4 2.5 8 3.4Z" ' +
-      'stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>' +
-      '<path d="M8 3.4v9.3" stroke="currentColor" stroke-width="1.2"/></svg>';
-
-    function patchSidebarIcon() {
-      try {
-        var buttons = document.querySelectorAll("button");
-        for (var i = 0; i < buttons.length; i++) {
-          var b = buttons[i];
-          var span = b.querySelector("span");
-          var svg = b.querySelector("svg");
-          // 侧边栏导航项 = [svg 图标, span 标签文本]；输入栏 pill 的文本形态不同（"记忆 · X"）
-          if (span && svg && span.textContent.trim() === "记忆" && svg.getAttribute("data-mem-icon") !== "1") {
-            svg.outerHTML = BOOK_ICON_SVG;
-          }
-        }
-      } catch (e) {
-        /* best-effort：失败保持原生齿轮 */
-      }
-    }
-
-    // body 子树变更频繁（对话流式渲染），补丁扫描走 250ms 尾随防抖
-    var sidebarIconTimer = null;
-    function scheduleSidebarPatch() {
-      if (sidebarIconTimer !== null) return;
-      sidebarIconTimer = setTimeout(function () {
-        sidebarIconTimer = null;
-        patchSidebarIcon();
-      }, 250);
-    }
-
-    function watchSidebarIcon() {
-      patchSidebarIcon();
-      try {
-        if (document.body.getAttribute("data-mem-icon-bodywatch") === "1") return;
-        document.body.setAttribute("data-mem-icon-bodywatch", "1");
-        new MutationObserver(scheduleSidebarPatch).observe(document.body, { childList: true, subtree: true });
-      } catch (e) {
-        /* ignore */
-      }
-    }
-
-    function MemoryPanel(props) {
-      var rpc = props.rpc;
-      var tabState = react.useState("overview");
-      var tab = tabState[0];
-      var setTab = tabState[1];
-
-      ensureThemeStyle(); // 设置页挂载即注入主题令牌与组件样式
-      react.useEffect(function () { watchSidebarIcon(); }, []);
-
-      var body;
-      if (tab === "overview") body = react.createElement(OverviewTab, { rpc: rpc });
-      else if (tab === "records") body = react.createElement(RecordsTab, { rpc: rpc });
-      else if (tab === "scenes") body = react.createElement(ScenesTab, { rpc: rpc });
-      else if (tab === "persona") body = react.createElement(PersonaTab, { rpc: rpc });
-      else if (tab === "cost") body = react.createElement(CostTab, { rpc: rpc });
-      else body = react.createElement(LogTab, { rpc: rpc });
-
-      return react.createElement(
-        "div",
-        { className: "dsh-mem-root", style: S.section },
-        react.createElement("h2", { style: S.heading }, "记忆 (Memory)"),
-        react.createElement(
-          "p", { style: S.intro },
-          "L0~L3 分层蒸馏记忆：浏览被记住的内容，控制记忆模式开关。",
-        ),
-        react.createElement(
-          "div", { style: S.tabbar },
-          TABS.map(function (t) {
-            return react.createElement(
-              "button",
-              {
-                key: t[0],
-                className: tab === t[0] ? "dsh-mem-tab dsh-mem-tab-on" : "dsh-mem-tab",
-                onClick: function () { setTab(t[0]); },
-              },
-              t[1],
-            );
-          }),
-        ),
-        body,
-      );
-    }
-
-    // ── 插件主体：注册设置页 + 输入栏档位控件 ──
-    function makeRpc(ctx) {
-      return function (endpoint, payload) {
-        if (!ctx.connection || !ctx.connection.rpc) {
-          return Promise.reject(new Error("connection 服务不可用"));
-        }
-        return ctx.connection.rpc.call("/rpc", endpoint, payload || {});
-      };
-    }
-
-    function apply(ctx) {
-      var rpc = makeRpc(ctx);
-
-      // 设置 → 记忆：状态页（浏览器保持两族混合视图）
-      ctx.slots.inject("settings.section", function () {
-        return ctx.slots.register(
-          {
-            name: "settings.section",
-            id: "dsh-memory",
-            order: 200,
-            label: "记忆",
-            inject: function () {
-              return { rpc: rpc };
-            },
-          },
-          MemoryPanel,
-        );
-      });
-
-      // 输入栏（模式选择器右侧）：会话记忆档位 pill + 滑动选择器
-      ctx.slots.inject("conversation.input.left", function () {
-        return ctx.slots.register(
-          {
-            name: "conversation.input.left",
-            id: "dsh-memory-mode",
-            order: 100,
-            inject: function (sessionId) {
-              return { sessionId: sessionId, rpc: rpc };
-            },
-          },
-          MemoryModePill,
-        );
-      });
-    }
-
-    exports.apply = apply;
-    exports.inject = inject;
-    return module.exports;
-  },
+	id: "dsh-layered-memory",
+	factory: (require) => {
+		var module = { exports: {} };
+		var exports = module.exports;
+		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+var __defProp = Object.defineProperty;
+		var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+		var __getOwnPropNames = Object.getOwnPropertyNames;
+		var __hasOwnProp = Object.prototype.hasOwnProperty;
+		var __export = (target, all) => {
+		  for (var name in all)
+		    __defProp(target, name, { get: all[name], enumerable: true });
+		};
+		var __copyProps = (to, from, except, desc) => {
+		  if (from && typeof from === "object" || typeof from === "function") {
+		    for (let key of __getOwnPropNames(from))
+		      if (!__hasOwnProp.call(to, key) && key !== except)
+		        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+		  }
+		  return to;
+		};
+		var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+		
+		// client/src/entry.tsx
+		var entry_exports = {};
+		__export(entry_exports, {
+		  apply: () => apply,
+		  inject: () => inject
+		});
+		module.exports = __toCommonJS(entry_exports);
+		
+		// client/src/panel.tsx
+		var import_react13 = require("react");
+		
+		// client/src/sidebar-icon.ts
+		var BOOK_ICON_SVG = '<svg data-mem-icon="1" viewBox="0 0 16 16" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0"><path d="M8 3.4C6.6 2.5 4.6 2.4 2.9 3.1v9.3c1.7-.7 3.7-.6 5.1.3 1.4-.9 3.4-1 5.1-.3V3.1C11.4 2.4 9.4 2.5 8 3.4Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 3.4v9.3" stroke="currentColor" stroke-width="1.2"/></svg>';
+		function patchSidebarIcon() {
+		  try {
+		    const buttons = document.querySelectorAll("button");
+		    for (let i = 0; i < buttons.length; i++) {
+		      const b = buttons[i];
+		      const span = b.querySelector("span");
+		      const svg = b.querySelector("svg");
+		      if (span && svg && span.textContent && span.textContent.trim() === "记忆" && svg.getAttribute("data-mem-icon") !== "1") {
+		        svg.outerHTML = BOOK_ICON_SVG;
+		      }
+		    }
+		  } catch {
+		  }
+		}
+		var sidebarIconTimer = null;
+		function scheduleSidebarPatch() {
+		  if (sidebarIconTimer !== null) return;
+		  sidebarIconTimer = setTimeout(() => {
+		    sidebarIconTimer = null;
+		    patchSidebarIcon();
+		  }, 250);
+		}
+		function watchSidebarIcon() {
+		  patchSidebarIcon();
+		  try {
+		    if (document.body.getAttribute("data-mem-icon-bodywatch") === "1") return;
+		    document.body.setAttribute("data-mem-icon-bodywatch", "1");
+		    new MutationObserver(scheduleSidebarPatch).observe(document.body, { childList: true, subtree: true });
+		  } catch {
+		  }
+		}
+		
+		// client/src/styles.ts
+		var S = {
+		  section: { padding: "0 4px" },
+		  heading: { fontSize: 16, fontWeight: 600, margin: "0 0 4px", color: "var(--dsh-mem-text-1)" },
+		  intro: { fontSize: 13, color: "var(--dsh-mem-text-3)", margin: "0 0 12px" },
+		  tabbar: { display: "flex", gap: 2, borderBottom: "1px solid var(--dsh-mem-border)", marginBottom: 14 },
+		  error: {
+		    marginTop: 10,
+		    fontSize: 13,
+		    color: "var(--dsh-mem-danger)",
+		    whiteSpace: "pre-wrap"
+		  },
+		  hint: { marginTop: 12, fontSize: 12, color: "var(--dsh-mem-text-3)" },
+		  toolbar: { display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" },
+		  card: {
+		    padding: "10px 12px",
+		    marginBottom: 8,
+		    fontSize: 13
+		  },
+		  cardHead: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 },
+		  muted: { color: "var(--dsh-mem-text-3)", fontSize: 12 },
+		  content: { lineHeight: 1.5, wordBreak: "break-word", color: "var(--dsh-mem-text-1)" },
+		  detail: {
+		    marginTop: 8,
+		    paddingTop: 8,
+		    borderTop: "1px dashed var(--dsh-mem-border)",
+		    fontSize: 12,
+		    fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+		    color: "var(--dsh-mem-text-2)",
+		    whiteSpace: "pre-wrap"
+		  },
+		  pre: {
+		    margin: 0,
+		    padding: "10px 12px",
+		    background: "var(--dsh-mem-bg-inset)",
+		    border: "1px solid var(--dsh-mem-border)",
+		    borderRadius: 10,
+		    fontSize: 12,
+		    fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+		    whiteSpace: "pre-wrap",
+		    wordBreak: "break-word",
+		    lineHeight: 1.6,
+		    maxHeight: 480,
+		    overflow: "auto"
+		  },
+		  switchRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 0" },
+		  switchLabel: { fontSize: 13, fontWeight: 600, minWidth: 72, color: "var(--dsh-mem-text-1)" },
+		  switchDesc: { fontSize: 12, color: "var(--dsh-mem-text-3)" },
+		  switch: {
+		    width: 36,
+		    height: 20,
+		    borderRadius: 999,
+		    position: "relative",
+		    cursor: "pointer",
+		    transition: "background .15s",
+		    flexShrink: 0
+		  },
+		  switchOn: { background: "var(--dsh-mem-accent-fill)" },
+		  switchOff: { background: "var(--dsh-mem-border-strong)" },
+		  switchDisabled: { opacity: 0.4, cursor: "not-allowed" },
+		  knob: {
+		    position: "absolute",
+		    top: 2,
+		    width: 16,
+		    height: 16,
+		    borderRadius: "50%",
+		    background: "var(--dsh-mem-thumb)",
+		    transition: "left .15s",
+		    boxShadow: "0 1px 2px rgba(0,0,0,.25)"
+		  },
+		  switchPanel: {
+		    border: "1px solid var(--dsh-mem-border)",
+		    borderRadius: 10,
+		    background: "var(--dsh-mem-bg-card)",
+		    boxShadow: "var(--dsh-mem-shadow-card)",
+		    padding: "4px 14px",
+		    marginBottom: 14
+		  },
+		  panelLabel: {
+		    fontSize: 12,
+		    fontWeight: 600,
+		    color: "var(--dsh-mem-text-3)",
+		    margin: "12px 0 2px"
+		  },
+		  statGrid: {
+		    display: "grid",
+		    gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+		    gap: 8,
+		    marginBottom: 14
+		  },
+		  statTile: { padding: "10px 12px" },
+		  statNum: { fontSize: 20, fontWeight: 650, lineHeight: "28px", color: "var(--dsh-mem-text-1)" },
+		  statLabel: { fontSize: 12, color: "var(--dsh-mem-text-3)", marginTop: 2 },
+		  infoRow: {
+		    display: "flex",
+		    alignItems: "baseline",
+		    gap: 12,
+		    padding: "5px 0",
+		    borderBottom: "1px solid var(--dsh-mem-border)"
+		  },
+		  infoKey: { fontSize: 12.5, color: "var(--dsh-mem-text-3)", whiteSpace: "nowrap", minWidth: 96 },
+		  infoVal: {
+		    fontSize: 12.5,
+		    color: "var(--dsh-mem-text-1)",
+		    fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+		    wordBreak: "break-all",
+		    textAlign: "right",
+		    flex: 1
+		  },
+		  seg: {
+		    display: "inline-flex",
+		    border: "1px solid var(--dsh-mem-border)",
+		    borderRadius: 8,
+		    overflow: "hidden",
+		    flexShrink: 0,
+		    background: "var(--dsh-mem-bg-inset)"
+		  },
+		  segBtn: {
+		    padding: "4px 12px",
+		    fontSize: 12,
+		    lineHeight: "16px",
+		    cursor: "pointer",
+		    background: "transparent",
+		    color: "var(--dsh-mem-text-2)",
+		    border: "none",
+		    borderRight: "1px solid var(--dsh-mem-border)"
+		  },
+		  segBtnOn: {
+		    background: "var(--dsh-mem-accent-fill)",
+		    color: "#fff",
+		    fontWeight: 600
+		  },
+		  flexRow: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
+		  grow: { flex: 1 },
+		  sceneHead: { display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" },
+		  sceneTitle: { fontSize: 13, fontWeight: 600, fontFamily: "ui-monospace, Consolas, monospace", color: "var(--dsh-mem-text-1)" }
+		};
+		
+		// client/src/theme.ts
+		var THEME_STYLE_ID = "dsh-mem-theme-style";
+		function ensureThemeStyle() {
+		  if (document.getElementById(THEME_STYLE_ID)) return;
+		  const el = document.createElement("style");
+		  el.id = THEME_STYLE_ID;
+		  el.textContent = [
+		    // conic 角度动画需要 @property 注册才能插值；不支持 @property 的浏览器里
+		    // var(--dsh-mem-angle) 无定义 → conic 层失效 → 整条 background 退化为无背景
+		    // （光带边框与内底一并消失，仅剩文字色）。2026 常青浏览器均已支持，仅作记录。
+		    "@property --dsh-mem-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }",
+		    "@keyframes dshMemFlow { to { --dsh-mem-angle: 360deg; } }",
+		    // ── 令牌（浅色）。中性色链【真实存在的】dsw 令牌（design-platform.css 校对）：
+		    //    bg-layer-2/3、bg-overlay、border-l1/l2/l3、border-inverted、label-*、
+		    //    interactive-bg-hover、state-error-primary、tooltip-bg、dsw-shadow-lv1/lv3 ──
+		    ":root {",
+		    "  --dsh-mem-accent: #4d6bfe;",
+		    "  --dsh-mem-accent-text: #3d5be0;",
+		    "  --dsh-mem-accent-fill: #3d5be0;",
+		    "  --dsh-mem-accent-weak: rgba(77,107,254,0.10);",
+		    "  --dsh-mem-bg-card: var(--dsw-alias-bg-layer-2, #ffffff);",
+		    "  --dsh-mem-bg-inset: var(--dsw-alias-bg-overlay, #e9ecf2);",
+		    "  --dsh-mem-bg-hover: var(--dsw-alias-interactive-bg-hover, rgba(38,49,72,0.06));",
+		    "  --dsh-mem-bg-pop: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-3, #ffffff));",
+		    "  --dsh-mem-border: var(--dsw-alias-border-l2, rgba(0,0,0,0.10));",
+		    "  --dsh-mem-border-strong: var(--dsw-alias-border-l3, rgba(0,0,0,0.12));",
+		    "  --dsh-mem-border-pop: var(--dsw-alias-border-inverted, rgba(0,0,0,0));",
+		    "  --dsh-mem-text-1: var(--dsw-alias-label-primary, #0f1115);",
+		    "  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #61666b);",
+		    "  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #6e7781);",
+		    "  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #d0403f);",
+		    // 图表系列（成本折线图）：8 档固定色，PALETTE 只引用 var()；1 档锚品牌蓝，8 档中性"其他"
+		    "  --dsh-mem-chart-1: #4d6bfe;",
+		    "  --dsh-mem-chart-2: #0e9c8f;",
+		    "  --dsh-mem-chart-3: #1f9d55;",
+		    "  --dsh-mem-chart-4: #a8821c;",
+		    "  --dsh-mem-chart-5: #d97a0d;",
+		    "  --dsh-mem-chart-6: #d64570;",
+		    "  --dsh-mem-chart-7: #7c5cff;",
+		    "  --dsh-mem-chart-8: #61666b;",
+		    // 档位色 = 灰 → 品牌蓝 的渐变阶（chat/work 过渡蓝 / auto 品牌蓝）；
+		    // 文字对比度按 pill 真实底色（流光内底 = bg-card 97% + 档位色 3%）复算 AA 达标
+		    "  --dsh-mem-mode-chat: #5a69b0;",
+		    "  --dsh-mem-mode-work: #5263ca;",
+		    "  --dsh-mem-mode-auto: #3d5be0;",
+		    // 滑轨填充渐变（左浅右深）
+		    "  --dsh-mem-fill-1: #7b93ff;",
+		    "  --dsh-mem-fill-2: #3d5be0;",
+		    "  --dsh-mem-thumb: #ffffff;",
+		    "  --dsh-mem-track: rgba(128,140,150,0.32);",
+		    "  --dsh-mem-dot: rgba(128,140,150,0.55);",
+		    "  --dsh-mem-shadow-card: var(--dsw-shadow-lv1, 0 2px 4px 0 rgba(0,0,0,0.05));",
+		    "  --dsh-mem-shadow-pop: var(--dsw-shadow-lv3, 0 0 1px 0 rgba(0,0,0,.2), 0 0 4px 0 rgba(0,0,0,.02), 0 12px 32px 0 rgba(0,0,0,0.08));",
+		    "}",
+		    // ── 令牌（暗色：body[data-ds-dark-theme] 是 dsh 前端的暗色开关） ──
+		    "body[data-ds-dark-theme] {",
+		    "  --dsh-mem-accent: #6e85ff;",
+		    "  --dsh-mem-accent-text: #7b90ff;",
+		    "  --dsh-mem-accent-fill: #465ce8;",
+		    "  --dsh-mem-accent-weak: rgba(110,133,255,0.14);",
+		    "  --dsh-mem-bg-card: var(--dsw-alias-bg-layer-2, #2c2c2e);",
+		    "  --dsh-mem-bg-inset: var(--dsw-alias-bg-layer-1, #232324);",
+		    "  --dsh-mem-bg-hover: var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,0.08));",
+		    "  --dsh-mem-bg-pop: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-3, #353638));",
+		    "  --dsh-mem-border: var(--dsw-alias-border-l2, rgba(255,255,255,0.12));",
+		    "  --dsh-mem-border-strong: var(--dsw-alias-border-l3, rgba(255,255,255,0.16));",
+		    "  --dsh-mem-border-pop: var(--dsw-alias-border-inverted, rgba(255,255,255,0.06));",
+		    "  --dsh-mem-text-1: var(--dsw-alias-label-primary, #f9fafb);",
+		    "  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #cfd3d6);",
+		    "  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #8892a6);",
+		    "  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #f4707b);",
+		    "  --dsh-mem-chart-1: #6e85ff;",
+		    "  --dsh-mem-chart-2: #35c4b5;",
+		    "  --dsh-mem-chart-3: #52c98d;",
+		    "  --dsh-mem-chart-4: #d9b23e;",
+		    "  --dsh-mem-chart-5: #f59e5b;",
+		    "  --dsh-mem-chart-6: #f47ba2;",
+		    "  --dsh-mem-chart-7: #a78bfa;",
+		    "  --dsh-mem-chart-8: #8892a6;",
+		    "  --dsh-mem-mode-chat: #97a4ff;",
+		    "  --dsh-mem-mode-work: #8295ff;",
+		    "  --dsh-mem-mode-auto: #7b90ff;",
+		    "  --dsh-mem-fill-1: #8fa0ff;",
+		    "  --dsh-mem-fill-2: #465ce8;",
+		    "  --dsh-mem-thumb: #e8ebf5;",
+		    "  --dsh-mem-track: rgba(148,160,180,0.30);",
+		    "  --dsh-mem-dot: rgba(148,160,180,0.5);",
+		    "  --dsh-mem-shadow-card: var(--dsw-shadow-lv1, 0 2px 4px 0 rgba(0,0,0,0.3));",
+		    "  --dsh-mem-shadow-pop: var(--dsw-shadow-lv3, 0 0 1px 0 rgba(0,0,0,.2), 0 0 4px 0 rgba(0,0,0,.02), 0 12px 32px 0 rgba(0,0,0,.08));",
+		    "}",
+		    // ── 主题切换过渡：只挂颜色/阴影（不碰 transform），让明暗翻转不生硬 ──
+		    ".dsh-mem-root, .dsh-mem-root * { transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease; }",
+		    // ── 控件：按钮（次级）── 圆角体系：控件 8 / 卡片 10 / 浮层 12 / 胶囊 999
+		    ".dsh-mem-btn {",
+		    "  padding: 5px 14px; font-size: 13px; line-height: 20px; border-radius: 8px; cursor: pointer;",
+		    "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card); color: var(--dsh-mem-text-1);",
+		    "  transition: background-color .15s ease, border-color .15s ease, transform .08s ease;",
+		    "}",
+		    ".dsh-mem-btn:hover:not(:disabled) { border-color: var(--dsh-mem-border-strong); background: var(--dsh-mem-bg-hover); }",
+		    ".dsh-mem-btn:active:not(:disabled) { transform: scale(0.98); }",
+		    ".dsh-mem-btn:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
+		    ".dsh-mem-btn:disabled { opacity: 0.45; cursor: not-allowed; }",
+		    // ── 控件：输入框 / 下拉 ──
+		    ".dsh-mem-input {",
+		    "  padding: 5px 10px; font-size: 13px; border-radius: 8px; color: var(--dsh-mem-text-1);",
+		    "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card);",
+		    "  transition: border-color .15s ease, box-shadow .15s ease;",
+		    "}",
+		    ".dsh-mem-input:focus {",
+		    "  outline: none; border-color: var(--dsh-mem-accent);",
+		    "  box-shadow: 0 0 0 3px var(--dsh-mem-accent-weak);",
+		    "}",
+		    // ── 下拉（NSel 触发钮）：观感同输入框（8px 圆角/同令牌边框底色），文字
+		    //    ellipsis + CSS 描边 chevron（展开旋转 180°）；弹出面板见 .dsh-mem-pop ──
+		    ".dsh-mem-select {",
+		    "  display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;",
+		    "  width: 100%; min-width: 0; padding: 5px 10px; font: inherit; font-size: 13px; line-height: 20px;",
+		    "  text-align: left; border-radius: 8px; cursor: pointer; color: var(--dsh-mem-text-1);",
+		    "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card);",
+		    "  transition: border-color .15s ease, box-shadow .15s ease;",
+		    "}",
+		    ".dsh-mem-select:focus-visible {",
+		    "  outline: none; border-color: var(--dsh-mem-accent);",
+		    "  box-shadow: 0 0 0 3px var(--dsh-mem-accent-weak);",
+		    "}",
+		    ".dsh-mem-select:disabled { opacity: 0.45; cursor: not-allowed; }",
+		    ".dsh-mem-select-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
+		    // 下拉弹出面板：dsh MenuDropdown 同款——浮层 12 圆角 + menu 底 + lv3 投影，
+		    // 选项行 10 圆角 + hover 底色 + 选中打勾（选项 active 由 data-active 标记）
+		    ".dsh-mem-sel { position: relative; display: inline-flex; min-width: 0; vertical-align: top; }",
+		    ".dsh-mem-sel-chev {",
+		    "  width: 8px; height: 8px; flex: none; margin-right: 2px;",
+		    "  border-right: 1.5px solid var(--dsh-mem-text-3); border-bottom: 1.5px solid var(--dsh-mem-text-3);",
+		    "  transform: rotate(45deg); transition: transform .12s ease;",
+		    "}",
+		    ".dsh-mem-sel-chev-open { transform: rotate(225deg); }",
+		    ".dsh-mem-pop {",
+		    "  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;",
+		    "  min-width: 100%; width: max-content; max-width: 340px; max-height: 264px;",
+		    "  overflow-y: auto; overscroll-behavior: contain; padding: 4px;",
+		    "  background: var(--dsh-mem-bg-pop); border: 1px solid var(--dsh-mem-border-pop);",
+		    "  border-radius: 12px; box-shadow: var(--dsh-mem-shadow-pop);",
+		    "}",
+		    ".dsh-mem-pop-opt {",
+		    "  display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;",
+		    "  min-height: 32px; padding: 5px 10px; font: inherit; font-size: 13px; line-height: 20px;",
+		    "  text-align: left; color: var(--dsh-mem-text-1); cursor: pointer;",
+		    "  background: none; border: none; outline: none; border-radius: 10px;",
+		    "}",
+		    '.dsh-mem-pop-opt:hover, .dsh-mem-pop-opt[data-active="1"] { background: var(--dsh-mem-bg-hover); }',
+		    ".dsh-mem-pop-opt-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
+		    ".dsh-mem-pop-check { flex: none; font-size: 12px; color: var(--dsh-mem-text-1); }",
+		    ".dsh-mem-pop-empty { padding: 10px; font-size: 13px; color: var(--dsh-mem-text-3); }",
+		    // ── Tab（下划线式）：active 品牌蓝下划线 + 主文字色 ──
+		    ".dsh-mem-tab {",
+		    "  padding: 6px 12px; font-size: 13px; cursor: pointer; background: none; border: none;",
+		    "  color: var(--dsh-mem-text-2); border-bottom: 2px solid transparent; margin-bottom: -1px;",
+		    "}",
+		    ".dsh-mem-tab:hover { color: var(--dsh-mem-text-1); }",
+		    ".dsh-mem-tab-on { font-weight: 600; color: var(--dsh-mem-text-1); border-bottom-color: var(--dsh-mem-accent); }",
+		    ".dsh-mem-tab:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: -2px; }",
+		    // ── 卡片：悬浮微抬 + 边框加深（只在可交互卡片上用 hover） ──
+		    ".dsh-mem-card {",
+		    "  border: 1px solid var(--dsh-mem-border); border-radius: 10px; background: var(--dsh-mem-bg-card);",
+		    "  box-shadow: var(--dsh-mem-shadow-card);",
+		    "}",
+		    ".dsh-mem-card-hover:hover { border-color: var(--dsh-mem-border-strong); }",
+		    // ── 场景卡折叠箭头：展开态旋转 90°（过渡只做反馈，进 reduced-motion 压制名单） ──
+		    ".dsh-mem-scene-chev { display: inline-block; transition: transform .15s ease; color: var(--dsh-mem-text-3); }",
+		    // ── 记忆类型标签：tint 风格（彩底淡色 + 彩字），--dsh-mem-tag-c 由类型类给定 ──
+		    ".dsh-mem-tag {",
+		    "  display: inline-block; padding: 1px 8px; border-radius: 999px;",
+		    "  font-size: 11px; font-weight: 600; line-height: 18px; white-space: nowrap;",
+		    "  color: var(--dsh-mem-tag-c, var(--dsh-mem-text-2));",
+		    "  background: color-mix(in srgb, var(--dsh-mem-tag-c, #8a93a1) 12%, transparent);",
+		    "  border: 1px solid color-mix(in srgb, var(--dsh-mem-tag-c, #8a93a1) 28%, transparent);",
+		    "}",
+		    ".dsh-mem-tag-persona   { --dsh-mem-tag-c: #6f42c1; }",
+		    ".dsh-mem-tag-episodic  { --dsh-mem-tag-c: #0757b4; }",
+		    ".dsh-mem-tag-instruction, .dsh-mem-tag-work-artifact { --dsh-mem-tag-c: #8a5a00; }",
+		    ".dsh-mem-tag-work-fact { --dsh-mem-tag-c: #0757b4; }",
+		    ".dsh-mem-tag-work-task { --dsh-mem-tag-c: #116629; }",
+		    ".dsh-mem-tag-work-method { --dsh-mem-tag-c: #6f42c1; }",
+		    "body[data-ds-dark-theme] .dsh-mem-tag-persona   { --dsh-mem-tag-c: #c297ff; }",
+		    "body[data-ds-dark-theme] .dsh-mem-tag-episodic  { --dsh-mem-tag-c: #6cb2ff; }",
+		    "body[data-ds-dark-theme] .dsh-mem-tag-instruction, body[data-ds-dark-theme] .dsh-mem-tag-work-artifact { --dsh-mem-tag-c: #e3b341; }",
+		    "body[data-ds-dark-theme] .dsh-mem-tag-work-fact { --dsh-mem-tag-c: #6cb2ff; }",
+		    "body[data-ds-dark-theme] .dsh-mem-tag-work-task { --dsh-mem-tag-c: #6fca74; }",
+		    "body[data-ds-dark-theme] .dsh-mem-tag-work-method { --dsh-mem-tag-c: #c297ff; }",
+		    // ── pill 边缘流光（品牌蓝族，chat/work/auto 三档共用；off 无）：border 区画旋转
+		    // conic 光带；内部必须是【不透明】底色盖住光带（半透明内层会让 conic 透进按钮
+		    // 内部，文字被光斑干扰——实测事故）。不透明底 = 主题底混 3% 档位色
+		    //（--dsh-mem-pill-tint 由 pill inline 给定；3% 保证档位色文字 AA，暗色智能档余量 4.63:1）
+		    ".dsh-mem-flow {",
+		    "  border: 1px solid transparent;",
+		    "  background:",
+		    "    linear-gradient(",
+		    "      color-mix(in srgb, var(--dsh-mem-bg-card, #ffffff) 97%, var(--dsh-mem-pill-tint, #4d6bfe)),",
+		    "      color-mix(in srgb, var(--dsh-mem-bg-card, #ffffff) 97%, var(--dsh-mem-pill-tint, #4d6bfe))",
+		    "    ) padding-box,",
+		    "    conic-gradient(from var(--dsh-mem-angle),",
+		    "      rgba(61,91,224,0.9), rgba(77,107,254,0.95), rgba(147,168,255,1),",
+		    "      rgba(110,133,255,0.9), rgba(61,91,224,0.9)) border-box;",
+		    "  animation: dshMemFlow 3s linear infinite;",
+		    "}",
+		    // ── off 档 pill：dsh 透明按钮——无底无边框只留文字，hover 才出 interactive 淡底 ──
+		    //（button 裸元素会露出 UA 默认灰底+描边，必须显式压掉）
+		    ".dsh-mem-pill-off { border: none; background: transparent; }",
+		    ".dsh-mem-pill-off:hover { background: var(--dsh-mem-bg-hover); }",
+		    ".dsh-mem-pill-off:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
+		    // 流光态焦点环（同一物理按钮的两态焦点反馈对称，配方同 .dsh-mem-btn）
+		    ".dsh-mem-flow:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
+		    // ── 浮层（dsh 原生菜单同配方：不透明实底 + inverted 描边（浅色不可见）+ lv3 阴影） ──
+		    ".dsh-mem-popover {",
+		    "  border-radius: 12px;",
+		    "  border: 1px solid var(--dsh-mem-border-pop);",
+		    "  background: var(--dsh-mem-bg-pop);",
+		    "  box-shadow: var(--dsh-mem-shadow-pop);",
+		    "  color: var(--dsh-mem-text-1);",
+		    "}",
+		    // ── 拖动气泡：拖拽时显示当前档位名，随圆球移动，下倒三角尖角贴近圆球 ──
+		    // 底色走浮层同材质令牌（浅色白底深字 / 暗色深底浅字，随主题翻转；
+		    // tooltip-bg 令牌在浅色下仍是深色，不随材质走，已弃用）。
+		    // 悬停 8px（尖角尖端距圆球顶约 5px）；气泡 zIndex 4 高于浮层（同层叠上下文内
+		    // 数值比较），跨过浮层上缘时盖在其上；描边 + 投影让同材质不融合
+		    ".dsh-mem-bubble {",
+		    "  position: absolute; bottom: calc(100% + 8px); transform: translateX(-50%);",
+		    "  padding: 3px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; line-height: 18px;",
+		    "  border: 1px solid var(--dsh-mem-border);",
+		    "  background: var(--dsh-mem-bg-pop); color: var(--dsh-mem-text-1); white-space: nowrap;",
+		    "  box-shadow: 0 2px 8px rgba(0,0,0,0.18);",
+		    "}",
+		    // 尖角：clip-path 倒三角（旋转方块会露出上半截成菱形，实测视觉缺陷）。
+		    // 双三角叠画：外层描边色大一圈、内层填充色，压在浮层上缘也有轮廓可读
+		    ".dsh-mem-bubble::before {",
+		    "  content: ''; position: absolute; top: 100%; left: 50%; margin-left: -6px;",
+		    "  width: 12px; height: 7px;",
+		    "  clip-path: polygon(0 0, 100% 0, 50% 100%);",
+		    "  background: var(--dsh-mem-border);",
+		    "}",
+		    ".dsh-mem-bubble::after {",
+		    "  content: ''; position: absolute; top: 100%; left: 50%; margin-left: -5px;",
+		    "  width: 10px; height: 6px;",
+		    "  clip-path: polygon(0 0, 100% 0, 50% 100%);",
+		    "  background: var(--dsh-mem-bg-pop);",
+		    "}",
+		    // ── 粒子层（点阵场）：浅色 multiply 混合——深蓝点乘在浅蓝填充上沉显对比 ──
+		    "body:not([data-ds-dark-theme]) .dsh-mem-particles { mix-blend-mode: multiply; opacity: 0.82; }",
+		    // ── 重建面板 ──（模态本体走 NModal：原生 Modal 优先，回退 rb-overlay/rb-modal）
+		    ".dsh-mem-rb-card {",
+		    "  border: 1px solid var(--dsh-mem-border); border-radius: 10px; background: var(--dsh-mem-bg-card);",
+		    "  box-shadow: var(--dsh-mem-shadow-card); padding: 12px 14px; margin-bottom: 14px; font-size: 13px;",
+		    "}",
+		    ".dsh-mem-rb-bar { height: 8px; border-radius: 4px; overflow: hidden; flex: 1; background: var(--dsh-mem-track); }",
+		    ".dsh-mem-rb-fill { height: 100%; border-radius: 4px; background: var(--dsh-mem-accent-fill); transition: width .4s ease; }",
+		    ".dsh-mem-rb-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35);",
+		    "  display: flex; align-items: center; justify-content: center; z-index: 2000; }",
+		    ".dsh-mem-rb-modal { width: 440px; max-width: calc(100vw - 48px); border-radius: 12px;",
+		    "  padding: 18px 20px; font-size: 13px; line-height: 1.6;",
+		    "  border: 1px solid var(--dsh-mem-border); background: var(--dsh-mem-bg-card); color: var(--dsh-mem-text-1);",
+		    "  box-shadow: 0 16px 48px rgba(0,0,0,0.24); }",
+		    "body[data-ds-dark-theme] .dsh-mem-rb-modal { box-shadow: 0 16px 48px rgba(0,0,0,0.6); }",
+		    ".dsh-mem-rb-muted { font-size: 12px; color: var(--dsh-mem-text-3); }",
+		    // ── 会话信息区（悬浮卡下半部）：分隔线 + 2×2 指标 + 状态行；纯静态 DOM，
+		    // 不进粒子层 rAF 循环，轮询数据到达才触发本组件小树 re-render ──
+		    ".dsh-mem-sinfo { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--dsh-mem-border); }",
+		    ".dsh-mem-sinfo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }",
+		    ".dsh-mem-sinfo-val { font-size: 13px; font-weight: 600; color: var(--dsh-mem-text-1); line-height: 18px; font-variant-numeric: tabular-nums; }",
+		    ".dsh-mem-sinfo-label { font-size: 11px; color: var(--dsh-mem-text-3); line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
+		    ".dsh-mem-sinfo-warn { font-size: 11px; color: var(--dsh-mem-danger); line-height: 16px; margin-bottom: 6px; }",
+		    ".dsh-mem-sinfo-note { font-size: 11px; color: var(--dsh-mem-text-3); line-height: 16px; margin-top: 8px; }",
+		    ".dsh-mem-sinfo-sum { font-size: 11px; color: var(--dsh-mem-text-3); line-height: 16px; margin-top: 8px; }",
+		    // reduced-motion 兜底放样式表末尾：同特异性下后置声明才能压过上面的组件类
+		    "@media (prefers-reduced-motion: reduce) {",
+		    "  .dsh-mem-root, .dsh-mem-root *, .dsh-mem-btn, .dsh-mem-input, .dsh-mem-select, .dsh-mem-rb-fill, .dsh-mem-scene-chev, .dsh-mem-sel-chev { transition: none; }",
+		    "  .dsh-mem-flow { animation: none; }",
+		    "}"
+		  ].join("\n");
+		  document.head.appendChild(el);
+		}
+		
+		// client/src/tabs/CostTab.tsx
+		var import_react2 = require("react");
+		
+		// client/src/ui/controls.tsx
+		var import_jsx_runtime = require("react/jsx-runtime");
+		function Switch(props) {
+		  const on = !!props.checked;
+		  const disabled = !!props.disabled;
+		  const base = { ...S.switch, ...on ? S.switchOn : S.switchOff, ...disabled ? S.switchDisabled : null };
+		  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+		    "div",
+		    {
+		      style: base,
+		      onClick: () => {
+		        if (!disabled && props.onChange) props.onChange(!on);
+		      },
+		      children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: { ...S.knob, left: on ? 18 : 2 } })
+		    }
+		  );
+		}
+		function SwitchRow(props) {
+		  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { style: S.switchRow, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Switch, { checked: props.checked, disabled: props.disabled, onChange: props.onChange }),
+		    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: S.switchLabel, children: props.label }),
+		      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: S.switchDesc, children: props.desc || "" })
+		    ] })
+		  ] });
+		}
+		function Segmented(props) {
+		  const value = props.value;
+		  const disabled = !!props.disabled;
+		  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { ...S.seg, ...disabled ? S.switchDisabled : null }, children: props.options.map((opt, i) => {
+		    const on = opt.key === value;
+		    const optDisabled = disabled || !!opt.disabled;
+		    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+		      "span",
+		      {
+		        title: opt.disabledTitle || "",
+		        style: {
+		          ...S.segBtn,
+		          ...on ? S.segBtnOn : null,
+		          ...i === props.options.length - 1 ? { borderRight: "none" } : null,
+		          ...optDisabled ? { cursor: "not-allowed", opacity: 0.45 } : null
+		        },
+		        onClick: () => {
+		          if (!optDisabled && !on && props.onChange) props.onChange(opt.key);
+		        },
+		        children: opt.label
+		      },
+		      opt.key
+		    );
+		  }) });
+		}
+		
+		// client/src/ui/primitives.tsx
+		var import_react = require("react");
+		
+		// client/src/env.ts
+		function hostRequire(id) {
+		  return require(id);
+		}
+		
+		// client/src/ui/primitives.tsx
+		var P = null;
+		try {
+		  P = hostRequire("@deepseek-ai/dsh-client-ui-primitives");
+		} catch {
+		  P = null;
+		}
+		function NButton(props) {
+		  if (P && P.Button) return (0, import_react.createElement)(P.Button, { size: "sm", ...props });
+		  const rest = { ...props };
+		  delete rest.variant;
+		  delete rest.icon;
+		  rest.className = "dsh-mem-btn" + (rest.className ? " " + rest.className : "");
+		  return (0, import_react.createElement)("button", rest);
+		}
+		function NInput(props) {
+		  if (P && P.Input) {
+		    const inner = { ...props };
+		    const layoutStyle = inner.style;
+		    delete inner.style;
+		    return (0, import_react.createElement)("span", { style: layoutStyle }, (0, import_react.createElement)(P.Input, inner));
+		  }
+		  const rest = { ...props };
+		  rest.className = "dsh-mem-input" + (rest.className ? " " + rest.className : "");
+		  return (0, import_react.createElement)("input", rest);
+		}
+		function NModal(props) {
+		  if (props.open === false) return null;
+		  if (P && P.Modal) return (0, import_react.createElement)(P.Modal, { closeLabel: "关闭", ...props });
+		  return (0, import_react.createElement)(
+		    "div",
+		    {
+		      className: "dsh-mem-rb-overlay",
+		      onClick: (e) => {
+		        if (e.target === e.currentTarget && props.onClose) props.onClose();
+		      }
+		    },
+		    (0, import_react.createElement)(
+		      "div",
+		      { className: "dsh-mem-rb-modal" },
+		      props.title ? (0, import_react.createElement)("div", { style: { fontSize: 15, fontWeight: 600, marginBottom: 10 } }, props.title) : null,
+		      props.children,
+		      props.footer ? (0, import_react.createElement)(
+		        "div",
+		        { style: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 } },
+		        props.footer
+		      ) : null
+		    )
+		  );
+		}
+		
+		// client/src/tabs/CostTab.tsx
+		var import_jsx_runtime2 = require("react/jsx-runtime");
+		function renderCostChart(buckets, models, maxY, fmtDate, fmtInt, palette) {
+		  const W = 600;
+		  const H = 200;
+		  const L = 46;
+		  const R = 10;
+		  const T = 10;
+		  const B = 26;
+		  const iw = W - L - R;
+		  const ih = H - T - B;
+		  const n = buckets.length;
+		  const x = (i) => L + (n <= 1 ? iw / 2 : i / (n - 1) * iw);
+		  const y = (v) => T + ih - v / maxY * ih;
+		  const yTicks = [0, maxY / 2, maxY];
+		  const xIdx = n > 2 ? [0, Math.floor((n - 1) / 2), n - 1] : n === 2 ? [0, 1] : [0];
+		  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("svg", { viewBox: "0 0 " + W + " " + H, style: { width: "100%", height: "auto", display: "block" }, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("line", { x1: L, y1: y(0), x2: W - R, y2: y(0), stroke: "var(--dsh-mem-border)", strokeWidth: 1 }),
+		    yTicks.map((v) => {
+		      return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("text", { x: L - 6, y: y(v) + 4, textAnchor: "end", fontSize: 10, fill: "var(--dsh-mem-text-3)", children: fmtInt(v) }, "yt" + v);
+		    }),
+		    xIdx.map((i) => {
+		      return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("text", { x: x(i), y: H - 8, textAnchor: "middle", fontSize: 10, fill: "var(--dsh-mem-text-3)", children: fmtDate(buckets[i] ? buckets[i].ts : 0) }, "xt" + i);
+		    }),
+		    models.map((m, mi) => {
+		      const pts = buckets.map((b, i) => x(i) + "," + y(b.byModel[m] || 0)).join(" ");
+		      return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+		        "polyline",
+		        {
+		          points: pts,
+		          fill: "none",
+		          stroke: palette[mi % palette.length],
+		          strokeWidth: 2,
+		          strokeLinejoin: "round",
+		          strokeLinecap: "round"
+		        },
+		        "pl" + m
+		      );
+		    })
+		  ] });
+		}
+		var RANGE_LABELS = { day: "今日", week: "本周", month: "本月", all: "累计" };
+		var LAYER_OPTS = [
+		  { key: "", label: "全部" },
+		  { key: "l1", label: "L1" },
+		  { key: "l2", label: "L2" },
+		  { key: "l3", label: "L3" }
+		];
+		var GRAN_OPTS = [
+		  { key: "day", label: "日" },
+		  { key: "week", label: "周" },
+		  { key: "month", label: "月" }
+		];
+		var PALETTE = [
+		  "var(--dsh-mem-chart-1)",
+		  "var(--dsh-mem-chart-2)",
+		  "var(--dsh-mem-chart-3)",
+		  "var(--dsh-mem-chart-4)",
+		  "var(--dsh-mem-chart-5)",
+		  "var(--dsh-mem-chart-6)",
+		  "var(--dsh-mem-chart-7)",
+		  "var(--dsh-mem-chart-8)"
+		];
+		var RANGES = ["day", "week", "month", "all"];
+		var thFirst = { fontSize: 12, fontWeight: 600, color: "var(--dsh-mem-text-3)", textAlign: "left", padding: "4px 10px", borderBottom: "1px solid var(--dsh-mem-border)" };
+		var thStyle = { fontSize: 12, fontWeight: 600, color: "var(--dsh-mem-text-3)", textAlign: "right", padding: "4px 10px", borderBottom: "1px solid var(--dsh-mem-border)" };
+		var tdFirst = { fontSize: 12.5, fontWeight: 600, color: "var(--dsh-mem-text-1)", textAlign: "left", padding: "4px 10px" };
+		var tdStyle = { fontSize: 12.5, color: "var(--dsh-mem-text-1)", textAlign: "right", padding: "4px 10px", fontFamily: "ui-monospace, Consolas, monospace" };
+		function CostTab(props) {
+		  const rpc = props.rpc;
+		  const [data, setData] = (0, import_react2.useState)(null);
+		  const [error, setError] = (0, import_react2.useState)(null);
+		  const [granularity, setGranularity] = (0, import_react2.useState)("day");
+		  const [layer, setLayer] = (0, import_react2.useState)("");
+		  const [rangeDays, setRangeDays] = (0, import_react2.useState)(0);
+		  const [rangeOpen, setRangeOpen] = (0, import_react2.useState)(false);
+		  const load = (0, import_react2.useCallback)(() => {
+		    setError(null);
+		    rpc("dsh-memory/token-cost", {
+		      granularity,
+		      rangeDays
+		    }).then((r) => {
+		      if (r && r.ok) setData(r.value);
+		      else setError(r && r.error ? r.error.message : "RPC error");
+		    }).catch((e) => {
+		      setError(String(e && e.message || e));
+		    });
+		  }, [rpc, granularity, rangeDays]);
+		  (0, import_react2.useEffect)(() => {
+		    load();
+		    const timer = setInterval(load, 5e3);
+		    return () => {
+		      clearInterval(timer);
+		    };
+		  }, [load]);
+		  const fmtInt = (n) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+		  const fmtModel = (p, m) => p ? p + "/" + m : m;
+		  const fmtDate = (ts) => {
+		    try {
+		      const d = new Date(ts);
+		      const g = data && data.trend ? data.trend.granularity : granularity;
+		      if (g === "month") return d.getMonth() + 1 + "月";
+		      return d.getMonth() + 1 + "/" + d.getDate();
+		    } catch {
+		      return "";
+		    }
+		  };
+		  const windows = data && data.windows || [];
+		  const byModel = data && data.byModel || [];
+		  const byLayer = data && data.byLayer || [];
+		  const trend = data && data.trend ? data.trend : null;
+		  let buckets = [];
+		  if (trend && trend.byLayer) {
+		    if (layer === "l1" || layer === "l2" || layer === "l3") {
+		      buckets = trend.byLayer[layer] || [];
+		    } else {
+		      const seqs = [trend.byLayer.l1 || [], trend.byLayer.l2 || [], trend.byLayer.l3 || []];
+		      const n = seqs[0].length;
+		      for (let i = 0; i < n; i++) {
+		        const merged = { ts: 0, total: 0, byModel: {} };
+		        for (let s = 0; s < seqs.length; s++) {
+		          const seq = seqs[s];
+		          if (seq && seq[i]) {
+		            if (merged.ts === 0) merged.ts = seq[i].ts;
+		            merged.total += seq[i].total;
+		            Object.keys(seq[i].byModel).forEach((m) => {
+		              merged.byModel[m] = (merged.byModel[m] || 0) + seq[i].byModel[m];
+		            });
+		          }
+		        }
+		        buckets.push(merged);
+		      }
+		    }
+		  }
+		  const models = [];
+		  const seen = {};
+		  buckets.forEach((b) => {
+		    Object.keys(b.byModel).forEach((m) => {
+		      if (!seen[m]) {
+		        seen[m] = true;
+		        models.push(m);
+		      }
+		    });
+		  });
+		  models.sort();
+		  let maxY = 1;
+		  buckets.forEach((b) => {
+		    if (b.total > maxY) maxY = b.total;
+		    models.forEach((m) => {
+		      if ((b.byModel[m] || 0) > maxY) maxY = b.byModel[m];
+		    });
+		  });
+		  const layerTable = byLayer.map((lc) => {
+		    const win = {};
+		    lc.windows.forEach((w) => {
+		      win[w.range] = w;
+		    });
+		    return { layer: lc.layer, win };
+		  });
+		  const cell = (lc, r, pick) => {
+		    const w = lc.win[r];
+		    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: tdStyle, children: w ? fmtInt(pick(w)) : "0" }, r);
+		  };
+		  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { ...S.flexRow, marginBottom: 10 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Segmented, { value: layer, options: LAYER_OPTS, onChange: setLayer }),
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(Segmented, { value: granularity, options: GRAN_OPTS, onChange: setGranularity }),
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+		        NButton,
+		        {
+		          onClick: () => {
+		            setRangeOpen(!rangeOpen);
+		          },
+		          children: rangeDays > 0 ? "近 " + rangeDays + " 天" : "近N天"
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.grow }),
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(NButton, { onClick: load, children: "刷新" })
+		    ] }),
+		    rangeOpen ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { ...S.flexRow, marginBottom: 10 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: S.muted, children: "展示近 N 天（正整数，清空=默认窗口；超出保留期后端自动回退）" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+		        NInput,
+		        {
+		          value: rangeDays === 0 ? "" : String(rangeDays),
+		          placeholder: "如 30",
+		          style: { width: 90 },
+		          onChange: (e) => {
+		            const v = String(e.target.value || "").trim();
+		            if (v === "") {
+		              setRangeDays(0);
+		              return;
+		            }
+		            const n = Number(v);
+		            if (Number.isInteger(n) && n > 0 && n <= 3650) setRangeDays(n);
+		          }
+		        }
+		      )
+		    ] }) : null,
+		    error ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.error, children: "成本读取失败：" + error }) : null,
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "成本趋势（按模型）" }),
+		    buckets.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { children: [
+		      renderCostChart(buckets, models, maxY, fmtDate, fmtInt, PALETTE),
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { display: "flex", flexWrap: "wrap", gap: "4px 12px", margin: "6px 0 14px" }, children: models.map((m, mi) => {
+		        return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+		          "span",
+		          {
+		            style: { display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--dsh-mem-text-2)" },
+		            children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: { width: 10, height: 10, borderRadius: 4, background: PALETTE[mi % PALETTE.length], display: "inline-block" } }),
+		              m
+		            ]
+		          },
+		          "lg" + m
+		        );
+		      }) })
+		    ] }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { style: S.muted, children: data ? "暂无成本数据（触发一次蒸馏后这里会出现趋势）。" : "加载中…" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "层级成本（输出 token）" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tr", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thFirst, children: "层级" }),
+		        RANGES.map((r) => {
+		          return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thStyle, children: RANGE_LABELS[r] }, r);
+		        })
+		      ] }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tbody", { children: layerTable.map((lc) => {
+		        return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tr", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: tdFirst, children: lc.layer.toUpperCase() }),
+		          RANGES.map((r) => cell(lc, r, (w) => w.outputTokens))
+		        ] }, lc.layer);
+		      }) })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "层级成本（单次 avg）" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tr", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thFirst, children: "层级" }),
+		        RANGES.map((r) => {
+		          return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thStyle, children: RANGE_LABELS[r] + "-avg" }, r);
+		        })
+		      ] }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tbody", { children: layerTable.map((lc) => {
+		        return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tr", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: tdFirst, children: lc.layer.toUpperCase() }),
+		          RANGES.map((r) => cell(lc, r, (w) => w.avgOutputTokens))
+		        ] }, lc.layer);
+		      }) })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "层级成本（单次 median）" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tr", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thFirst, children: "层级" }),
+		        RANGES.map((r) => {
+		          return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thStyle, children: RANGE_LABELS[r] + "-median" }, r);
+		        })
+		      ] }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("tbody", { children: layerTable.map((lc) => {
+		        return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tr", { children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: tdFirst, children: lc.layer.toUpperCase() }),
+		          RANGES.map((r) => cell(lc, r, (w) => w.medianOutputTokens))
+		        ] }, lc.layer);
+		      }) })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "时间窗口总览" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.statGrid, children: windows.map((w) => {
+		      return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dsh-mem-card", style: S.statTile, children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.statNum, children: fmtInt(w.outputTokens + w.reasoningTokens) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.statLabel, children: RANGE_LABELS[w.range] + " · 总输出 token" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.muted, children: "文字 " + fmtInt(w.outputTokens) + " · 思考 " + fmtInt(w.reasoningTokens) + " · " + w.calls + " 次调用" })
+		      ] }, w.range);
+		    }) }),
+		    byModel.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "按模型（累计）" }),
+		      byModel.map((m) => {
+		        const label = fmtModel(m.provider, m.model);
+		        return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: S.infoRow, children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: S.infoKey, children: label }),
+		          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: S.infoVal, children: m.calls + " 次 · 输出 " + fmtInt(m.outputTokens) + " · 思考 " + fmtInt(m.reasoningTokens) })
+		        ] }, "m-" + label);
+		      })
+		    ] }) : null,
+		    data ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { style: S.hint, children: "输入按字符、输出/思考按 token 计；趋势图 Y 轴为输出 token，上方可切换层级与颗粒度。" }) : null
+		  ] });
+		}
+		
+		// client/src/tabs/LogTab.tsx
+		var import_react3 = require("react");
+		var import_jsx_runtime3 = require("react/jsx-runtime");
+		function LogTab(props) {
+		  const rpc = props.rpc;
+		  const [lines, setLines] = (0, import_react3.useState)(null);
+		  const [error, setError] = (0, import_react3.useState)(null);
+		  const preRef = (0, import_react3.useRef)(null);
+		  const load = (0, import_react3.useCallback)(() => {
+		    setError(null);
+		    rpc("dsh-memory/log-tail", { lines: 200 }).then((r) => {
+		      if (r && r.ok) setLines(r.value.lines);
+		      else setError(r && r.error ? r.error.message : "RPC error");
+		    }).catch((e) => {
+		      setError(String(e && e.message || e));
+		    });
+		  }, [rpc]);
+		  (0, import_react3.useEffect)(() => {
+		    load();
+		  }, [load]);
+		  (0, import_react3.useEffect)(() => {
+		    if (lines && preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight;
+		  }, [lines]);
+		  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { ...S.flexRow, marginBottom: 10 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: S.muted, children: error ? "加载失败" : lines === null ? "加载中…" : "最近 " + lines.length + " 行（memory.log）" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: S.grow }),
+		      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(NButton, { onClick: load, children: "刷新" })
+		    ] }),
+		    error ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { ...S.error, marginBottom: 10 }, children: "日志读取失败：" + error + "（点右上“刷新”重试）" }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("pre", { style: S.pre, ref: preRef, children: (lines || []).join("\n") || "(暂无日志)" })
+		  ] });
+		}
+		
+		// client/src/tabs/OverviewTab.tsx
+		var import_react9 = require("react");
+		
+		// client/src/format.ts
+		var TYPE_LABELS = {
+		  persona: "画像偏好",
+		  episodic: "客观事件",
+		  instruction: "全局指令",
+		  work_fact: "工作事实",
+		  work_task: "工作任务",
+		  work_method: "工作方法",
+		  work_artifact: "工作资产"
+		};
+		function fmtTime(iso) {
+		  if (!iso) return "-";
+		  try {
+		    return new Date(iso).toLocaleString();
+		  } catch {
+		    return String(iso);
+		  }
+		}
+		function fmtAgo(iso) {
+		  if (!iso) return null;
+		  try {
+		    const t = new Date(iso).getTime();
+		    if (!t) return null;
+		    let s = Math.floor((Date.now() - t) / 1e3);
+		    if (s < 0) s = 0;
+		    if (s < 45) return "刚刚";
+		    if (s < 3600) return Math.floor(s / 60) + " 分钟前";
+		    if (s < 86400) return Math.floor(s / 3600) + " 小时前";
+		    return Math.floor(s / 86400) + " 天前";
+		  } catch {
+		    return null;
+		  }
+		}
+		function fmtMB(bytes) {
+		  if (!bytes || bytes <= 0) return "0MB";
+		  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + "KB";
+		  return (bytes / (1024 * 1024)).toFixed(bytes < 100 * 1024 * 1024 ? 1 : 0) + "MB";
+		}
+		
+		// client/src/pill/modes.ts
+		var MODES = [
+		  { key: "off", label: "关闭", color: "var(--dsh-mem-text-2)" },
+		  { key: "chat", label: "日常", color: "var(--dsh-mem-mode-chat)" },
+		  { key: "work", label: "工作", color: "var(--dsh-mem-mode-work)" },
+		  { key: "auto", label: "智能", color: "var(--dsh-mem-mode-auto)" }
+		];
+		var TRACK_W = 200;
+		var THUMB = 16;
+		var RAIL_H = 22;
+		var INNER_W = TRACK_W - THUMB;
+		var FIELD_TIERS = [
+		  { density: 0, alpha: 0, wave: 0, tempo: 1 },
+		  { density: 0.34, alpha: 0.5, wave: 0, tempo: 1 },
+		  // 日常：稀疏微光
+		  { density: 0.55, alpha: 0.78, wave: 1, tempo: 1.15 },
+		  // 工作：中强 + 水波纹
+		  { density: 0.72, alpha: 1, wave: 1, tempo: 1.3 }
+		  // 智能：满场最活跃
+		];
+		function smStep(a, b, x) {
+		  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+		  return t * t * (3 - 2 * t);
+		}
+		function modeInfo(key) {
+		  for (let i = 0; i < MODES.length; i++) if (MODES[i].key === key) return MODES[i];
+		  return MODES[3];
+		}
+		function modeLabel(key) {
+		  if (key === "auto") return "智能（双族）";
+		  if (key === "chat") return "日常（个人）";
+		  if (key === "work") return "工作（团队）";
+		  return "关闭";
+		}
+		function modeIndex(key) {
+		  for (let i = 0; i < MODES.length; i++) if (MODES[i].key === key) return i;
+		  return 3;
+		}
+		
+		// client/src/tabs/BudgetInputs.tsx
+		var import_react4 = require("react");
+		var import_jsx_runtime4 = require("react/jsx-runtime");
+		var LAYERS = [
+		  ["extract", "抽取"],
+		  ["dedup", "去重"],
+		  ["l2", "L2 场景"],
+		  ["l3", "L3 画像"]
+		];
+		function BudgetInputs(props) {
+		  const rpc = props.rpc;
+		  const disabled = !!props.disabled;
+		  const data = props.data;
+		  const setData = props.setData;
+		  const onError = props.onError;
+		  const layers = LAYERS;
+		  const [draft, setDraft] = (0, import_react4.useState)(null);
+		  if (!data || !data.budgets) return null;
+		  const cur = data.budgets.current || {};
+		  const def = data.budgets.defaults || {};
+		  const eff = data.budgets.effective || {};
+		  const ib = data.inputBudget || { current: 0, fallback: 0, effective: 0 };
+		  const curIn = ib.current || 0;
+		  const effIn = ib.effective || ib.fallback || 0;
+		  const shown = (key) => {
+		    if (draft && draft[key] !== void 0) return draft[key];
+		    const c = key === "input" ? curIn : cur[key] || 0;
+		    return c > 0 ? String(c) : "";
+		  };
+		  const commitPart = (keys, buildPayload, applyView) => {
+		    if (!draft) return;
+		    const values = {};
+		    for (let i = 0; i < keys.length; i++) {
+		      const key = keys[i];
+		      const raw = (draft[key] !== void 0 ? draft[key] : shown(key)).trim();
+		      const n = raw === "" ? 0 : Number(raw);
+		      const max = key === "input" ? 1e6 : 1e6;
+		      const min = key === "input" ? raw === "" ? 0 : 1e3 : 0;
+		      if (!Number.isInteger(n) || n < min || n > max) {
+		        onError(
+		          key === "input" ? "输入预算须为 0 或 1000~1000000 的整数（留空或 0 = 跟随配置）" : "输出预算须为 0~1000000 的整数（留空或 0 = 跟随默认）"
+		        );
+		        setDraft(null);
+		        return;
+		      }
+		      values[key] = n;
+		    }
+		    setDraft(null);
+		    const prev = data;
+		    setData(applyView(prev, values));
+		    rpc("dsh-memory/settings-set", buildPayload(values)).then((r) => {
+		      if (!r || !r.ok) {
+		        setData(prev);
+		        onError(r && r.error ? "预算写入失败：" + r.error.message : "预算写入失败");
+		      } else {
+		        onError(null);
+		      }
+		    }).catch((e) => {
+		      setData(prev);
+		      onError("预算写入失败：" + String(e && e.message || e));
+		    });
+		  };
+		  const commitOutputs = () => {
+		    commitPart(
+		      ["extract", "dedup", "l2", "l3"],
+		      (v) => ({ distillBudgets: v }),
+		      (prev, v) => {
+		        const effNext = {};
+		        for (let j = 0; j < layers.length; j++) {
+		          const k = layers[j][0];
+		          effNext[k] = v[k] > 0 ? v[k] : def[k] || 0;
+		        }
+		        return {
+		          ...prev,
+		          settings: { ...prev.settings, distillBudgets: v },
+		          budgets: {
+		            ...prev.budgets,
+		            current: v,
+		            effective: effNext
+		          }
+		        };
+		      }
+		    );
+		  };
+		  const commitInput = () => {
+		    commitPart(
+		      ["input"],
+		      (v) => ({ distillMaxInputChars: v.input }),
+		      (prev, v) => {
+		        return {
+		          ...prev,
+		          settings: { ...prev.settings, distillMaxInputChars: v.input },
+		          inputBudget: {
+		            ...prev.inputBudget || { current: 0, fallback: 0, effective: 0 },
+		            current: v.input,
+		            effective: v.input > 0 ? v.input : ib.fallback || 0
+		          }
+		        };
+		      }
+		    );
+		  };
+		  const dirty = (keys) => {
+		    if (!draft) return false;
+		    for (let i = 0; i < keys.length; i++) {
+		      const key = keys[i];
+		      const want = (draft[key] !== void 0 ? draft[key] : "").trim();
+		      const was = key === "input" ? curIn > 0 ? String(curIn) : "" : (cur[key] || 0) > 0 ? String(cur[key]) : "";
+		      if (want !== was) return true;
+		    }
+		    return false;
+		  };
+		  const inputBox = (key, _label, title, width, placeholder, onCommit) => {
+		    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+		      NInput,
+		      {
+		        type: "number",
+		        min: 0,
+		        max: 1e6,
+		        style: { width },
+		        title,
+		        placeholder: String(placeholder || ""),
+		        value: shown(key),
+		        disabled,
+		        onChange: (e) => {
+		          const v = e.target.value;
+		          const d = { ...draft || {} };
+		          d[key] = v;
+		          setDraft(d);
+		        },
+		        onBlur: () => {
+		          if (dirty([key])) onCommit();
+		        },
+		        onKeyDown: (e) => {
+		          if (e.key === "Enter" && dirty([key])) onCommit();
+		        }
+		      },
+		      key
+		    );
+		  };
+		  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: S.switchRow, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { ...S.flexRow, gap: 6 }, children: layers.map((l) => {
+		        return inputBox(
+		          l[0],
+		          l[1],
+		          l[1] + " 输出预算（token，留空 = 默认 " + (def[l[0]] || "?") + "）",
+		          92,
+		          def[l[0]],
+		          commitOutputs
+		        );
+		      }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchLabel, children: "输出预算" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchDesc, children: "各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 " + layers.map((l) => eff[l[0]] || "?").join(" / ") + "）；思考档 high/xhigh/max 时实际限额自动 ×4" })
+		      ] })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: S.switchRow, children: [
+		      inputBox(
+		        "input",
+		        "输入",
+		        "单次蒸馏输入字符上限（≈token，中文 1 字≈1 token；留空 = 跟随配置 " + (ib.fallback || "?") + "）",
+		        120,
+		        ib.fallback,
+		        commitInput
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchLabel, children: "输入预算" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchDesc, children: "单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；留空或 0 = 跟随配置（当前生效 " + (effIn || "?") + "，来自 llm.maxInputChars）" })
+		      ] })
+		    ] })
+		  ] });
+		}
+		
+		// client/src/tabs/EmbeddingSection.tsx
+		var import_react5 = require("react");
+		
+		// client/src/rpc.ts
+		function makeRpc(ctx) {
+		  return (endpoint, payload) => {
+		    if (!ctx.connection || !ctx.connection.rpc) return Promise.reject(new Error("connection 服务不可用"));
+		    return ctx.connection.rpc.call("/rpc", endpoint, payload ?? {});
+		  };
+		}
+		function asLoose(rpc) {
+		  return rpc;
+		}
+		
+		// client/src/tabs/EmbeddingSection.tsx
+		var import_jsx_runtime5 = require("react/jsx-runtime");
+		function EmbeddingSection(props) {
+		  const rpc = props.rpc;
+		  const loose = asLoose(rpc);
+		  const [st, setSt] = (0, import_react5.useState)(null);
+		  const [err, setErr] = (0, import_react5.useState)(null);
+		  const busyPollRef = (0, import_react5.useRef)(null);
+		  const load = (0, import_react5.useCallback)(() => {
+		    rpc("dsh-memory/embedding-state-get", {}).then((r) => {
+		      if (r && r.ok && r.value && r.value.supported !== false) {
+		        const v = r.value;
+		        if (busyPollRef.current) {
+		          busyPollRef.current.v = !!(v.download && (v.download.phase === "downloading" || v.download.phase === "verifying") || v.apply.busy || v.reindex && v.reindex.running || v.runtime && v.runtime.phase === "installing");
+		        }
+		        setSt(v);
+		        setErr(null);
+		      } else if (r && r.ok && r.value && r.value.supported === false) {
+		        setSt(null);
+		        setErr("__unsupported__");
+		      } else {
+		        setErr(r && !r.ok ? r.error.message : "RPC error");
+		      }
+		    }).catch((e) => {
+		      setErr(String(e && e.message || e));
+		    });
+		  }, [rpc]);
+		  (0, import_react5.useEffect)(() => {
+		    load();
+		  }, [load]);
+		  (0, import_react5.useEffect)(() => {
+		    let stopped = false;
+		    const busyFlag = { v: false };
+		    busyPollRef.current = busyFlag;
+		    const tick = () => {
+		      if (stopped) return;
+		      load();
+		      timer = setTimeout(tick, busyFlag.v ? 1200 : 5e3);
+		    };
+		    let timer = setTimeout(tick, 1200);
+		    return () => {
+		      stopped = true;
+		      clearTimeout(timer);
+		      busyPollRef.current = null;
+		    };
+		  }, [load]);
+		  const call = (endpoint, payload, confirmText) => {
+		    if (confirmText && !window.confirm(confirmText)) return;
+		    loose(endpoint, payload).then((r) => {
+		      if (!r || !r.ok) setErr(r && r.error ? r.error.message : "操作失败");
+		      else {
+		        setErr(null);
+		        load();
+		      }
+		    }).catch((e) => {
+		      setErr(String(e && e.message || e));
+		    });
+		  };
+		  if (err === "__unsupported__") {
+		    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-mem-rb-card", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { fontWeight: 600, marginBottom: 4 }, children: "语义检索（嵌入）" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", children: "存储处于降级状态，嵌入管理不可用。" })
+		    ] });
+		  }
+		  if (!st) {
+		    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-mem-rb-card", children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", children: err ? "嵌入状态读取失败：" + err : "嵌入状态读取中…" }),
+		      err ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NButton, { style: { marginTop: 8 }, onClick: load, children: "重试" }) : null
+		    ] });
+		  }
+		  const switchConfirm = "切换嵌入源后将按新模型重建向量索引（期间语义检索暂退化为关键词匹配，不影响对话）。确定切换？";
+		  const onSource = (key) => {
+		    if (key === "local") {
+		      const ready = [];
+		      for (let i = 0; i < st.models.length; i++) if (st.models[i].state === "downloaded") ready.push(st.models[i].id);
+		      if (ready.length === 0) {
+		        setErr("请先在下方下载一个本地嵌入模型，再切换到本地档。");
+		        return;
+		      }
+		      const current = st.activeModel && ready.indexOf(st.activeModel) >= 0 ? st.activeModel : ready[0];
+		      call("dsh-memory/embedding-source-set", { source: "local", activeModel: current }, switchConfirm);
+		      return;
+		    }
+		    call("dsh-memory/embedding-source-set", { source: key }, key === "remote" ? switchConfirm : null);
+		  };
+		  const dl = st.download;
+		  const dlActive = dl && (dl.phase === "downloading" || dl.phase === "verifying");
+		  const ap = st.apply;
+		  const localInfo = st.local;
+		  const rt = st.runtime;
+		  let runtimeRow = null;
+		  if (rt.phase === "installing") {
+		    runtimeRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { marginTop: 8, fontSize: 12 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: S.flexRow, children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "安装推理运行时中… 已耗时 " + Math.round(rt.elapsedMs / 1e3) + "s（约 100~200MB，视网络）" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: S.grow }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NButton, { onClick: () => call("dsh-memory/embedding-runtime-cancel", {}), children: "取消" })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("pre", { style: { ...S.pre, maxHeight: 68, marginTop: 6, fontSize: 11, opacity: 0.85 }, children: (rt.lastLines || []).join("\n") || "等待 npm 输出…" })
+		    ] });
+		  } else if (rt.phase === "error") {
+		    runtimeRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: "运行时安装失败：" + (rt.error || "未知") + "（重新切换嵌入源可重试）" });
+		  } else if (rt.phase === "ready") {
+		    runtimeRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: "推理运行时就绪（transformers.js v" + rt.installedVersion + "）" });
+		  } else if (st.source === "local") {
+		    runtimeRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: "首次启用本地嵌入时会自动安装推理运行时（约 100~200MB）。" });
+		  }
+		  let applyRow = null;
+		  if (ap.phase === "warming") {
+		    applyRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: "加载嵌入模型中…（首次需数秒）" });
+		  } else if (ap.phase === "switching") {
+		    applyRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: "切换嵌入源中…" });
+		  } else if (ap.phase === "error") {
+		    applyRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: "切换失败：" + ap.message + "（已保存的嵌入源不变，重启后仍按原源运行）" });
+		  } else if (st.reindex && st.reindex.running) {
+		    const rj = st.reindex;
+		    const rDone = rj.l1Done + rj.l0Done;
+		    const rTotal = rj.l1Total + rj.l0Total;
+		    const rPct = rTotal > 0 ? Math.round(rDone / rTotal * 100) : 0;
+		    applyRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { marginTop: 8 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: S.flexRow, children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-rb-muted", children: "重嵌入中 L1 " + rj.l1Done + "/" + rj.l1Total + " · L0 " + rj.l0Done + "/" + rj.l0Total + "（" + rPct + "%）" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: S.grow }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NButton, { onClick: () => call("dsh-memory/embedding-reindex-cancel", {}), children: "取消" })
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { ...S.flexRow, marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-bar", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-fill", style: { width: rPct + "%" } }) }) })
+		    ] });
+		  }
+		  const modelCards = st.models.map((m) => {
+		    const isActive = st.source === "local" && st.activeModel === m.id;
+		    const mDl = dlActive && dl.modelId === m.id;
+		    const pct = mDl && dl.overallTotal > 0 ? Math.round(dl.overallReceived / dl.overallTotal * 100) : 0;
+		    let action = null;
+		    if (mDl) {
+		      action = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { flex: 1, minWidth: 200 }, children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: S.flexRow, children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-rb-muted", style: { whiteSpace: "nowrap" }, children: (dl.phase === "verifying" ? "校验中 " : "") + fmtMB(dl.overallReceived) + " / " + fmtMB(dl.overallTotal) + "（文件 " + dl.fileIndex + "/" + dl.fileCount + "，" + pct + "%" + (dl.speedBps > 0 && dl.phase === "downloading" ? "，" + fmtMB(dl.speedBps) + "/s" : "") + "）" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: S.grow }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NButton, { onClick: () => call("dsh-memory/embedding-download-cancel", {}), children: "取消" })
+		        ] }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { ...S.flexRow, marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-bar", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-fill", style: { width: pct + "%" } }) }) })
+		      ] });
+		    } else if (isActive) {
+		      action = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: S.flexRow, children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-tag dsh-mem-tag-work-task", children: "使用中" }),
+		        localInfo && localInfo.state === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-rb-muted", children: "模型加载中…" }) : null,
+		        localInfo && localInfo.state === "failed" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: { fontSize: 12, color: "var(--dsh-mem-danger)" }, children: "加载失败：" + (localInfo.error || "") }) : null,
+		        localInfo && localInfo.state === "ready" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-rb-muted", children: "已就绪" }) : null
+		      ] });
+		    } else if (m.state === "downloaded") {
+		      action = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: S.flexRow, children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		          NButton,
+		          {
+		            disabled: ap.busy,
+		            onClick: () => call("dsh-memory/embedding-source-set", { source: "local", activeModel: m.id }, switchConfirm),
+		            children: "启用"
+		          }
+		        ),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		          NButton,
+		          {
+		            disabled: dlActive,
+		            onClick: () => call("dsh-memory/embedding-model-delete", { modelId: m.id }, "删除已下载的 " + m.name + "（" + fmtMB(m.totalBytes) + "）？"),
+		            children: "删除"
+		          }
+		        )
+		      ] });
+		    } else {
+		      action = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		        NButton,
+		        {
+		          disabled: dlActive || !st.ceilings.local,
+		          title: !st.ceilings.local ? "部署已禁用本地嵌入模型" : "",
+		          onClick: () => call("dsh-memory/embedding-download-start", { modelId: m.id }),
+		          children: (m.state === "partial" ? "继续下载 " : "下载 ") + fmtMB(m.totalBytes)
+		        }
+		      );
+		    }
+		    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+		      "div",
+		      {
+		        style: { ...S.flexRow, padding: "8px 0", borderBottom: "1px solid var(--dsh-mem-border)", flexWrap: "wrap" },
+		        children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { minWidth: 150 }, children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { fontWeight: 600 }, children: m.name }),
+		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", children: m.tags.join(" · ") + " · " + m.dims + " 维 · 上下文 " + m.contextTokens })
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { flex: 1, minWidth: 180, fontSize: 12, color: "var(--dsh-mem-text-2)" }, children: m.description }),
+		          action
+		        ]
+		      },
+		      m.id
+		    );
+		  });
+		  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-mem-rb-card", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: S.flexRow, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { fontWeight: 600, whiteSpace: "nowrap" }, children: "语义检索（嵌入源）" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: S.grow }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+		        Segmented,
+		        {
+		          value: st.source,
+		          options: [
+		            { key: "off", label: "关闭" },
+		            { key: "local", label: "本地", disabled: !st.ceilings.local, disabledTitle: "部署已禁用本地嵌入模型" },
+		            { key: "remote", label: "远程", disabled: !st.ceilings.remote, disabledTitle: "部署未配置远程嵌入（baseUrl/apiKey/model/dimensions）" }
+		          ],
+		          onChange: onSource
+		        }
+		      )
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 4 }, children: st.source === "off" ? "当前：关键词（BM25）检索，不做向量嵌入" : st.source === "remote" ? "当前：远程嵌入（" + (rt ? "" : "") + "模型由部署配置给定）" : "当前：本地嵌入" + (st.activeModel ? "（" + st.activeModel + "）" : "") }),
+		    st.activeNote ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 4, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: st.activeNote }) : null,
+		    err && err !== "__unsupported__" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 6, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: err }) : null,
+		    dl && dl.phase === "error" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 6, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: "下载失败：" + (dl.error || "") }) : null,
+		    runtimeRow,
+		    applyRow,
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: S.panelLabel, children: "本地模型目录（下载后离线可用，不随插件分发）" }),
+		    modelCards
+		  ] });
+		}
+		
+		// client/src/tabs/RebuildPanel.tsx
+		var import_react6 = require("react");
+		var import_jsx_runtime6 = require("react/jsx-runtime");
+		var RB_PHASE_LABEL = {
+		  preparing: "准备中（归档旧数据 · 清空检索库）",
+		  distilling: "分块蒸馏中",
+		  finalizing: "收尾（强制 L2 场景 + L3 画像）"
+		};
+		function RebuildPanel(props) {
+		  const rpc = props.rpc;
+		  const [rbRaw, setRb] = (0, import_react6.useState)(null);
+		  const [confirmOpen, setConfirmOpen] = (0, import_react6.useState)(false);
+		  const [busy, setBusy] = (0, import_react6.useState)(false);
+		  const [rbError, setRbError] = (0, import_react6.useState)(null);
+		  const refresh = (0, import_react6.useCallback)(() => {
+		    rpc("dsh-memory/rebuild-status", {}).then((r) => {
+		      if (r && r.ok) setRb(r.value);
+		    }).catch(() => {
+		    });
+		  }, [rpc]);
+		  (0, import_react6.useEffect)(() => {
+		    refresh();
+		  }, [refresh]);
+		  const running = !!(rbRaw && rbRaw.running);
+		  (0, import_react6.useEffect)(() => {
+		    if (!running) return;
+		    const timer = setInterval(refresh, 1500);
+		    return () => {
+		      clearInterval(timer);
+		    };
+		  }, [running, refresh]);
+		  if (!rbRaw || rbRaw.supported === false) return null;
+		  const rb = rbRaw;
+		  ensureThemeStyle();
+		  const start = () => {
+		    setBusy(true);
+		    setRbError(null);
+		    rpc("dsh-memory/rebuild-start", {}).then((r) => {
+		      setBusy(false);
+		      if (r && r.ok) {
+		        setConfirmOpen(false);
+		        setRb(r.value);
+		      } else {
+		        setRbError(r && r.error ? r.error.message : "启动失败");
+		      }
+		    }).catch((e) => {
+		      setBusy(false);
+		      setRbError(String(e && e.message || e));
+		    });
+		  };
+		  const cancel = () => {
+		    setBusy(true);
+		    rpc("dsh-memory/rebuild-cancel", {}).then((r) => {
+		      setBusy(false);
+		      if (r && r.ok) setRb(r.value);
+		    }).catch(() => {
+		      setBusy(false);
+		    });
+		  };
+		  const empty = !running && (rb.messageCount === 0 || rb.estCalls === 0);
+		  const pct = rb.total > 0 ? Math.round(rb.done / rb.total * 100) : 0;
+		  let lastNote = null;
+		  if (!running && rb.phase === "done") {
+		    lastNote = "上次重建：完成（" + rb.done + "/" + rb.total + " 会话，产出 " + rb.recordsBuilt + " 条记录）" + (rb.finishedAt ? " · " + fmtTime(new Date(rb.finishedAt).toISOString()) : "");
+		  } else if (!running && rb.phase === "cancelled") {
+		    lastNote = "上次重建：已取消（完成 " + rb.done + "/" + rb.total + " 会话，已重建部分保留）";
+		  } else if (!running && rb.phase === "failed") {
+		    lastNote = "上次重建：失败：" + (rb.error || "未知错误");
+		  }
+		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-mem-rb-card", children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { fontWeight: 600, whiteSpace: "nowrap" }, children: "重建记忆" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-mem-rb-muted", style: { flex: 1, minWidth: 180 }, children: running ? (RB_PHASE_LABEL[rb.phase] || rb.phase) + " · " + rb.done + "/" + rb.total + " 会话（" + pct + "%）" : "从 L0 原始对话重新蒸馏 L1/L2/L3；旧数据先归档（不删除）" }),
+		      running ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { disabled: busy || rb.cancelRequested, onClick: cancel, children: rb.cancelRequested ? "取消中…" : "取消重建" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		        NButton,
+		        {
+		          disabled: busy || empty,
+		          title: empty ? "L0 无消息，无可重建内容" : "重新蒸馏全部记忆",
+		          style: { color: "var(--dsh-mem-danger)" },
+		          onClick: () => {
+		            setConfirmOpen(true);
+		          },
+		          children: busy ? "…" : "开始重建"
+		        }
+		      )
+		    ] }),
+		    running ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 10, marginTop: 10 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-mem-rb-bar", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-mem-rb-fill", style: { width: pct + "%" } }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-mem-rb-muted", style: { whiteSpace: "nowrap" }, children: "产出 " + rb.recordsBuilt + " 条" })
+		    ] }) : null,
+		    lastNote ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: lastNote }) : null,
+		    rbError ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: rbError }) : null,
+		    confirmOpen ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(
+		      NModal,
+		      {
+		        open: true,
+		        onClose: () => {
+		          setConfirmOpen(false);
+		        },
+		        title: "确认重建全部记忆？",
+		        footer: [
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		            NButton,
+		            {
+		              onClick: () => {
+		                setConfirmOpen(false);
+		              },
+		              children: "取消"
+		            },
+		            "cancel"
+		          ),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { variant: "primary", disabled: busy, onClick: start, children: busy ? "启动中…" : "开始重建" }, "confirm")
+		        ],
+		        children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { children: [
+		            "将以 L0 原始对话为事实源重新蒸馏：",
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { children: rb.sessionCount + " 个会话 · " + rb.messageCount + " 条消息" }),
+		            "，预计 ≥" + rb.estCalls + " 次蒸馏调用。"
+		          ] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 8 }, children: "现有 L1 记忆 / L2 场景 / L3 画像会整体归档（*.bak.时间戳，可手工找回），随后清空重建；重建期间可正常对话，新对话的蒸馏优先进行；中途可取消，已重建部分保留。" })
+		        ]
+		      }
+		    ) : null
+		  ] });
+		}
+		
+		// client/src/tabs/RouteChainEditor.tsx
+		var import_react8 = require("react");
+		
+		// client/src/ui/NSel.tsx
+		var import_react7 = require("react");
+		var import_jsx_runtime7 = require("react/jsx-runtime");
+		function NSel(props) {
+		  const options = props.options || [];
+		  const value = props.value || "";
+		  const disabled = !!props.disabled;
+		  const [open, setOpen] = (0, import_react7.useState)(false);
+		  const [idx, setIdx] = (0, import_react7.useState)(-1);
+		  const wrapRef = (0, import_react7.useRef)(null);
+		  const listRef = (0, import_react7.useRef)(null);
+		  let selectedLabel = "";
+		  for (let si = 0; si < options.length; si++) {
+		    if (options[si].id === value) selectedLabel = options[si].label;
+		  }
+		  (0, import_react7.useEffect)(() => {
+		    if (!open) return void 0;
+		    const onDown = (e) => {
+		      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+		    };
+		    document.addEventListener("mousedown", onDown);
+		    return () => {
+		      document.removeEventListener("mousedown", onDown);
+		    };
+		  }, [open]);
+		  (0, import_react7.useEffect)(() => {
+		    if (!open || !listRef.current) return;
+		    const el = listRef.current.querySelector('[data-active="1"]');
+		    if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+		  }, [open, idx]);
+		  const indexOfValue = () => {
+		    for (let i = 0; i < options.length; i++) if (options[i].id === value) return i;
+		    return -1;
+		  };
+		  const closeMenu = (refocus) => {
+		    setOpen(false);
+		    setIdx(-1);
+		    if (refocus && wrapRef.current) {
+		      const btn = wrapRef.current.querySelector("button");
+		      if (btn && btn.focus) btn.focus();
+		    }
+		  };
+		  const pick = (id) => {
+		    closeMenu(true);
+		    if (id !== value && props.onChange) props.onChange(id);
+		  };
+		  const moveActive = (delta) => {
+		    const n = options.length;
+		    if (n === 0) return;
+		    let cur = idx >= 0 ? idx : indexOfValue();
+		    if (cur < 0) cur = delta > 0 ? -1 : 0;
+		    setIdx(delta > 0 ? ((cur + 1) % n + n) % n : ((cur - 1) % n + n) % n);
+		  };
+		  const onKey = (e) => {
+		    if (disabled) return;
+		    if (e.key === "Escape") {
+		      if (open) {
+		        e.preventDefault();
+		        closeMenu(true);
+		      }
+		      return;
+		    }
+		    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+		      e.preventDefault();
+		      if (!open) {
+		        setOpen(true);
+		        setIdx(indexOfValue());
+		      } else moveActive(e.key === "ArrowDown" ? 1 : -1);
+		      return;
+		    }
+		    if (!open && (e.key === "Enter" || e.key === " ")) {
+		      e.preventDefault();
+		      setOpen(true);
+		      setIdx(indexOfValue());
+		      return;
+		    }
+		    if (open && e.key === "Enter") {
+		      e.preventDefault();
+		      let t = idx >= 0 ? idx : indexOfValue();
+		      if (t < 0) t = 0;
+		      if (options[t]) pick(options[t].id);
+		    }
+		  };
+		  const onBlur = (e) => {
+		    if (!open) return;
+		    const to = e.relatedTarget;
+		    if (!to || wrapRef.current && !wrapRef.current.contains(to)) setOpen(false);
+		  };
+		  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dsh-mem-sel", style: props.style, ref: wrapRef, onKeyDown: onKey, onBlur, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+		      "button",
+		      {
+		        type: "button",
+		        className: "dsh-mem-select" + (open ? " dsh-mem-select-open" : ""),
+		        disabled,
+		        "aria-haspopup": "listbox",
+		        "aria-expanded": open,
+		        onClick: () => {
+		          if (open) closeMenu(false);
+		          else {
+		            setOpen(true);
+		            setIdx(-1);
+		          }
+		        },
+		        children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-mem-select-label", children: selectedLabel || props.placeholder || "（请选择）" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-mem-sel-chev" + (open ? " dsh-mem-sel-chev-open" : ""), "aria-hidden": true })
+		        ]
+		      }
+		    ),
+		    open && !disabled ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-mem-pop", ref: listRef, role: "listbox", children: options.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-mem-pop-empty", children: "无选项" }) : options.map((o, i) => {
+		      return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
+		        "button",
+		        {
+		          type: "button",
+		          className: "dsh-mem-pop-opt" + (o.id === value ? " dsh-mem-pop-opt-on" : ""),
+		          role: "option",
+		          "aria-selected": o.id === value,
+		          "data-active": i === idx ? "1" : "0",
+		          onMouseDown: (e) => {
+		            if (e.preventDefault) e.preventDefault();
+		          },
+		          onClick: () => {
+		            pick(o.id);
+		          },
+		          onMouseEnter: () => {
+		            if (idx !== i) setIdx(i);
+		          },
+		          children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-mem-pop-opt-label", children: o.label }),
+		            o.id === value ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-mem-pop-check", children: "✓" }) : null
+		          ]
+		        },
+		        o.id
+		      );
+		    }) }) : null
+		  ] });
+		}
+		
+		// client/src/tabs/RouteChainEditor.tsx
+		var import_jsx_runtime8 = require("react/jsx-runtime");
+		var modelsCache = {};
+		var EFFORT_VOCAB = ["", "off", "none", "minimal", "low", "medium", "high", "xhigh", "max"];
+		var STY = {
+		  wrap: { padding: "8px 0" },
+		  row: { background: "var(--dsh-mem-bg-inset)", borderRadius: 8, padding: 8, marginBottom: 8, border: "1px solid transparent" },
+		  rowErr: { border: "1px solid var(--dsh-mem-danger)" },
+		  badge: { flexShrink: 0, width: 20, height: 18, borderRadius: 999, background: "var(--dsh-mem-accent-weak)", color: "var(--dsh-mem-accent-text)", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" },
+		  // 控件行：供应商/模型/档位；flexWrap 兜底窄面板（放不下时档位自然折行）
+		  line: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
+		  // 操作按钮行：右下角对齐
+		  actions: { display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, marginTop: 6 },
+		  ico: { padding: 0, width: 26, height: 26, minWidth: 26, fontSize: 13, lineHeight: "20px" },
+		  add: { width: "100%", padding: "7px 0", fontSize: 12.5, color: "var(--dsh-mem-text-3)", background: "transparent", border: "1px dashed var(--dsh-mem-border-strong)", borderRadius: 8 },
+		  ghost: { border: "none", background: "transparent", color: "var(--dsh-mem-text-3)" },
+		  note: { fontSize: 11, color: "var(--dsh-mem-text-3)", marginTop: 6 },
+		  warn: { fontSize: 11, color: "var(--dsh-mem-danger)", marginTop: 6 },
+		  mono: { fontSize: 12.5, color: "var(--dsh-mem-text-1)", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+		  roRow: { display: "flex", alignItems: "center", gap: 8, background: "var(--dsh-mem-bg-inset)", borderRadius: 8, padding: "7px 10px", marginBottom: 6 }
+		};
+		var EMPTY_ROW = { provider: "", model: "", reasoningEffort: "" };
+		function copyRow(e) {
+		  return { provider: e.provider || "", model: e.model || "", reasoningEffort: e.reasoningEffort || "" };
+		}
+		function RouteChainEditor(props) {
+		  const rpc = props.rpc;
+		  const disabled = !!props.disabled;
+		  const [info, setInfo] = (0, import_react8.useState)(null);
+		  const [rows, setRows] = (0, import_react8.useState)(null);
+		  const [rowErrs, setRowErrs] = (0, import_react8.useState)({});
+		  const [err, setErr] = (0, import_react8.useState)(null);
+		  const [manual, setManual] = (0, import_react8.useState)({ idx: -1, text: "" });
+		  const pendingWrites = (0, import_react8.useRef)(0);
+		  function refreshInfo() {
+		    rpc("dsh-memory/llm-providers", {}).then((r) => {
+		      if (r && r.ok && pendingWrites.current === 0) setInfo(r.value);
+		    }).catch(() => {
+		    });
+		  }
+		  (0, import_react8.useEffect)(() => {
+		    refreshInfo();
+		    const timer = setInterval(refreshInfo, 5e3);
+		    return () => {
+		      clearInterval(timer);
+		    };
+		  }, [rpc]);
+		  (0, import_react8.useEffect)(() => {
+		    if (!info || !info.providers) return;
+		    info.providers.forEach((p) => {
+		      if (!p.id || modelsCache[p.id]) return;
+		      rpc("dsh-memory/llm-models", { provider: p.id }).then((r) => {
+		        if (r && r.ok && r.value) modelsCache[p.id] = r.value.models || [];
+		      }).catch(() => {
+		      });
+		    });
+		  }, [rpc, info]);
+		  (0, import_react8.useEffect)(() => {
+		    if (rows === null && info && info.chain && info.chain.current.length) {
+		      setRows(info.chain.current.map(copyRow));
+		    }
+		  }, [info, rows]);
+		  function updateRow(i, patch) {
+		    setRows(rows.map((r, j) => j === i ? { ...r, ...patch } : r));
+		    setRowErrs({});
+		  }
+		  function moveRow(i, dir) {
+		    let next = rows.map(copyRow);
+		    if (dir < 0 && i === 1) {
+		      if (!next[0].provider) next = next.slice(1);
+		      else {
+		        const t = next[0];
+		        next[0] = next[1];
+		        next[1] = t;
+		      }
+		    } else if (dir < 0 && i > 1) {
+		      const t2 = next[i - 1];
+		      next[i - 1] = next[i];
+		      next[i] = t2;
+		    } else if (dir > 0 && i < next.length - 1 && !(i === 0 && !next[0].provider)) {
+		      const t3 = next[i + 1];
+		      next[i + 1] = next[i];
+		      next[i] = t3;
+		    }
+		    setRows(next);
+		    setRowErrs({});
+		  }
+		  function removeRow(i) {
+		    if (i === 0) setRows([EMPTY_ROW].concat(rows.slice(1)));
+		    else setRows(rows.slice(0, i).concat(rows.slice(i + 1)));
+		    setRowErrs({});
+		  }
+		  function addRow() {
+		    let defProv = rows[0] && rows[0].provider || "";
+		    if (!defProv && info.providers && info.providers[0]) defProv = info.providers[0].id;
+		    setRows(rows.concat([{ provider: defProv, model: "", reasoningEffort: "" }]));
+		    setRowErrs({});
+		  }
+		  function forkStatic() {
+		    const st = info.chain && info.chain.static || [];
+		    setRows([EMPTY_ROW].concat(st.slice(0, 7).map(copyRow)));
+		    setRowErrs({});
+		  }
+		  function save() {
+		    const errs = {};
+		    const seen = {};
+		    if (rows[0].provider && !rows[0].model || !rows[0].provider && rows[0].model) {
+		      errs[0] = "主路由行供应商与模型须成对（双空 = 跟随默认模型）";
+		    }
+		    if (rows[0].provider && rows[0].model) seen[rows[0].provider + "::" + rows[0].model] = 0;
+		    for (let i = 1; i < rows.length; i++) {
+		      if (!rows[i].provider || !rows[i].model) {
+		        errs[i] = "回退路由必须显式选择供应商与模型";
+		        continue;
+		      }
+		      const key = rows[i].provider + "::" + rows[i].model;
+		      if (seen[key] !== void 0) {
+		        errs[i] = seen[key] === 0 ? "与主路由完全相同（运行时会跳过，请去重）" : "与第 " + (seen[key] + 1) + " 行重复";
+		      } else {
+		        seen[key] = i;
+		      }
+		    }
+		    setRowErrs(errs);
+		    if (rows.length > 8) {
+		      setErr("路由链最多 8 行（含主路由行），请删除多余行");
+		      return;
+		    }
+		    if (Object.keys(errs).length) return;
+		    pendingWrites.current += 1;
+		    setInfo({
+		      ...info,
+		      chain: { ...info.chain, current: rows.map(copyRow), source: "runtime" }
+		    });
+		    rpc("dsh-memory/settings-set", { distillChain: rows }).then((r) => {
+		      pendingWrites.current -= 1;
+		      setErr(!r || r.ok ? null : "路由链保存失败：" + (r && r.error && r.error.message || "未知错误"));
+		      refreshInfo();
+		    }).catch((e) => {
+		      pendingWrites.current -= 1;
+		      setErr("路由链保存失败：" + String(e && e.message || e));
+		      refreshInfo();
+		    });
+		  }
+		  function clearToFollow() {
+		    pendingWrites.current += 1;
+		    rpc("dsh-memory/settings-set", { distillChain: [], distillProvider: "", distillModel: "", reasoningEffort: "" }).then((r) => {
+		      pendingWrites.current -= 1;
+		      setRows(null);
+		      setRowErrs({});
+		      setErr(!r || r.ok ? null : "清空失败，请重试");
+		      refreshInfo();
+		    }).catch((e) => {
+		      pendingWrites.current -= 1;
+		      setErr("清空失败：" + String(e && e.message || e));
+		      refreshInfo();
+		    });
+		  }
+		  if (!info) return null;
+		  const providers = info.providers || [];
+		  const providersById = {};
+		  providers.forEach((p) => {
+		    providersById[p.id] = p;
+		  });
+		  function roRow(e, i) {
+		    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: STY.roRow, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: STY.badge, children: i === 0 ? "主" : String(i + 1) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: STY.mono, children: e.provider + " / " + e.model }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { marginLeft: "auto", flexShrink: 0, fontSize: 11, color: "var(--dsh-mem-text-3)" }, children: e.effort ? "档位 " + e.effort : "跟随部署配置" })
+		    ] }, "ro" + i);
+		  }
+		  if (info.pinned) {
+		    const effPin = info.chain && info.chain.effectiveChain || [];
+		    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: STY.wrap, children: [
+		      effPin.map(roRow),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.note, children: "部署已锁定路由（pin 优先于运行时链）；调整请修改 profile cordis.patch.yml 中 llm 的配置。" })
+		    ] });
+		  }
+		  if (rows === null) {
+		    const effFollow = info.chain && info.chain.effectiveChain || [];
+		    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: STY.wrap, children: [
+		      effFollow.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: S.switchDesc, children: "蒸馏跟随默认模型，未配置回退链。" }) : effFollow.map(roRow),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NButton, { onClick: forkStatic, disabled, children: "编辑为运行时链" }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.note, children: "未配置运行时链时跟随部署配置；「编辑为运行时链」会拷贝部署回退链为草稿，保存起运行时链接管。" })
+		    ] });
+		  }
+		  const capped = rows.length >= 8;
+		  const dirty = JSON.stringify(rows) !== JSON.stringify(info.chain && info.chain.current || []);
+		  const rowEls = rows.map((row, i) => {
+		    const isPrimary = i === 0;
+		    const known = !row.provider || !!providersById[row.provider];
+		    const modelsLoaded = row.provider ? Object.prototype.hasOwnProperty.call(modelsCache, row.provider) : false;
+		    const modelList = modelsLoaded ? modelsCache[row.provider] : [];
+		    const manualInput = modelsLoaded && modelList.length === 0;
+		    let curEfforts = [];
+		    for (let mi = 0; mi < modelList.length; mi++) {
+		      if (modelList[mi].id === row.model) {
+		        curEfforts = modelList[mi].efforts || [];
+		        break;
+		      }
+		    }
+		    let providerOptions = providers.map((p) => {
+		      return { id: p.id, label: p.name !== p.id ? p.name + "（" + p.id + "）" : p.id };
+		    });
+		    if (isPrimary) {
+		      providerOptions = [
+		        {
+		          id: "",
+		          label: info.default ? "跟随默认模型（" + info.default.provider + " / " + info.default.model + "）" : "跟随默认模型"
+		        }
+		      ].concat(providerOptions);
+		    }
+		    if (row.provider && !providersById[row.provider]) {
+		      providerOptions.push({ id: row.provider, label: row.provider + "（已不在列表）" });
+		    }
+		    const modelOptions = modelList.map((m) => {
+		      return { id: m.id, label: m.name !== m.id ? m.name + "（" + m.id + "）" : m.id };
+		    });
+		    if (row.model && !modelList.some((m) => m.id === row.model)) {
+		      modelOptions.push({ id: row.model, label: row.model + "（已不在列表）" });
+		    }
+		    const effortOptions = [{ id: "", label: "跟随部署配置" }].concat(
+		      curEfforts.filter((k) => EFFORT_VOCAB.indexOf(k) >= 0).map((k) => ({ id: k, label: k }))
+		    );
+		    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { ...STY.row, ...rowErrs[i] ? STY.rowErr : null }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: STY.line, children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: STY.badge, children: isPrimary ? "主" : String(i + 1) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		          NSel,
+		          {
+		            style: { flex: 1, minWidth: 150 },
+		            options: providerOptions,
+		            value: row.provider,
+		            disabled,
+		            placeholder: isPrimary ? "跟随默认模型" : "供应商",
+		            onChange: (v) => {
+		              updateRow(i, { provider: v, model: "", reasoningEffort: "" });
+		            }
+		          }
+		        ),
+		        !row.provider ? null : manualInput ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		          NInput,
+		          {
+		            style: { flex: 1, minWidth: 150 },
+		            placeholder: "模型 id（该供应商未提供列表，输入后回车）…",
+		            value: manual.idx === i ? manual.text : row.model,
+		            onChange: (e) => {
+		              setManual({ idx: i, text: e.target.value });
+		            },
+		            onKeyDown: (e) => {
+		              if (e.key === "Enter") {
+		                const v = (manual.idx === i ? manual.text : "").trim();
+		                if (v) {
+		                  updateRow(i, { model: v });
+		                  setManual({ idx: -1, text: "" });
+		                }
+		              }
+		            }
+		          }
+		        ) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		          NSel,
+		          {
+		            style: { flex: 1, minWidth: 150 },
+		            options: modelOptions,
+		            value: row.model,
+		            disabled: disabled || !modelsLoaded,
+		            placeholder: modelsLoaded ? isPrimary ? "（选择模型，可留空跟随默认）" : "（选择模型）" : "加载模型列表…",
+		            onChange: (v) => {
+		              updateRow(i, { model: v });
+		            }
+		          }
+		        ),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		          NSel,
+		          {
+		            style: { flexShrink: 0, width: 118 },
+		            options: effortOptions,
+		            value: row.reasoningEffort,
+		            disabled: disabled || !(row.provider && row.model),
+		            placeholder: "跟随部署配置",
+		            onChange: (v) => {
+		              updateRow(i, { reasoningEffort: v });
+		            }
+		          }
+		        )
+		      ] }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: STY.actions, children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		          NButton,
+		          {
+		            style: STY.ico,
+		            disabled: disabled || i === 0,
+		            title: i === 1 ? "上移（与主路由互换/顶替为主路由）" : "上移",
+		            onClick: () => {
+		              moveRow(i, -1);
+		            },
+		            children: "↑"
+		          }
+		        ),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		          NButton,
+		          {
+		            style: STY.ico,
+		            disabled: disabled || i === rows.length - 1 || i === 0 && !row.provider,
+		            title: "下移",
+		            onClick: () => {
+		              moveRow(i, 1);
+		            },
+		            children: "↓"
+		          }
+		        ),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		          NButton,
+		          {
+		            style: STY.ico,
+		            disabled,
+		            title: isPrimary ? "重置为跟随默认" : "删除",
+		            onClick: () => {
+		              removeRow(i);
+		            },
+		            children: "✕"
+		          }
+		        )
+		      ] }),
+		      isPrimary && !row.provider ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.note, children: "跟随默认模型" + (info.default ? "：" + info.default.provider + " / " + info.default.model : "") + "（档位跟随部署配置，选定模型后可单独设置）" }) : null,
+		      !known ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.warn, children: "⚠ 供应商 " + row.provider + " 已不在已注册路由中：该路由调用会失败并被链跳过（不阻止保存）。" }) : null,
+		      rowErrs[i] ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.warn, children: "✕ " + rowErrs[i] }) : null
+		    ] }, "row" + i);
+		  });
+		  const effChain = info.chain && info.chain.effectiveChain || [];
+		  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: STY.wrap, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { ...S.switchDesc, marginBottom: 8 }, children: "路由按序尝试：第 1 行是主路由，失败（报错 / 掐断 / 网络异常 / 空输出）后按序降级；每行档位独立，缺省跟随部署配置。" }),
+		    rowEls,
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NButton, { style: STY.add, disabled: disabled || capped, onClick: addRow, children: capped ? "已达上限（8 条）" : "+ 添加回退路由" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 10 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NButton, { style: STY.ghost, disabled, onClick: clearToFollow, children: "清空并跟随部署配置" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: S.grow }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NButton, { variant: "primary", disabled, onClick: save, children: "保存" })
+		    ] }),
+		    err ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { ...STY.warn, marginTop: 8 }, children: "✕ " + err }) : null,
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--dsh-mem-border)" }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { fontSize: 11, color: "var(--dsh-mem-text-3)", marginBottom: 4 }, children: "实际链" + (dirty ? "（保存后更新；当前显示已保存值）" : "") }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		        "div",
+		        {
+		          style: { fontSize: 12, color: "var(--dsh-mem-text-2)", wordBreak: "break-all", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace" },
+		          children: effChain.map((e) => e.provider + "/" + e.model + (e.effort ? "（" + e.effort + "）" : "")).join(" → ") || "（暂无可用路由）"
+		        }
+		      )
+		    ] })
+		  ] });
+		}
+		
+		// client/src/tabs/OverviewTab.tsx
+		var import_jsx_runtime9 = require("react/jsx-runtime");
+		function OverviewTab(props) {
+		  const rpc = props.rpc;
+		  const [stats, setStats] = (0, import_react9.useState)(null);
+		  const [settingsData, setSettingsData] = (0, import_react9.useState)(null);
+		  const [error, setError] = (0, import_react9.useState)(null);
+		  const load = (0, import_react9.useCallback)(() => {
+		    rpc("dsh-memory/stats", {}).then((r) => {
+		      if (r && r.ok) setStats(r.value);
+		      else setError(r && r.error ? r.error.message : "RPC error");
+		    }).catch((e) => {
+		      setError(String(e && e.message || e));
+		    });
+		    rpc("dsh-memory/settings-get", {}).then((r) => {
+		      if (r && r.ok) setSettingsData(r.value);
+		    }).catch(() => {
+		    });
+		  }, [rpc]);
+		  (0, import_react9.useEffect)(() => {
+		    load();
+		    const timer = setInterval(load, 5e3);
+		    return () => {
+		      clearInterval(timer);
+		    };
+		  }, [load]);
+		  const toggle = (key, value) => {
+		    if (!settingsData) return;
+		    const prev = settingsData;
+		    const patch = { [key]: value };
+		    const next = { ...prev, settings: { ...prev.settings, ...patch } };
+		    setSettingsData(next);
+		    rpc("dsh-memory/settings-set", patch).then((r) => {
+		      if (!r || !r.ok) {
+		        setSettingsData(prev);
+		        setError(r && r.error ? "开关写入失败：" + r.error.message : "开关写入失败");
+		      } else {
+		        setError(null);
+		      }
+		    }).catch((e) => {
+		      setSettingsData(prev);
+		      setError("开关写入失败：" + String(e && e.message || e));
+		    });
+		  };
+		  const tiles = [];
+		  const infos = [];
+		  if (stats) {
+		    const th = stats.thresholds || { l2MinNewMemories: 5, l3Interval: 20 };
+		    tiles.push({ num: String(stats.l0Today), label: "L0 今日消息" });
+		    tiles.push({ num: String(stats.l1Count), label: "L1 原子记忆" });
+		    tiles.push({ num: String(stats.sceneCount), label: "L2 场景块" });
+		    tiles.push({ num: String(stats.pendingExtract), label: "待重试消息" });
+		    infos.push(["数据目录", stats.dataDir]);
+		    infos.push(["插件版本", "v" + stats.version]);
+		    infos.push(["默认档", modeLabel(stats.family)]);
+		    infos.push(["L1 累计抽取", String(stats.l1TotalExtracted)]);
+		    infos.push(["L3 画像", stats.personaChars > 0 ? stats.personaChars + " 字符" : "未生成"]);
+		    infos.push(["上次 L1 抽取", fmtTime(stats.lastExtractAt)]);
+		    infos.push(["上次 L2 整合", fmtTime(stats.lastL2At)]);
+		    infos.push(["上次 L3 蒸馏", fmtTime(stats.lastL3At)]);
+		    infos.push(["待 L2 新记忆", stats.memoriesSinceL2 + " / " + (th.l2MinNewMemories != null ? th.l2MinNewMemories : 5)]);
+		    infos.push(["待 L3 新记忆", stats.memoriesSinceL3 + " / " + (th.l3Interval != null ? th.l3Interval : 20)]);
+		  }
+		  const degraded = stats && stats.message && stats.message !== "running";
+		  const master = settingsData && settingsData.settings ? settingsData.settings.enabled : true;
+		  let ceilingNote = "";
+		  if (settingsData && settingsData.ceilings) {
+		    const off = [];
+		    if (!settingsData.ceilings.capture) off.push("捕获");
+		    if (!settingsData.ceilings.distill) off.push("蒸馏");
+		    if (!settingsData.ceilings.recall) off.push("召回");
+		    if (off.length > 0) ceilingNote = "注意：部署配置已停用 " + off.join("、") + "（运行时开关无法开启）";
+		  }
+		  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+		    settingsData && settingsData.supported === false ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: S.hint, children: "settings 服务不可用，记忆模式开关未启用（记忆保持全开）。" }) : settingsData ? /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: S.switchPanel, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "记忆模式" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		        SwitchRow,
+		        {
+		          label: "记忆模式",
+		          desc: master ? "已开启：捕获对话并蒸馏记忆" : "已关闭：不捕获、不蒸馏、不注入（数据保留）",
+		          checked: master,
+		          onChange: (v) => {
+		            toggle("enabled", v);
+		          }
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		        SwitchRow,
+		        {
+		          label: "捕获",
+		          desc: "L0：记录原始对话（关闭后蒸馏也无输入）",
+		          checked: settingsData.settings.capture,
+		          disabled: !master,
+		          onChange: (v) => {
+		            toggle("capture", v);
+		          }
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		        SwitchRow,
+		        {
+		          label: "蒸馏",
+		          desc: "L1 抽取 + L2 场景 + L3 画像",
+		          checked: settingsData.settings.distill,
+		          disabled: !master,
+		          onChange: (v) => {
+		            toggle("distill", v);
+		          }
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+		        SwitchRow,
+		        {
+		          label: "召回",
+		          desc: "对话时注入相关记忆与画像",
+		          checked: settingsData.settings.recall,
+		          disabled: !master,
+		          onChange: (v) => {
+		            toggle("recall", v);
+		          }
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "蒸馏参数" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(RouteChainEditor, { rpc, disabled: !master }),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(BudgetInputs, { rpc, disabled: !master, data: settingsData, setData: setSettingsData, onError: setError }),
+		      ceilingNote ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: S.hint, children: ceilingNote }) : null
+		    ] }) : null,
+		    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(EmbeddingSection, { rpc }),
+		    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(RebuildPanel, { rpc }),
+		    degraded ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { ...S.error, marginBottom: 10 }, children: "⚠ " + stats.message + "。上方数据为最后一次成功读取的值，记忆功能当前未工作。" }) : null,
+		    error ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.error, children: "获取状态失败：" + error }) : !stats ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: S.intro, children: "正在读取记忆状态…" }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "记忆概况" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.statGrid, children: tiles.map((t) => {
+		        return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "dsh-mem-card", style: S.statTile, children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.statNum, children: t.num }),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.statLabel, children: t.label })
+		        ] }, t.label);
+		      }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "运行状态" }),
+		      infos.map((row) => {
+		        return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: S.infoRow, children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: S.infoKey, children: row[0] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: S.infoVal, children: row[1] })
+		        ] }, row[0]);
+		      })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: S.hint, children: "浏览各层记忆内容请切换上方 Tab；原始对话（L0）不入浏览器，可由模型侧 conversation_search 工具查询。" })
+		  ] });
+		}
+		
+		// client/src/tabs/PersonaTab.tsx
+		var import_react10 = require("react");
+		var import_jsx_runtime10 = require("react/jsx-runtime");
+		function PersonaTab(props) {
+		  const rpc = props.rpc;
+		  const [content, setContent] = (0, import_react10.useState)(null);
+		  const [error, setError] = (0, import_react10.useState)(null);
+		  const load = (0, import_react10.useCallback)(() => {
+		    setError(null);
+		    rpc("dsh-memory/persona", {}).then((r) => {
+		      if (r && r.ok) setContent(r.value.content);
+		      else setError(r && r.error ? r.error.message : "RPC error");
+		    }).catch((e) => {
+		      setError(String(e && e.message || e));
+		    });
+		  }, [rpc]);
+		  (0, import_react10.useEffect)(() => {
+		    load();
+		  }, [load]);
+		  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: { ...S.flexRow, marginBottom: 10 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { style: S.muted, children: error ? "加载失败" : content === null ? "加载中…" : content ? content.length + " 字符" : "未生成画像" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: S.grow }),
+		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(NButton, { onClick: load, children: "刷新" })
+		    ] }),
+		    error ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { ...S.error, marginBottom: 10 }, children: "画像读取失败：" + error + "（点右上“刷新”重试）" }) : null,
+		    content ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("pre", { style: S.pre, children: content }) : content === null ? null : /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: S.intro, children: "画像尚未生成；蒸馏若干记忆后 L3 会自动产出。" })
+		  ] });
+		}
+		
+		// client/src/tabs/RecordsTab.tsx
+		var import_react11 = require("react");
+		var import_jsx_runtime11 = require("react/jsx-runtime");
+		var TYPE_CHOICES = [
+		  "persona",
+		  "episodic",
+		  "instruction",
+		  "work_fact",
+		  "work_task",
+		  "work_method",
+		  "work_artifact"
+		];
+		function RecordsTab(props) {
+		  const rpc = props.rpc;
+		  const limit = 50;
+		  const [items, setItems] = (0, import_react11.useState)([]);
+		  const [hasMore, setHasMore] = (0, import_react11.useState)(false);
+		  const [total, setTotal] = (0, import_react11.useState)(null);
+		  const [sceneOptions, setSceneOptions] = (0, import_react11.useState)([]);
+		  const [loading, setLoading] = (0, import_react11.useState)(false);
+		  const [truncated, setTruncated] = (0, import_react11.useState)(false);
+		  const [error, setError] = (0, import_react11.useState)(null);
+		  const [expandedId, setExpandedId] = (0, import_react11.useState)(null);
+		  const [query, setQuery] = (0, import_react11.useState)("");
+		  const [typeFilter, setTypeFilter] = (0, import_react11.useState)("");
+		  const [sceneFilter, setSceneFilter] = (0, import_react11.useState)("");
+		  const [last, setLast] = (0, import_react11.useState)({ query: "", type: "", scene: "" });
+		  const seqRef = (0, import_react11.useRef)(0);
+		  const fetchPage = (0, import_react11.useCallback)(
+		    (conds, offset, append) => {
+		      setLoading(true);
+		      setError(null);
+		      const token = ++seqRef.current;
+		      const payload = { limit, offset };
+		      if (conds.query) payload.query = conds.query;
+		      if (conds.type) payload.type = conds.type;
+		      if (conds.scene) payload.scene = conds.scene;
+		      rpc("dsh-memory/list-records", payload).then((r) => {
+		        if (token !== seqRef.current) return;
+		        setLoading(false);
+		        if (!r || !r.ok) {
+		          setError(r && r.error ? r.error.message : "RPC error");
+		          return;
+		        }
+		        const v = r.value;
+		        setItems((prev) => append ? prev.concat(v.items) : v.items);
+		        setHasMore(!!v.hasMore);
+		        setTotal(v.total === void 0 || v.total === null ? null : v.total);
+		        setTruncated(!!v.truncated);
+		        if (v.scenes) setSceneOptions(v.scenes);
+		      }).catch((e) => {
+		        if (token !== seqRef.current) return;
+		        setLoading(false);
+		        setError(String(e && e.message || e));
+		      });
+		    },
+		    [rpc]
+		  );
+		  const search = () => {
+		    const conds = { query: query.trim(), type: typeFilter, scene: sceneFilter };
+		    setLast(conds);
+		    fetchPage(conds, 0, false);
+		  };
+		  (0, import_react11.useEffect)(() => {
+		    fetchPage({ query: "", type: "", scene: "" }, 0, false);
+		  }, [fetchPage]);
+		  const countText = total !== null ? "共 " + total + " 条" : items.length + " 条" + (hasMore ? "+" : "");
+		  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: S.toolbar, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		        NInput,
+		        {
+		          style: { flex: 1, minWidth: 160 },
+		          placeholder: "搜索记忆内容（BM25 关键词）…",
+		          value: query,
+		          onChange: (e) => {
+		            setQuery(e.target.value);
+		          },
+		          onKeyDown: (e) => {
+		            if (e.key === "Enter") search();
+		          }
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		        NSel,
+		        {
+		          style: { maxWidth: 200 },
+		          options: [{ id: "", label: "全部类型" }].concat(
+		            TYPE_CHOICES.map((t) => {
+		              return { id: t, label: TYPE_LABELS[t] || t };
+		            })
+		          ),
+		          value: typeFilter,
+		          onChange: setTypeFilter
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		        NSel,
+		        {
+		          style: { maxWidth: 220 },
+		          options: [{ id: "", label: "全部情境" }].concat(
+		            sceneOptions.map((s) => {
+		              return { id: s, label: s.length > 24 ? s.slice(0, 24) + "…" : s };
+		            })
+		          ),
+		          value: sceneFilter,
+		          onChange: setSceneFilter
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(NButton, { onClick: search, children: "搜索" })
+		    ] }),
+		    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { ...S.flexRow, marginBottom: 10 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: S.muted, children: loading ? "加载中…" : countText }),
+		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.grow }),
+		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		        NButton,
+		        {
+		          onClick: () => {
+		            fetchPage(last, 0, false);
+		          },
+		          children: "刷新"
+		        }
+		      )
+		    ] }),
+		    error ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.error, children: error }) : null,
+		    truncated ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.hint, children: "搜索分页已达检索上限（200 条），更早的结果未显示。请用更精确的关键词或类型/情境过滤。" }) : null,
+		    items.length === 0 && !loading && !error ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { style: S.intro, children: "暂无记忆。对话几轮后，蒸馏管线会自动抽取记忆。" }) : items.map((m) => {
+		      const open = expandedId === m.id;
+		      return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
+		        "div",
+		        {
+		          className: "dsh-mem-card dsh-mem-card-hover",
+		          style: { ...S.card, cursor: "pointer" },
+		          onClick: () => {
+		            setExpandedId(open ? null : m.id);
+		          },
+		          children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: S.cardHead, children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "dsh-mem-tag dsh-mem-tag-" + m.type, children: TYPE_LABELS[m.type] || m.type }),
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: S.muted, children: "优先级 " + m.priority }),
+		              m.score !== null && m.score !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: S.muted, children: "相关度 " + Number(m.score).toFixed(2) }) : null,
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.grow }),
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: S.muted, children: fmtTime(m.updatedAt) })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.content, children: m.content }),
+		            open ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.detail, children: "id: " + m.id + "\n情境: " + (m.scene || "-") + "\n版本: v" + m.version + "（去重合并次数 " + m.version + "）\n创建: " + fmtTime(m.createdAt) + "\n活跃时间: " + (m.timestamps && m.timestamps.length > 0 ? m.timestamps.map(fmtTime).join(" → ") : "-") + "\n" + (m.sourceMessageIds && m.sourceMessageIds.length > 0 ? "来源消息: " + m.sourceMessageIds.join(", ") : "来源消息: -") }) : null
+		          ]
+		        },
+		        m.id
+		      );
+		    }),
+		    hasMore ? /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: S.flexRow, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.grow }),
+		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
+		        NButton,
+		        {
+		          disabled: loading,
+		          onClick: () => {
+		            if (!loading) fetchPage(last, items.length, true);
+		          },
+		          children: loading ? "加载中…" : "加载更多"
+		        }
+		      )
+		    ] }) : null
+		  ] });
+		}
+		
+		// client/src/tabs/ScenesTab.tsx
+		var import_react12 = require("react");
+		var import_jsx_runtime12 = require("react/jsx-runtime");
+		function SceneCard(props) {
+		  const s = props.s;
+		  const [open, setOpen] = (0, import_react12.useState)(false);
+		  return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "dsh-mem-card dsh-mem-card-hover", style: S.card, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)(
+		      "div",
+		      {
+		        style: { ...S.sceneHead, cursor: "pointer", userSelect: "none" },
+		        onClick: () => {
+		          setOpen(!open);
+		        },
+		        children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "dsh-mem-scene-chev", style: { transform: open ? "rotate(90deg)" : "none" }, children: "▸" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: S.sceneTitle, children: s.path }),
+		          s.heat ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: S.muted, children: "热度 " + s.heat }) : null,
+		          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: S.grow }),
+		          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: S.muted, children: "更新 " + fmtTime(s.updated) })
+		        ]
+		      }
+		    ),
+		    s.summary ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { ...S.muted, marginBottom: 6 }, children: s.summary }) : null,
+		    open ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("pre", { style: S.pre, children: s.content || "(空)" }) : null
+		  ] });
+		}
+		function ScenesTab(props) {
+		  const rpc = props.rpc;
+		  const [items, setItems] = (0, import_react12.useState)(null);
+		  const [error, setError] = (0, import_react12.useState)(null);
+		  const load = (0, import_react12.useCallback)(() => {
+		    rpc("dsh-memory/scenes", {}).then((r) => {
+		      if (r && r.ok) {
+		        setItems(r.value.items);
+		        setError(null);
+		      } else setError(r && r.error ? r.error.message : "RPC error");
+		    }).catch((e) => {
+		      setError(String(e && e.message || e));
+		    });
+		  }, [rpc]);
+		  (0, import_react12.useEffect)(() => {
+		    load();
+		  }, [load]);
+		  return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { ...S.flexRow, marginBottom: 10 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: S.muted, children: items ? items.length + " 个场景块" : "加载中…" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: S.grow }),
+		      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(NButton, { onClick: load, children: "刷新" })
+		    ] }),
+		    error ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: S.error, children: error }) : null,
+		    items && items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: S.intro, children: "暂无场景块。累计 5 条新记忆后 L2 会自动整合出第一个场景。" }) : null,
+		    (items || []).map((s) => {
+		      return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(SceneCard, { s }, s.path);
+		    })
+		  ] });
+		}
+		
+		// client/src/panel.tsx
+		var import_jsx_runtime13 = require("react/jsx-runtime");
+		var TABS = [
+		  ["overview", "概览"],
+		  ["records", "记忆"],
+		  ["scenes", "场景"],
+		  ["persona", "画像"],
+		  ["cost", "成本"],
+		  ["log", "日志"]
+		];
+		function MemoryPanel(props) {
+		  const rpc = props.rpc;
+		  const [tab, setTab] = (0, import_react13.useState)("overview");
+		  ensureThemeStyle();
+		  (0, import_react13.useEffect)(() => {
+		    watchSidebarIcon();
+		  }, []);
+		  let body;
+		  if (tab === "overview") body = /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(OverviewTab, { rpc });
+		  else if (tab === "records") body = /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(RecordsTab, { rpc });
+		  else if (tab === "scenes") body = /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(ScenesTab, { rpc });
+		  else if (tab === "persona") body = /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(PersonaTab, { rpc });
+		  else if (tab === "cost") body = /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(CostTab, { rpc });
+		  else body = /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(LogTab, { rpc });
+		  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "dsh-mem-root", style: S.section, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h2", { style: S.heading, children: "记忆 (Memory)" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: S.intro, children: "L0~L3 分层蒸馏记忆：浏览被记住的内容，控制记忆模式开关。" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: S.tabbar, children: TABS.map((t) => {
+		      return /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		        "button",
+		        {
+		          className: tab === t[0] ? "dsh-mem-tab dsh-mem-tab-on" : "dsh-mem-tab",
+		          onClick: () => {
+		            setTab(t[0]);
+		          },
+		          children: t[1]
+		        },
+		        t[0]
+		      );
+		    }) }),
+		    body
+		  ] });
+		}
+		
+		// client/src/pill/MemoryModePill.tsx
+		var import_react16 = require("react");
+		
+		// client/src/pill/ModeSlider.tsx
+		var import_react15 = require("react");
+		
+		// client/src/pill/SessionInfoArea.tsx
+		var import_react14 = require("react");
+		var import_jsx_runtime14 = require("react/jsx-runtime");
+		function sinfoCell(val, label, title) {
+		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { title: title || void 0, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "dsh-mem-sinfo-val", children: val }),
+		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "dsh-mem-sinfo-label", children: label })
+		  ] });
+		}
+		function SessionInfoArea(props) {
+		  const rpc = props.rpc;
+		  const sessionId = props.sessionId;
+		  const [stats, setStats] = (0, import_react14.useState)(void 0);
+		  const busyRef = (0, import_react14.useRef)(false);
+		  (0, import_react14.useEffect)(() => {
+		    if (!rpc || !sessionId) return void 0;
+		    let alive = true;
+		    let timer = null;
+		    let seq = 0;
+		    const tick = () => {
+		      const token = ++seq;
+		      rpc("dsh-memory/session-stats", { sessionId }).then((r) => {
+		        if (!alive || token !== seq) return;
+		        if (r && r.ok && r.value) {
+		          if (r.value.supported === false) {
+		            setStats(null);
+		          } else {
+		            const v = r.value;
+		            setStats(v);
+		            const d = v.distill || {};
+		            const g = v.global || {};
+		            busyRef.current = (d.pendingSlice || 0) > 0 || (d.parkedSlices || 0) > 0 || (g.pendingTotal || 0) > 0;
+		          }
+		        }
+		      }).catch(() => {
+		      }).then(() => {
+		        if (alive) timer = setTimeout(tick, busyRef.current ? 2e3 : 5e3);
+		      });
+		    };
+		    tick();
+		    return () => {
+		      alive = false;
+		      if (timer) clearTimeout(timer);
+		    };
+		  }, [rpc, sessionId]);
+		  if (stats === null) return null;
+		  if (stats === void 0) {
+		    return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "dsh-mem-sinfo", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "dsh-mem-sinfo-grid", children: [
+		      sinfoCell("…", "召回命中"),
+		      sinfoCell("…", "攒批进度"),
+		      sinfoCell("…", "本会话记忆"),
+		      sinfoCell("…", "会话消息")
+		    ] }) });
+		  }
+		  const rc = stats.recall || {};
+		  const di = stats.distill || {};
+		  const gl = stats.global || {};
+		  const isOff = stats.mode === "off";
+		  let rcVal;
+		  let rcLabel;
+		  let rcTitle;
+		  if (rc.enabled === false) {
+		    rcVal = "停用";
+		    rcLabel = "召回命中";
+		    rcTitle = "召回已停用（开关关闭 / 档位关闭 / 部署未启用）";
+		  } else {
+		    rcVal = (rc.hitTurns || 0) + "/" + (rc.injectedTurns || 0);
+		    rcLabel = "召回命中 · " + (rc.totalHits || 0) + " 条";
+		    rcTitle = "最近一轮命中 " + (rc.lastHits || 0) + " 条，耗时 " + (rc.lastDurationMs || 0) + "ms" + ((rc.timeouts || 0) > 0 ? "，超时跳过 " + rc.timeouts + " 次" : "");
+		  }
+		  let dVal;
+		  let dLabel;
+		  let dTitle;
+		  if (isOff) {
+		    dVal = String(di.parkedSlices || 0);
+		    dLabel = "挂起切片";
+		    dTitle = "档位关闭：未蒸馏切片挂起，切回档位后继续";
+		  } else {
+		    dVal = (di.pendingSlice || 0) + "/" + (di.threshold != null ? di.threshold : "-");
+		    dLabel = (di.parkedSlices || 0) > 0 ? "攒批 · 挂起 " + di.parkedSlices : "攒批进度";
+		    dTitle = "达到阈值后自动蒸馏（阈值随使用渐进爬坡到稳态）";
+		  }
+		  const pTitle = di.lastDistillAt ? "最近蒸馏 " + fmtTime(di.lastDistillAt) : "本会话尚未蒸馏";
+		  const warn = gl.degraded ? "⚠ 存储不可用，记忆功能已停用" : null;
+		  let note = null;
+		  if (!gl.degraded) {
+		    if (stats.retrieval === "keyword" && !isOff) note = "检索降级：纯关键词（向量不可用）";
+		    else if (stats.retrieval === "none") note = "检索不可用（FTS 与向量均失效）";
+		  }
+		  const ago = fmtAgo(gl.lastExtractAt);
+		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "dsh-mem-sinfo", children: [
+		    warn ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "dsh-mem-sinfo-warn", children: warn }) : null,
+		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "dsh-mem-sinfo-grid", children: [
+		      sinfoCell(rcVal, rcLabel, rcTitle),
+		      sinfoCell(dVal, dLabel, dTitle),
+		      sinfoCell(String(di.producedRecords || 0), "本会话记忆", pTitle),
+		      sinfoCell(stats.l0Count != null ? String(stats.l0Count) : "…", "会话消息")
+		    ] }),
+		    note ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "dsh-mem-sinfo-note", children: note }) : null,
+		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "dsh-mem-sinfo-sum", children: "待蒸馏 " + (gl.pendingTotal || 0) + " · 上次蒸馏 " + (ago || "尚未蒸馏") })
+		  ] });
+		}
+		
+		// client/src/pill/ModeSlider.tsx
+		var import_jsx_runtime15 = require("react/jsx-runtime");
+		function ModeSlider(props) {
+		  ensureThemeStyle();
+		  const trackRef = (0, import_react15.useRef)(null);
+		  const [drag, setDrag] = (0, import_react15.useState)(null);
+		  const canvasRef = (0, import_react15.useRef)(null);
+		  const geoRef = (0, import_react15.useRef)(null);
+		  const clampX = (x) => {
+		    if (x < 0) return 0;
+		    if (x > INNER_W) return INNER_W;
+		    return x;
+		  };
+		  const xFromClientX = (clientX) => {
+		    const rect = trackRef.current.getBoundingClientRect();
+		    return clampX(clientX - rect.left - THUMB / 2);
+		  };
+		  const onPointerDown = (e) => {
+		    e.preventDefault();
+		    e.currentTarget.setPointerCapture(e.pointerId);
+		    setDrag({ x: xFromClientX(e.clientX), lastX: e.clientX, t: e.timeStamp, v: 0 });
+		  };
+		  const onPointerMove = (e) => {
+		    if (drag === null) return;
+		    const dt = e.timeStamp - drag.t;
+		    const instV = dt > 0 ? (e.clientX - drag.lastX) / dt : drag.v;
+		    setDrag({
+		      x: xFromClientX(e.clientX),
+		      lastX: e.clientX,
+		      t: e.timeStamp,
+		      v: drag.v * 0.7 + instV * 0.3
+		      // EMA：瞬时抖动不放大，松手投影用
+		    });
+		  };
+		  const onPointerUp = (e) => {
+		    if (drag === null) return;
+		    const projected = xFromClientX(e.clientX) + Math.max(-30, Math.min(30, drag.v * 120));
+		    const idx = Math.round(clampX(projected) / INNER_W * (MODES.length - 1));
+		    setDrag(null);
+		    props.onCommit(MODES[idx].key);
+		  };
+		  const thumbLeft = drag !== null ? drag.x : modeIndex(props.mode) / (MODES.length - 1) * INNER_W;
+		  const activeIdx = Math.min(MODES.length - 1, Math.max(0, Math.round(thumbLeft / INNER_W * (MODES.length - 1))));
+		  const info = MODES[activeIdx];
+		  geoRef.current = {
+		    origin: thumbLeft + THUMB / 2,
+		    // 密度/亮度中心 = 圆球中心
+		    rightEdge: thumbLeft + THUMB,
+		    // 粒子活动区右界 = 填充右缘（不越过圆球）
+		    tier: activeIdx,
+		    // 场强档位（与填充/气泡同源；拖拽预览即时升降级）
+		    show: activeIdx > 0 || drag !== null,
+		    // 与填充显隐同源
+		    dragging: drag !== null
+		  };
+		  (0, import_react15.useEffect)(() => {
+		    const canvas = canvasRef.current;
+		    if (!canvas) return void 0;
+		    const ctx = canvas.getContext && canvas.getContext("2d");
+		    if (!ctx) return void 0;
+		    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+		    let width = 1;
+		    let height = 1;
+		    let frame = 0;
+		    let grid = [];
+		    let cell = 5;
+		    const gap = 1.1;
+		    let fieldOn = false;
+		    let fieldStart = 0;
+		    let lastDrawn = 0;
+		    const resize = () => {
+		      const b = canvas.getBoundingClientRect();
+		      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+		      width = Math.max(1, b.width);
+		      height = Math.max(1, b.height);
+		      canvas.width = Math.max(1, Math.round(width * ratio));
+		      canvas.height = Math.max(1, Math.round(height * ratio));
+		      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+		      cell = width < 280 ? 5 : 6;
+		      grid = [];
+		      for (let row = 0; row * cell < height; row++) {
+		        for (let column = 0; column * cell < width; column++) {
+		          grid.push({
+		            x: column * cell,
+		            y: row * cell,
+		            base: Math.abs(Math.sin(column * 12.9898 + row * 78.233) * 43758.5453) % 1,
+		            tempo: Math.abs(Math.sin(column * 7.13 + row * 19.41) * 19341.731) % 1,
+		            phase: Math.abs(Math.sin(column * 31.17 + row * 11.93) * 28437.123) % 1
+		          });
+		        }
+		      }
+		    };
+		    const draw = (time) => {
+		      const st = geoRef.current || { origin: 0, rightEdge: 0, tier: 0, show: false, dragging: false };
+		      ctx.clearRect(0, 0, width, height);
+		      if (!st.show || st.rightEdge <= 0) {
+		        fieldOn = false;
+		        return;
+		      }
+		      if (!fieldOn) {
+		        fieldOn = true;
+		        fieldStart = time;
+		      }
+		      const dark = document.body.hasAttribute("data-ds-dark-theme");
+		      const tier = FIELD_TIERS[st.tier] || FIELD_TIERS[1];
+		      const elapsed = Math.max(0, time - fieldStart);
+		      const reveal = reduced.matches ? 1 : smStep(0, 1, elapsed / 900);
+		      const ripplePhase = elapsed % 1200 / 1200;
+		      const tempo = tier.tempo * (st.dragging ? 2 : 1);
+		      const dim = dark ? [124, 144, 250] : [61, 91, 224];
+		      const hot = dark ? [214, 224, 255] : [126, 148, 250];
+		      ctx.save();
+		      ctx.beginPath();
+		      if (ctx.roundRect) ctx.roundRect(0, 0, st.rightEdge, height, height / 2);
+		      else ctx.rect(0, 0, st.rightEdge, height);
+		      ctx.clip();
+		      for (let i = 0; i < grid.length; i++) {
+		        const c = grid[i];
+		        const dx = Math.abs(c.x + cell * 0.5 - st.origin) / Math.max(1, st.rightEdge * 0.5);
+		        if (dx > 1) continue;
+		        const near = Math.min(1, Math.max(0, 1 - dx * 1.1));
+		        if (c.base > tier.density - near * 0.3) continue;
+		        const flicker = 0.5 + 0.5 * Math.sin(elapsed * 0.012 * tempo + c.tempo * 6.283 + c.phase * 6.283);
+		        const wave = tier.wave ? 0.5 + 0.5 * Math.sin((dx * 2 - ripplePhase) * 6.283) : 0.62;
+		        const revealA = smStep(0, 1, reveal * (1 - dx * 0.85) + dx * 0.15);
+		        const alpha = Math.min(1, (0.26 + 0.44 * flicker + near * 0.28) * (0.28 + 0.72 * wave) * revealA * tier.alpha);
+		        if (alpha < 0.02) continue;
+		        const glowMix = Math.max(0, flicker * wave - 0.45) * 1.6;
+		        ctx.fillStyle = "rgba(" + Math.round(dim[0] + (hot[0] - dim[0]) * glowMix) + "," + Math.round(dim[1] + (hot[1] - dim[1]) * glowMix) + "," + Math.round(dim[2] + (hot[2] - dim[2]) * glowMix) + "," + alpha.toFixed(3) + ")";
+		        ctx.fillRect(c.x + gap * 0.5, c.y + gap * 0.5, cell - gap, cell - gap);
+		      }
+		      ctx.restore();
+		    };
+		    const loop = (time) => {
+		      if (time - lastDrawn >= 33) {
+		        lastDrawn = time;
+		        draw(time);
+		      }
+		      frame = window.requestAnimationFrame(loop);
+		    };
+		    const redrawStatic = () => {
+		      if (reduced.matches) draw(performance.now());
+		    };
+		    const ro = new ResizeObserver(() => {
+		      resize();
+		      redrawStatic();
+		    });
+		    const themeObs = new MutationObserver(() => {
+		      redrawStatic();
+		    });
+		    ro.observe(canvas);
+		    themeObs.observe(document.body, { attributes: true, attributeFilter: ["data-ds-dark-theme"] });
+		    resize();
+		    draw(performance.now());
+		    if (!reduced.matches) frame = window.requestAnimationFrame(loop);
+		    return () => {
+		      window.cancelAnimationFrame(frame);
+		      ro.disconnect();
+		      themeObs.disconnect();
+		    };
+		  }, []);
+		  const stops = [];
+		  for (let i = 0; i < MODES.length; i++) {
+		    const stopLeft = i / (MODES.length - 1) * INNER_W + THUMB / 2;
+		    stops.push(
+		      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		        "div",
+		        {
+		          style: {
+		            position: "absolute",
+		            left: stopLeft - 3,
+		            top: (RAIL_H - 6) / 2,
+		            width: 6,
+		            height: 6,
+		            borderRadius: "50%",
+		            background: "var(--dsh-mem-dot)",
+		            zIndex: 2,
+		            pointerEvents: "none"
+		          }
+		        },
+		        "stop" + i
+		      )
+		    );
+		  }
+		  return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		    "div",
+		    {
+		      style: {
+		        position: "absolute",
+		        bottom: "calc(100% + 8px)",
+		        left: "50%",
+		        transform: "translateX(-50%)",
+		        zIndex: 1e3
+		      },
+		      children: /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		        "div",
+		        {
+		          className: "dsh-mem-popover",
+		          style: { position: "relative", padding: "14px 16px" },
+		          children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(
+		              "div",
+		              {
+		                ref: trackRef,
+		                style: {
+		                  position: "relative",
+		                  // 容器宽 = thumb 活动范围（0..INNER_W + THUMB），点击映射与视觉两端严格对齐
+		                  width: TRACK_W,
+		                  height: RAIL_H,
+		                  borderRadius: 999,
+		                  background: "var(--dsh-mem-track)",
+		                  touchAction: "none",
+		                  cursor: drag === null ? "pointer" : "grabbing"
+		                },
+		                onPointerDown,
+		                onPointerMove,
+		                onPointerUp,
+		                onPointerCancel: onPointerUp,
+		                children: [
+		                  activeIdx > 0 || drag !== null ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                    "div",
+		                    {
+		                      style: {
+		                        position: "absolute",
+		                        left: 0,
+		                        top: 0,
+		                        bottom: 0,
+		                        width: thumbLeft + THUMB,
+		                        borderRadius: 999,
+		                        background: "linear-gradient(90deg, var(--dsh-mem-fill-1), var(--dsh-mem-fill-2))",
+		                        pointerEvents: "none",
+		                        zIndex: 1,
+		                        transition: drag === null ? "width 120ms ease" : "none"
+		                      }
+		                    }
+		                  ) : null,
+		                  stops,
+		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                    "canvas",
+		                    {
+		                      ref: canvasRef,
+		                      className: "dsh-mem-particles",
+		                      style: {
+		                        position: "absolute",
+		                        left: 0,
+		                        top: 0,
+		                        width: "100%",
+		                        height: "100%",
+		                        pointerEvents: "none",
+		                        zIndex: 2,
+		                        filter: drag !== null ? "saturate(1.45) brightness(1.28) contrast(1.06)" : "none"
+		                      }
+		                    }
+		                  ),
+		                  /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(
+		                    "div",
+		                    {
+		                      style: {
+		                        position: "absolute",
+		                        left: thumbLeft,
+		                        top: (RAIL_H - THUMB) / 2,
+		                        width: THUMB,
+		                        height: THUMB,
+		                        borderRadius: "50%",
+		                        background: "var(--dsh-mem-thumb)",
+		                        border: "1px solid var(--dsh-mem-accent)",
+		                        boxShadow: drag !== null ? "0 2px 8px rgba(0,0,0,0.35)" : "0 1px 4px rgba(0,0,0,0.25)",
+		                        pointerEvents: "none",
+		                        transition: drag === null ? "left 120ms ease" : "none",
+		                        zIndex: 3
+		                      }
+		                    }
+		                  ),
+		                  drag !== null ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "dsh-mem-bubble", style: { left: thumbLeft + THUMB / 2, zIndex: 4 }, children: info.label }) : null
+		                ]
+		              }
+		            ),
+		            props.error ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { style: { fontSize: 11, color: "var(--dsh-mem-danger)", marginTop: 10, whiteSpace: "nowrap" }, children: props.error }) : null,
+		            props.rpc && props.sessionId ? /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(SessionInfoArea, { rpc: props.rpc, sessionId: props.sessionId }) : null
+		          ]
+		        }
+		      )
+		    }
+		  );
+		}
+		
+		// client/src/pill/MemoryModePill.tsx
+		var import_jsx_runtime16 = require("react/jsx-runtime");
+		function MemoryModePill(props) {
+		  const rpc = props.rpc;
+		  const sessionId = props.sessionId || props.session && props.session.sessionId;
+		  const [mode, setMode] = (0, import_react16.useState)(null);
+		  const [error, setError] = (0, import_react16.useState)(null);
+		  const [open, setOpen] = (0, import_react16.useState)(false);
+		  const wrapRef = (0, import_react16.useRef)(null);
+		  const seqRef = (0, import_react16.useRef)(0);
+		  const load = (0, import_react16.useCallback)(() => {
+		    if (!sessionId || !rpc) return;
+		    const token = ++seqRef.current;
+		    setError(null);
+		    rpc("dsh-memory/session-mode-get", { sessionId }).then((r) => {
+		      if (token !== seqRef.current) return;
+		      if (r && r.ok && r.value) setMode(r.value.mode);
+		      else setError(r && !r.ok ? r.error.message : "RPC error");
+		    }).catch((e) => {
+		      if (token !== seqRef.current) return;
+		      setError(String(e && e.message || e));
+		    });
+		  }, [sessionId, rpc]);
+		  (0, import_react16.useEffect)(() => {
+		    load();
+		  }, [load]);
+		  (0, import_react16.useEffect)(() => {
+		    watchSidebarIcon();
+		  }, []);
+		  (0, import_react16.useEffect)(() => {
+		    if (!open) return;
+		    const onDown = (e) => {
+		      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+		    };
+		    const onKey = (e) => {
+		      if (e.key === "Escape") setOpen(false);
+		    };
+		    document.addEventListener("mousedown", onDown);
+		    document.addEventListener("keydown", onKey);
+		    return () => {
+		      document.removeEventListener("mousedown", onDown);
+		      document.removeEventListener("keydown", onKey);
+		    };
+		  }, [open]);
+		  const commit = (next) => {
+		    if (!rpc || next === mode) return;
+		    const prev = mode;
+		    setMode(next);
+		    setError(null);
+		    rpc("dsh-memory/session-mode-set", { sessionId, mode: next }).then((r) => {
+		      if (!r || !r.ok) {
+		        setMode(prev);
+		        setError(r && r.error ? "档位写入失败：" + r.error.message : "档位写入失败");
+		      }
+		    }).catch((e) => {
+		      setMode(prev);
+		      setError("档位写入失败：" + String(e && e.message || e));
+		    });
+		  };
+		  if (!sessionId || !rpc) return null;
+		  const info = modeInfo(mode);
+		  const loaded = mode !== null;
+		  const isOff = loaded && mode === "off";
+		  const isFlow = loaded && !isOff;
+		  ensureThemeStyle();
+		  const pillStyle = {
+		    display: "inline-flex",
+		    alignItems: "center",
+		    gap: 4,
+		    height: 24,
+		    padding: "0 10px",
+		    borderRadius: 999,
+		    fontSize: 12,
+		    fontWeight: 500,
+		    lineHeight: "20px",
+		    cursor: "pointer",
+		    // 流光档的边框/背景由 .dsh-mem-flow 的双层背景提供（流光边 + 不透明内底），
+		    // inline 只给文字色 / 光晕 / 流光内底混色通道（--dsh-mem-pill-tint）
+		    color: isFlow ? info.color : "var(--dsh-mem-text-2)"
+		  };
+		  if (isFlow) {
+		    pillStyle.boxShadow = "0 0 12px color-mix(in srgb, " + info.color + " 30%, transparent)";
+		    pillStyle["--dsh-mem-pill-tint"] = info.color;
+		  }
+		  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { ref: wrapRef, style: { position: "relative", display: "inline-flex" }, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		      "button",
+		      {
+		        type: "button",
+		        title: error ? "档位读取失败：" + error + "（点击重试）" : "本会话记忆档位（点击切换）",
+		        onClick: () => {
+		          if (error) load();
+		          setOpen(!open);
+		        },
+		        className: isFlow ? "dsh-mem-flow" : "dsh-mem-pill-off",
+		        style: pillStyle,
+		        children: [
+		          "记忆 · ",
+		          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: loaded ? info.label : error ? "⚠" : "…" })
+		        ]
+		      }
+		    ),
+		    open ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(ModeSlider, { mode: mode || "auto", onCommit: commit, error, rpc, sessionId }) : null
+		  ] });
+		}
+		
+		// client/src/entry.tsx
+		var inject = ["slots", "connection"];
+		function apply(ctx) {
+		  const rpc = makeRpc(ctx);
+		  ctx.slots.inject("settings.section", () => {
+		    return ctx.slots.register(
+		      {
+		        name: "settings.section",
+		        id: "dsh-memory",
+		        order: 200,
+		        label: "记忆",
+		        inject: () => ({ rpc })
+		      },
+		      MemoryPanel
+		    );
+		  });
+		  ctx.slots.inject("conversation.input.left", () => {
+		    return ctx.slots.register(
+		      {
+		        name: "conversation.input.left",
+		        id: "dsh-memory-mode",
+		        order: 100,
+		        inject: (sessionId) => ({ sessionId, rpc })
+		      },
+		      MemoryModePill
+		    );
+		  });
+		}
+		
+		// esbuild 对具名导出会整体替换 module.exports（__toCommonJS：getter + __esModule）；
+		// 摊平回官方 bundle 同款的普通数据属性对象（含 toStringTag），loader 只按属性读取。
+		var __flat = {};
+		for (var __k in module.exports) __flat[__k] = module.exports[__k];
+		Object.defineProperty(__flat, Symbol.toStringTag, { value: "Module" });
+		return __flat;
+	}
 });

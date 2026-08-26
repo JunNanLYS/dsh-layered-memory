@@ -64,28 +64,26 @@ export interface SessionInfoSource {
   capabilities(): { ftsSearch: boolean; vectorSearch: boolean };
 }
 
-export interface MemoryStats {
-  ok: boolean;
-  dataDir: string;
-  /** 新会话默认记忆档位（auto/chat/work）。 */
-  family: string;
-  version: string;
-  l0Today: number;
-  l1Count: number;
-  l1TotalExtracted: number;
-  sceneCount: number;
-  personaChars: number;
-  hasPersona: boolean;
-  lastExtractAt: string | null;
-  lastL2At: string | null;
-  lastL3At: string | null;
-  memoriesSinceL2: number;
-  memoriesSinceL3: number;
-  pendingExtract: number;
-  message: string;
-  /** 实际生效的阈值（概览进度分母用，避免 UI 硬编码与部署配置脱节）。 */
-  thresholds: { l2MinNewMemories: number; l3Interval: number };
-}
+// MemoryStats 与全部端点响应形状已迁入契约单一事实源（src/contract.ts）——
+// host case 表与 client（TS 化浏览器侧）共享同一形状，契约漂移编译期暴露。
+import type {
+  EffortChoice,
+  EmbeddingStateResponse,
+  ListRecordsResponse,
+  LlmModelsResponse,
+  LlmProvidersResponse,
+  ModelWithEfforts,
+  MemoryStats,
+  RebuildStatusResponse,
+  ScenesResponse,
+  SessionModeGetResponse,
+  SessionModeSetResponse,
+  SessionStatsResponse,
+  SettingsGetResponse,
+  SettingsSetResponse,
+  UiRecord,
+} from './contract.js';
+export type { MemoryStats } from './contract.js';
 
 /** 分族存储聚合（浏览器保持混合视图：两族拼接展示）。 */
 type FamilyStores = {
@@ -292,7 +290,8 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       if (!modes) throw new Error('档位存储未初始化');
       const p = (payload ?? {}) as { sessionId?: string };
       const sessionId = expectSessionId(p.sessionId);
-      return { sessionId, mode: modes.get(sessionId), defaultMode: modes.default };
+      const v: SessionModeGetResponse = { sessionId, mode: modes.get(sessionId), defaultMode: modes.default };
+      return v;
     }
 
     case 'dsh-memory/session-mode-set': {
@@ -305,7 +304,8 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       }
       modes.set(sessionId, p.mode as MemoryMode);
       deps.logger.info(`[memory] 会话档位设置 session=${sessionId} mode=${p.mode}`);
-      return { sessionId, mode: p.mode };
+      const v: SessionModeSetResponse = { sessionId, mode: p.mode as MemoryMode };
+      return v;
     }
 
     // ── 会话级统计（悬浮卡信息区；热路径端点，见 SessionInfoSource 的零 I/O 硬规则） ──
@@ -313,7 +313,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       if (!sessionInfo) return { supported: false };
       const p = (payload ?? {}) as { sessionId?: string };
       const sessionId = expectSessionId(p.sessionId);
-      const mode: string = modes ? modes.get(sessionId) : 'auto';
+      const mode: MemoryMode = modes ? modes.get(sessionId) : 'auto';
       const caps = sessionInfo.capabilities();
       const l0Count = await sessionInfo.l0Count(sessionId);
       const s = live?.get();
@@ -324,7 +324,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       const chat = stores.state.forFamily('chat');
       const work = stores.state.forFamily('work');
       const lastAt = Math.max(chat.lastExtractAt, work.lastExtractAt);
-      return {
+      const v: SessionStatsResponse = {
         supported: true,
         sessionId,
         mode,
@@ -339,6 +339,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
           lastExtractAt: lastAt ? new Date(lastAt).toISOString() : null,
         },
       };
+      return v;
     }
 
     case 'dsh-memory/settings-get': {
@@ -363,7 +364,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       } catch {
         /* 路由解析/探询失败保持占位（effective 用运行时||静态值） */
       }
-      return {
+      const resp: SettingsGetResponse = {
         supported: live?.supported ?? false,
         settings: s ?? {
           enabled: true, capture: true, distill: true, recall: true,
@@ -374,8 +375,9 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         ceilings: { capture: cfg.capture.enabled, distill: cfg.extract.enabled, recall: cfg.recall.enabled },
         effort: {
           current: s?.reasoningEffort ?? '',
-          effective: effortEffective,
-          fallback: cfg.llm.reasoningEffort,
+          // 静态 schema 与 settings-set 写入门都以 EFFORT_CHOICES 白名单校验，这里断言回窄类型
+          effective: effortEffective as EffortChoice,
+          fallback: cfg.llm.reasoningEffort as EffortChoice,
           options: effortOptions,
           ...(effortRoute ? { route: effortRoute } : {}),
         },
@@ -397,6 +399,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
           effective: s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : cfg.llm.maxInputChars,
         },
       };
+      return resp;
     }
 
     case 'dsh-memory/settings-set': {
@@ -454,7 +457,8 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       if (Object.keys(clean).length === 0) throw new Error('开关更新载荷为空');
       await live.update(clean);
       deps.logger.info(`[memory] 设置更新：${JSON.stringify(clean)}`);
-      return { ok: true, settings: live.get() };
+      const v: SettingsSetResponse = { ok: true, settings: live.get() };
+      return v;
     }
 
     case 'dsh-memory/list-records': {
@@ -470,27 +474,29 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         const wanted = offset + limit + 1;
         const hits = await stores.l1.search(p.query, Math.min(wanted, SEARCH_CAP), { type: p.type || undefined });
         const filtered = p.scene ? hits.filter((h) => h.scene_name === p.scene) : hits;
-        return {
+        const resp: ListRecordsResponse = {
           items: filtered.slice(offset, offset + limit).map(hitToUiRecord),
           hasMore: filtered.length > offset + limit,
           total: null,
           truncated: wanted > SEARCH_CAP,
           scenes: offset === 0 ? stores.l1.distinctScenes() : undefined,
         };
+        return resp;
       }
       const { items, total } = stores.l1.list({ type: p.type || undefined, scene: p.scene || undefined, limit, offset });
-      return {
+      const resp: ListRecordsResponse = {
         items: items.map(hitToUiRecord),
         hasMore: offset + items.length < total,
         total,
         truncated: false,
         scenes: offset === 0 ? stores.l1.distinctScenes() : undefined,
       };
+      return resp;
     }
 
     case 'dsh-memory/scenes': {
       // 两族拼接展示（浏览器保持混合视图；路径冲突时后写入的族覆盖显示名，读取仍各自独立）
-      const items = [];
+      const items: ScenesResponse['items'] = [];
       for (const family of ['chat', 'work'] as const) {
         const summaries = await stores.scenes[family].list();
         for (const s of summaries) {
@@ -515,7 +521,10 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
     }
 
     case 'dsh-memory/rebuild-status': {
-      if (!rebuild) return { supported: false, running: false, phase: 'idle' };
+      if (!rebuild) {
+        const v: RebuildStatusResponse = { supported: false, running: false, phase: 'idle' };
+        return v;
+      }
       return rebuild.getStatus();
     }
 
@@ -571,7 +580,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       } catch {
         effective = null; // 无法解析（无默认选择且未覆盖）时 UI 显示占位
       }
-      return {
+      const resp: LlmProvidersResponse = {
         supported: true,
         providers,
         default: def,
@@ -588,6 +597,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
           source: chainCurrent.length ? ('runtime' as const) : ('static' as const),
         },
       };
+      return resp;
     }
 
     case 'dsh-memory/llm-models': {
@@ -606,7 +616,6 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       // （探询失败/未声明同样 → 空表，UI 只显示「跟随部署配置」）
       const baseModels = models.map((m) => ({ id: m.id, name: m.name, description: m.description ?? null, efforts: [] as string[] }));
       const providerId = p.provider;
-      type ModelWithEfforts = { id: string; name: string; description: string | null; efforts: string[] };
       const withEfforts = await Promise.race([
         (async (): Promise<ModelWithEfforts[]> => {
           const out: ModelWithEfforts[] = [];
@@ -623,16 +632,18 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         })(),
         new Promise<ModelWithEfforts[]>((resolve) => setTimeout(() => resolve(baseModels), 4000)),
       ]);
-      return {
-        provider: p.provider,
-        models: withEfforts,
-      };
+      const resp: LlmModelsResponse = { provider: p.provider, models: withEfforts };
+      return resp;
     }
 
     // ── 嵌入源（远程/本地/关闭 三态）与模型管理 ──
     case 'dsh-memory/embedding-state-get': {
-      if (!embedManager) return { supported: false };
-      return { supported: true, ...(await embedManager.snapshot()) };
+      if (!embedManager) {
+        const v: EmbeddingStateResponse = { supported: false };
+        return v;
+      }
+      const v: EmbeddingStateResponse = { supported: true, ...(await embedManager.snapshot()) };
+      return v;
     }
 
     case 'dsh-memory/embedding-source-set': {
@@ -688,14 +699,14 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
 }
 
 /** 浏览器卡片字段（比 MemoryRecord 精简，去掉大 metadata）。 */
-function hitToUiRecord(r: { id: string; content: string; type: string; priority?: number; scene_name: string; timestamps?: number[]; createdAt?: number; updatedAt?: number; version?: number; source_message_ids?: string[]; score?: number; family?: string }): Record<string, unknown> {
+function hitToUiRecord(r: { id: string; content: string; type: string; priority?: number; scene_name: string; timestamps?: number[]; createdAt?: number; updatedAt?: number; version?: number; source_message_ids?: string[]; score?: number; family?: string }): UiRecord {
   return {
     id: r.id,
     content: r.content,
     type: r.type,
     priority: r.priority ?? 60,
     scene: r.scene_name,
-    family: r.family ?? null,
+    family: (r.family as MemoryFamily | undefined) ?? null,
     timestamps: (r.timestamps ?? []).map((t) => new Date(t).toISOString()),
     createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
     updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : null,

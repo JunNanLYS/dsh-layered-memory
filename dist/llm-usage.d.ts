@@ -10,7 +10,8 @@
  * 拿不到——按仓库既有口径记输入**字符**（中文 1 字 ≈ 1 token 保守折算，
  * 见 config.ts maxInputChars 注释），报告侧如实标注。
  */
-export type DistillLayer = 'l1-extract' | 'l1-dedup' | 'l2' | 'l3';
+import type { DistillLayer } from './contract.js';
+export type { DistillLayer } from './contract.js';
 export interface DistillLayerUsage {
     calls: number;
     failures: number;

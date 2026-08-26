@@ -7,6 +7,21 @@
 
 ### 新增
 
+- **RPC 契约单一事实源 `src/contract.ts`**：23 个 `dsh-memory/*` 端点的请求/响应
+  类型集中为 types-only 模块（零运行时代码），host 侧（stats.ts 的 case 表）与
+  client 侧共享同一套形状——契约漂移在编译期暴露，而不是等 UI 渲染出 undefined。
+  各 host 模块的纯数据类型（MemoryStats / RebuildStatus / CostSnapshot 族 /
+  EmbeddingStateView / MemoryLiveSettings / RecallSessionStats 等）迁入契约并在
+  原处保留 re-export；`EFFORT_CHOICES` 经 `satisfies` 反向锁定词表漂移。
+- **client 半边迁移 TS/TSX + esbuild 打包**：`client/client.js`（3433 行手写
+  ES5 单文件）重写为 `client/src/` 多文件 TSX（按底座/控件/pill/tabs 分层），
+  经 `scripts/build-client.mjs`（esbuild，cjs 体包进 factory wrapper，与官方
+  dsh-client-ui-* 包同构）产出单文件 `dist/client.js`。react / react/jsx-runtime /
+  @deepseek-ai/* 全部 external（宿主 require 注入，防双 react 实例）；**行为零
+  变更**（UI 逐像素等价、RPC 端点与载荷不变、handoff 协议不变）。新增
+  `npm run typecheck`（主 tsconfig + tsconfig.client.json 双检）；smoke 第 21 节
+  改为对**产物** dist/client.js 的断言（协议形状 + external 接线 + 既有令牌/
+  圆角/粒子场断言等价迁移）。
 - **蒸馏路由链编辑器（设置页 UI，统一列表）**：一张有序列表取代旧「蒸馏思考」
   全局切换器与「蒸馏模型」单路由选择器——第 1 行主路由（徽标「主」，可留空
   跟随默认模型），后续行按序降级；**档位逐路由设置**（缺省「跟随部署配置」，

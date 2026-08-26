@@ -18,26 +18,10 @@ import { fetch as undiciFetch, ProxyAgent, type Dispatcher } from 'undici';
 import type { MemoryLogger } from '../types.js';
 import { catalogById, catalogTotalBytes, MODEL_CATALOG, type CatalogEntry, type CatalogFile } from './model-catalog.js';
 
-export type DownloadPhase = 'downloading' | 'verifying' | 'done' | 'cancelled' | 'error';
-
-export interface DownloadProgress {
-  modelId: string;
-  phase: DownloadPhase;
-  /** 当前文件序号（1-based）。 */
-  fileIndex: number;
-  fileCount: number;
-  /** 当前文件已收字节（含续传基线）。 */
-  fileReceived: number;
-  fileTotal: number;
-  /** 整模型累计字节（含已完成文件；分母 = 目录总大小）。 */
-  overallReceived: number;
-  overallTotal: number;
-  /** EMA 平滑速度（字节/秒）。 */
-  speedBps: number;
-  startedAt: number;
-  /** phase=error 时的原因。 */
-  error?: string;
-}
+// DownloadPhase/DownloadProgress 已迁入契约单一事实源（src/contract.ts）；embedding 状态视图
+// （EmbeddingStateView.download）与 client 下载进度条共享同一形状。
+import type { DownloadProgress } from '../contract.js';
+export type { DownloadPhase, DownloadProgress } from '../contract.js';
 
 export interface ModelStatus {
   id: string;

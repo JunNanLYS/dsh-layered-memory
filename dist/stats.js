@@ -165,7 +165,8 @@ async function handleEndpoint(endpoint, payload, deps) {
                 throw new Error('档位存储未初始化');
             const p = (payload ?? {});
             const sessionId = expectSessionId(p.sessionId);
-            return { sessionId, mode: modes.get(sessionId), defaultMode: modes.default };
+            const v = { sessionId, mode: modes.get(sessionId), defaultMode: modes.default };
+            return v;
         }
         case 'dsh-memory/session-mode-set': {
             if (!modes)
@@ -178,7 +179,8 @@ async function handleEndpoint(endpoint, payload, deps) {
             }
             modes.set(sessionId, p.mode);
             deps.logger.info(`[memory] 会话档位设置 session=${sessionId} mode=${p.mode}`);
-            return { sessionId, mode: p.mode };
+            const v = { sessionId, mode: p.mode };
+            return v;
         }
         // ── 会话级统计（悬浮卡信息区；热路径端点，见 SessionInfoSource 的零 I/O 硬规则） ──
         case 'dsh-memory/session-stats': {
@@ -197,7 +199,7 @@ async function handleEndpoint(endpoint, payload, deps) {
             const chat = stores.state.forFamily('chat');
             const work = stores.state.forFamily('work');
             const lastAt = Math.max(chat.lastExtractAt, work.lastExtractAt);
-            return {
+            const v = {
                 supported: true,
                 sessionId,
                 mode,
@@ -212,6 +214,7 @@ async function handleEndpoint(endpoint, payload, deps) {
                     lastExtractAt: lastAt ? new Date(lastAt).toISOString() : null,
                 },
             };
+            return v;
         }
         case 'dsh-memory/settings-get': {
             const s = live?.get();
@@ -237,7 +240,7 @@ async function handleEndpoint(endpoint, payload, deps) {
             catch {
                 /* 路由解析/探询失败保持占位（effective 用运行时||静态值） */
             }
-            return {
+            const resp = {
                 supported: live?.supported ?? false,
                 settings: s ?? {
                     enabled: true, capture: true, distill: true, recall: true,
@@ -248,6 +251,7 @@ async function handleEndpoint(endpoint, payload, deps) {
                 ceilings: { capture: cfg.capture.enabled, distill: cfg.extract.enabled, recall: cfg.recall.enabled },
                 effort: {
                     current: s?.reasoningEffort ?? '',
+                    // 静态 schema 与 settings-set 写入门都以 EFFORT_CHOICES 白名单校验，这里断言回窄类型
                     effective: effortEffective,
                     fallback: cfg.llm.reasoningEffort,
                     options: effortOptions,
@@ -271,6 +275,7 @@ async function handleEndpoint(endpoint, payload, deps) {
                     effective: s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : cfg.llm.maxInputChars,
                 },
             };
+            return resp;
         }
         case 'dsh-memory/settings-set': {
             if (!live)
@@ -332,7 +337,8 @@ async function handleEndpoint(endpoint, payload, deps) {
                 throw new Error('开关更新载荷为空');
             await live.update(clean);
             deps.logger.info(`[memory] 设置更新：${JSON.stringify(clean)}`);
-            return { ok: true, settings: live.get() };
+            const v = { ok: true, settings: live.get() };
+            return v;
         }
         case 'dsh-memory/list-records': {
             const p = (payload ?? {});
@@ -348,22 +354,24 @@ async function handleEndpoint(endpoint, payload, deps) {
                 const wanted = offset + limit + 1;
                 const hits = await stores.l1.search(p.query, Math.min(wanted, SEARCH_CAP), { type: p.type || undefined });
                 const filtered = p.scene ? hits.filter((h) => h.scene_name === p.scene) : hits;
-                return {
+                const resp = {
                     items: filtered.slice(offset, offset + limit).map(hitToUiRecord),
                     hasMore: filtered.length > offset + limit,
                     total: null,
                     truncated: wanted > SEARCH_CAP,
                     scenes: offset === 0 ? stores.l1.distinctScenes() : undefined,
                 };
+                return resp;
             }
             const { items, total } = stores.l1.list({ type: p.type || undefined, scene: p.scene || undefined, limit, offset });
-            return {
+            const resp = {
                 items: items.map(hitToUiRecord),
                 hasMore: offset + items.length < total,
                 total,
                 truncated: false,
                 scenes: offset === 0 ? stores.l1.distinctScenes() : undefined,
             };
+            return resp;
         }
         case 'dsh-memory/scenes': {
             // 两族拼接展示（浏览器保持混合视图；路径冲突时后写入的族覆盖显示名，读取仍各自独立）
@@ -391,8 +399,10 @@ async function handleEndpoint(endpoint, payload, deps) {
             return { lines: readLogTail(join(dataDir, 'memory.log'), Math.min(Math.max(Number(p.lines) || 200, 1), 1000)) };
         }
         case 'dsh-memory/rebuild-status': {
-            if (!rebuild)
-                return { supported: false, running: false, phase: 'idle' };
+            if (!rebuild) {
+                const v = { supported: false, running: false, phase: 'idle' };
+                return v;
+            }
             return rebuild.getStatus();
         }
         case 'dsh-memory/rebuild-start': {
@@ -450,7 +460,7 @@ async function handleEndpoint(endpoint, payload, deps) {
             catch {
                 effective = null; // 无法解析（无默认选择且未覆盖）时 UI 显示占位
             }
-            return {
+            const resp = {
                 supported: true,
                 providers,
                 default: def,
@@ -467,6 +477,7 @@ async function handleEndpoint(endpoint, payload, deps) {
                     source: chainCurrent.length ? 'runtime' : 'static',
                 },
             };
+            return resp;
         }
         case 'dsh-memory/llm-models': {
             const p = (payload ?? {});
@@ -503,16 +514,17 @@ async function handleEndpoint(endpoint, payload, deps) {
                 })(),
                 new Promise((resolve) => setTimeout(() => resolve(baseModels), 4000)),
             ]);
-            return {
-                provider: p.provider,
-                models: withEfforts,
-            };
+            const resp = { provider: p.provider, models: withEfforts };
+            return resp;
         }
         // ── 嵌入源（远程/本地/关闭 三态）与模型管理 ──
         case 'dsh-memory/embedding-state-get': {
-            if (!embedManager)
-                return { supported: false };
-            return { supported: true, ...(await embedManager.snapshot()) };
+            if (!embedManager) {
+                const v = { supported: false };
+                return v;
+            }
+            const v = { supported: true, ...(await embedManager.snapshot()) };
+            return v;
         }
         case 'dsh-memory/embedding-source-set': {
             if (!embedManager)

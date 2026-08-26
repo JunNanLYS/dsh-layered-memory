@@ -1,24 +1,7 @@
 import type { MemoryLogger } from '../types.js';
 import { type CatalogEntry } from './model-catalog.js';
-export type DownloadPhase = 'downloading' | 'verifying' | 'done' | 'cancelled' | 'error';
-export interface DownloadProgress {
-    modelId: string;
-    phase: DownloadPhase;
-    /** 当前文件序号（1-based）。 */
-    fileIndex: number;
-    fileCount: number;
-    /** 当前文件已收字节（含续传基线）。 */
-    fileReceived: number;
-    fileTotal: number;
-    /** 整模型累计字节（含已完成文件；分母 = 目录总大小）。 */
-    overallReceived: number;
-    overallTotal: number;
-    /** EMA 平滑速度（字节/秒）。 */
-    speedBps: number;
-    startedAt: number;
-    /** phase=error 时的原因。 */
-    error?: string;
-}
+import type { DownloadProgress } from '../contract.js';
+export type { DownloadPhase, DownloadProgress } from '../contract.js';
 export interface ModelStatus {
     id: string;
     /** none=未下载；partial=有断点/不完整；downloaded=全部文件就位且尺寸吻合。 */
@@ -104,4 +87,3 @@ export declare function resolveProxyUrl(setting: string | undefined, host: strin
 /** 代理 URL 日志脱敏：剥掉 userinfo（内网代理常带 user:pass 凭据），只留 scheme//host；
  *  解析失败的串原样也可能是凭据形态，返回占位符。 */
 export declare function maskProxyUrl(proxy: string): string;
-export {};

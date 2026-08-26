@@ -1,6 +1,10 @@
 import Schema from '@deepseek-ai/schemastery';
 import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 import { EFFORT_CHOICES } from './config.js';
+/**
+ * 运行时统一路由链条目：[0] = 主路由（provider/model 双空 = 跟随默认模型），
+ * [1..] = 回退链（按序降级）；reasoningEffort 为该路由的档位覆盖（'' = 跟随部署全局）。
+ */
 /** 运行时路由链上限（写入门与 UI 同限，防误粘贴巨数组撑爆 settings 存储）。 */
 export const DISTILL_CHAIN_MAX = 8;
 /**
