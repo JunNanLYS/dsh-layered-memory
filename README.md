@@ -276,6 +276,7 @@ ONNX 量化 **CPU 推理**——无需 API Key，数据不出本机）。本地�
 | `embedding.mirror` | `https://hf-mirror.com` | 本地模型下载镜像根地址（可改回官方 `https://huggingface.co`） |
 | `embedding.proxy` | `''` | 模型下载代理三态：`''`（默认）= 自动探测代理环境变量（`HTTPS_PROXY`/`ALL_PROXY` 等，尊重 `NO_PROXY`）；`none` = 禁用强制直连；其他值 = 代理 URL（如 `http://127.0.0.1:7890`）。镜像直连在国内网络间歇不可达（直连超时与污染字节交替出现过），开代理的机器建议保持默认自动探测 |
 | `llm.provider/model` | 空 | 蒸馏模型静态路由（部署 pin）：provider 与 model **双字段齐**时锁定蒸馏路由，优先于设置页的运行时选择与默认模型（部署可强制蒸馏走指定路由）；留空则跟随"设置页选择 → 默认模型"。运行时可在设置页 → 记忆 → 概览的"蒸馏模型"选择器从**已配置的供应商**（含 dsh 设置 → 模型里添加的自定义供应商）中切换，即时生效无需重启 |
+| `llm.fallbacks` | `[]` | 蒸馏回退链：主路由失败（报错/被掐断/网络异常/**空输出**）后按条目顺序逐个降级尝试的备用路由列表，条目 = `{provider, model, reasoningEffort?}`（档位非空覆盖全局 `llm.reasoningEffort`，仍按模型能力钳制）；与主路由完全相同的条目自动跳过；**每条路由各享全额 `timeoutMs`**；全部失败交既有按会话退避重试。空数组（缺省）= 单路由行为不变（详见下方[蒸馏回退链与慢 TTFT 模型](#蒸馏回退链与慢-ttft-模型)） |
 | `llm.maxTokens` | `65536` | 未分层调用的兜底输出总闸。各蒸馏层有独立预算（抽取 16k / 去重 8k / L2 32k / L3 16k；思考档 high/xhigh/max 时自动 ×4，防 reasoning 吃光预算），分层预算可在设置页 → 记忆 → 概览 → 蒸馏参数运行时调整（留空/0 = 跟随内置默认） |
 | `llm.reasoningEffort` | 空 | 蒸馏思考档位：空串 = **自动**（按模型能力解析：模型默认档 → `high`）；显式值（`off`/`none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`）仅在该模型声明支持时发送——跨供应商 effort 词汇表不同（deepseek 认 `off`，OpenAI 系是 `none`，未声明档位的模型不传），不支持的档位自动降级为不传并告警一次；思考档 high/xhigh/max 时输出预算自动 ×4。运行时在设置页 → 记忆 → 概览切换，可选档位表跟随当前模型实时显示 |
 | `llm.temperature` | `0.3` | 蒸馏温度 |
@@ -284,6 +285,28 @@ ONNX 量化 **CPU 推理**——无需 API Key，数据不出本机）。本地�
 | `tokenCost.retentionDays` | `365` | 蒸馏成本明细（token_cost 表）保留天数，写入时滚动清理更早行；`0` = 永久保留。成本看板「近 N 天」窗口上限同此值 |
 | `tools` | `true` | 是否注册模型可调用的记忆工具 |
 | `benchControl` | `false` | 注册 bench 控制服务（进程内 rebuild 触发/会话档位设置/蒸馏用量快照，供基准 lifecycle 赛道）。默认关——生产部署零表面积，勿随意开启 |
+
+### 蒸馏回退链与慢 TTFT 模型
+
+部分推理供应商的免费/慢速档位**首 token 延迟（TTFT）可达 20 秒以上**，而部分上游网关会在连接静默约 20 秒时掐断——蒸馏调用以固定 ~20s 失败（`llm aborted`），插件侧 120s 超时根本轮不到生效（[#31](https://github.com/JunNanLYS/dsh-layered-memory/issues/31) 的实测场景）。三层缓解按需取用：
+
+1. **换路由**（最直接）：设置页 → 记忆 → 概览的"蒸馏模型"选择器即时切换，或静态 pin `llm.provider`/`llm.model`。
+2. **回退链**（自动降级）：主路由失败时按序自动换备用路由，无需人工干预：
+
+   ```yaml
+   llm:
+     provider: opencode-go          # 主路由（也可不 pin，跟随设置页选择/默认模型）
+     model: ox-alpha-free
+     fallbacks:                     # 条目顺序 = 降级优先级；不配置 = 单路由行为不变
+       - provider: opencode-go
+         model: deepseek-v4-flash
+         reasoningEffort: low       # 可选：该路由的档位覆盖（缺省跟随全局）
+       - provider: deepseek-official
+         model: deepseek-v4-flash
+   ```
+
+   失败 = 报错 / 被掐断 / 网络异常 / **空输出**（流正常结束但 0 字符——对蒸馏而言必然在解析阶段报废，改判为该路由失败而非返回空串）；调用方主动取消不降级；每条路由各享**全额** `llm.timeoutMs`（共享预算会让慢 TTFT 的回退路由拿到的窗口小于它真实需要的首包时间，回退链形同虚设）；token 成本看板记录实际服务的路由。设置页的回退链可视化编辑器属后续版本，当前经组合配置书写。
+3. **调高超时**：`llm.timeoutMs` 只在路由确实慢但网关不掐时有用；网关 20s 掐断的场景调插件超时无效，请用前两层。
 
 ## 日志与故障排查
 
