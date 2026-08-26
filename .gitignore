@@ -2,7 +2,7 @@ node_modules/
 dist-smoke/
 .zcode/
 wayfinder/
-AGENTS.md
+/AGENTS.md
 .scratch/
 docs/dsh-dev-experience.md
 docs/review-report-*.md
