@@ -416,7 +416,7 @@ var __defProp = Object.defineProperty;
 		    ".dsh-mem-pill-off:hover { background: var(--dsh-mem-bg-hover); }",
 		    ".dsh-mem-pill-off:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
 		    // 流光态焦点环（同一物理按钮的两态焦点反馈对称，配方同 .dsh-mem-btn）
-		    ".dsh-mem-flow:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset:  1px; }",
+		    ".dsh-mem-flow:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
 		    // ── 浮层（dsh 原生菜单同配方：不透明实底 + inverted 描边（浅色不可见）+ lv3 阴影） ──
 		    ".dsh-mem-popover {",
 		    "  border-radius: 12px;",
