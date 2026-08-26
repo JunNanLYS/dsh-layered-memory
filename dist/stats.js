@@ -12,7 +12,8 @@ import { join } from 'node:path';
 import { EFFORT_CHOICES, resolveDataDir } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { emptyRecallStats } from './hooks/recall.js';
-import { decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
+import { buildRouteChain, decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
+import { projectDistillChain, validateDistillChain } from './settings.js';
 import { errDetail } from './util/filelog.js';
 import { snapshotTokenCost } from './token-cost.js';
 const require = createRequire(import.meta.url);
@@ -238,7 +239,7 @@ async function handleEndpoint(endpoint, payload, deps) {
                 supported: live?.supported ?? false,
                 settings: s ?? {
                     enabled: true, capture: true, distill: true, recall: true,
-                    reasoningEffort: '', distillProvider: '', distillModel: '',
+                    reasoningEffort: '', distillProvider: '', distillModel: '', distillChain: [],
                     distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, distillMaxInputChars: 0,
                 },
                 // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
@@ -277,6 +278,13 @@ async function handleEndpoint(endpoint, payload, deps) {
             for (const key of ['enabled', 'capture', 'distill', 'recall']) {
                 if (typeof patch[key] === 'boolean')
                     clean[key] = patch[key];
+            }
+            // 运行时统一路由链：结构校验后整体写入（空数组 = 回到跟随部署配置）
+            if (patch.distillChain !== undefined) {
+                const err = validateDistillChain(patch.distillChain);
+                if (err)
+                    throw new Error(err);
+                clean.distillChain = patch.distillChain;
             }
             if (patch.reasoningEffort !== undefined) {
                 const v = String(patch.reasoningEffort);
@@ -425,9 +433,16 @@ async function handleEndpoint(endpoint, payload, deps) {
             }
             const s = live?.get();
             const current = { provider: s?.distillProvider ?? '', model: s?.distillModel ?? '' };
+            // 统一路由链块：current = 运行时链（含旧键投影）；static = 部署静态回退链；
+            // effective = buildRouteChain 语义的实际链（主路由 + 有效条目去重，每条带档位候选）；
+            // source 标记当前链来自运行时还是部署静态（UI 的跟随态/接管态判定）
+            const chainCurrent = projectDistillChain(s);
+            let effectiveChain = [];
             let effective = null;
             try {
-                effective = await resolveModelRoute(deps.ctx, effectiveCfg(cfg, live));
+                const cfgView = effectiveCfg(cfg, live);
+                effective = await resolveModelRoute(deps.ctx, cfgView);
+                effectiveChain = buildRouteChain({ provider: effective.provider, model: effective.model, effort: cfgView.llm.primaryEffort || '' }, cfgView.llm.fallbacks, cfgView.llm.reasoningEffort);
             }
             catch {
                 effective = null; // 无法解析（无默认选择且未覆盖）时 UI 显示占位
@@ -442,6 +457,12 @@ async function handleEndpoint(endpoint, payload, deps) {
                 // 所选供应商是否仍在已注册路由中（用户删掉供应商后提示回退）
                 currentRegistered: current.provider === '' || providers.some((p) => p.id === current.provider),
                 effective,
+                chain: {
+                    current: chainCurrent,
+                    static: cfg.llm.fallbacks ?? [],
+                    effectiveChain,
+                    source: chainCurrent.length ? 'runtime' : 'static',
+                },
             };
         }
         case 'dsh-memory/llm-models': {
@@ -456,9 +477,22 @@ async function handleEndpoint(endpoint, payload, deps) {
                 deps.ctx.llm.listModels(p.provider),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('模型列表查询超时')), 8000)),
             ]);
+            // 每个模型附思考档位能力表（resolveModelInfo 复用 effortCache，本地快照不触网）：
+            // 统一路由链编辑器的逐行档位下拉数据源；探询失败/未声明 → 空表（UI 只显示「跟随部署配置」）
+            const withEfforts = [];
+            for (const m of models) {
+                let efforts = [];
+                try {
+                    efforts = (await resolveModelEfforts(deps.ctx, p.provider, m.id))?.efforts ?? [];
+                }
+                catch {
+                    efforts = [];
+                }
+                withEfforts.push({ id: m.id, name: m.name, description: m.description ?? null, efforts });
+            }
             return {
                 provider: p.provider,
-                models: models.map((m) => ({ id: m.id, name: m.name, description: m.description ?? null })),
+                models: withEfforts,
             };
         }
         // ── 嵌入源（远程/本地/关闭 三态）与模型管理 ──

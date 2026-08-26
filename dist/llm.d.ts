@@ -70,11 +70,13 @@ export interface DistillRoute {
 /**
  * 组装蒸馏路由链（纯决策，smoke 决策表缝）：主路由在前、回退条目按配置顺序在后。
  * provider/model 缺失的条目剔除；与主路由或先前条目完全相同（provider+model）的
- * 条目跳过——注定失败的重复尝试不值得占位。每条路由携带生效档位候选。
+ * 条目跳过——注定失败的重复尝试不值得占位。每条路由携带生效档位候选：
+ * 主路由可带显式档位（运行时统一链注入 primaryEffort），条目档位非空覆盖全局。
  */
 export declare function buildRouteChain(primary: {
     provider: string;
     model: string;
+    effort?: string;
 }, fallbacks: FallbackRouteEntry[] | undefined, globalEffort: string): DistillRoute[];
 export interface ModelEffortInfo {
     /** 模型可设置的思考档位 id（适配器声明；空 = 未声明/不可设置） */

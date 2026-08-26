@@ -1848,29 +1848,43 @@ window.__ModuleLoader__.load({
     // （后台仍刷新），面板首次加载时预取全部供应商——消除"切换后模型按钮几秒真空期"
     var modelsCache = {};
 
-    // ── 蒸馏模型选择器（供应商/模型两级下拉）──
-    // 数据源：dsh-memory/llm-providers（供应商目录 + 当前覆盖 + 实际生效路由）与
-    // dsh-memory/llm-models（所选供应商的模型列表）。写入走 settings-set 的
-    // distillProvider/distillModel 两键（成对提交）。部署静态 pin（pinned）时禁用。
-    function LlmModelRow(props) {
+    // ── 蒸馏路由链编辑器（统一列表：第 1 行主路由 + 后续回退链）──
+    // 数据源：dsh-memory/llm-providers 的 chain 块（current 运行时链（含旧键投影）/
+    // static 部署回退链 / effective 实际链（去重后、每条带档位候选）/ source 跟随或
+    // 接管）与 dsh-memory/llm-models（模型目录，每模型附 efforts 档位表）。写入走
+    // settings-set 的 distillChain（空数组 = 跟随部署配置与默认模型）。部署静态 pin
+    // （pinned）时整区块只读。旧「蒸馏思考」全局切换器与「蒸馏模型」单路由选择器
+    // 已由本编辑器取代：档位逐路由设置，缺省「跟随部署配置」（部署全局静态档）。
+    function RouteChainEditor(props) {
       var rpc = props.rpc;
       var disabled = !!props.disabled;
 
-      // 注意：全部 hook 必须在任何提前返回之前声明（Rules of Hooks）——
-      // info 未加载的首渲染会 return null，晚于它的 useState 会让 hook 数随渲染漂移而崩溃
       var infoState = react.useState(null);
       var setInfo = infoState[1];
-      var modelsState = react.useState(null);
-      var setModels = modelsState[1];
-      var draftState = react.useState("");
-      var setDraft = draftState[1];
-      var manualState = react.useState("");
-      var manualModel = manualState[0];
-      var setManualModel = manualState[1];
+      // 编辑草稿（null = 跟随态：只读展示 + 「编辑为运行时链」入口）
+      var rowsState = react.useState(null);
+      var rows = rowsState[0];
+      var setRows = rowsState[1];
+      // 行级校验错误（保存时填、任何编辑动作清）与区块级错误文案
+      var rowErrState = react.useState({});
+      var rowErrs = rowErrState[0];
+      var setRowErrs = rowErrState[1];
+      var errState = react.useState(null);
+      var setErr = errState[1];
+      // 手动输入模型 id（供应商未提供目录时）：正在输入的行下标与文本
+      var manualState = react.useState({ idx: -1, text: "" });
+      var manual = manualState[0];
+      var setManual = manualState[1];
 
       // 写入在途时丢弃轮询响应（在途请求读到的是写入前的旧值，直接 set 会把
-      // 乐观更新闪回旧文本）；写入成功后主动拉一次服务器真值收敛
+      // 乐观更新闪回）；写入成功后主动拉一次服务器真值收敛
       var pendingWrites = react.useRef(0);
+
+      var info = infoState[0];
+
+      function copyRow(e) {
+        return { provider: e.provider || "", model: e.model || "", reasoningEffort: e.reasoningEffort || "" };
+      }
 
       function refreshInfo() {
         rpc("dsh-memory/llm-providers", {})
@@ -1886,14 +1900,7 @@ window.__ModuleLoader__.load({
         return function () { clearInterval(timer); };
       }, [rpc]);
 
-      var info = infoState[0];
-      // 草稿供应商（已选待挑模型）优先于已存选择
-      var draft = draftState[0];
-      var curProvider = draft || (info && info.current ? info.current.provider : "");
-      var curModel = info && info.current ? info.current.model : "";
-
-      // 预取各供应商模型列表进缓存（后台、失败忽略）：llm-providers 轮询每次都会
-      // 走一遍，缓存齐了以后是空循环
+      // 预取各供应商模型目录（含 efforts 档位表）进缓存：行内模型/档位下拉即时渲染
       react.useEffect(function () {
         if (!info || !info.providers) return;
         info.providers.forEach(function (p) {
@@ -1904,170 +1911,321 @@ window.__ModuleLoader__.load({
         });
       }, [rpc, info]);
 
+      // 运行时链已存在 → 草稿初始化一次（此后轮询不覆盖本地编辑；清空跟随后退回）
       react.useEffect(function () {
-        if (!curProvider) { setModels(null); return undefined; }
-        var alive = true;
-        var cached = modelsCache[curProvider];
-        var picked = false;
-        // 缓存命中：同步先渲染（跳过"加载中"真空期），后台仍刷新一遍
-        if (cached) {
-          setModels(cached);
-          // 供应商切换自动落第一个模型（缓存路径）：当前覆盖不属于该供应商 → 成对写覆盖
-          if (draft && cached.length > 0 && !cached.some(function (m) { return m.id === curModel; })) {
-            picked = true;
-            writeLlm({ distillProvider: draft, distillModel: cached[0].id });
-          }
-        } else {
-          setModels(null);
+        if (rows === null && info && info.chain && info.chain.current.length) {
+          setRows(info.chain.current.map(copyRow));
         }
-        rpc("dsh-memory/llm-models", { provider: curProvider })
-          .then(function (r) {
-            if (!alive) return;
-            var list = (r && r.ok && r.value && r.value.models) || [];
-            modelsCache[curProvider] = list;
-            setModels(list);
-            // 自动落第一个模型（网络路径，缓存未命中或缓存路径未写时）
-            if (!picked && draft && list.length > 0 && !list.some(function (m) { return m.id === curModel; })) {
-              writeLlm({ distillProvider: draft, distillModel: list[0].id });
-            }
-          })
-          .catch(function () { if (alive && !cached) setModels([]); });
-        return function () { alive = false; };
-      }, [rpc, curProvider]);
+      }, [info, rows]);
 
-      var writeLlm = function (patch) {
-        if (!info) return;
-        // 乐观更新：覆盖必须写成视图键 current.provider/model（按钮文本读这对键）——
-        // 直接合并 settings 键 distillProvider/distillModel 对显示层是空操作，文本要
-        // 等 5s 轮询才变；effective 同步推导（"当前生效"描述行），失败回滚
-        var prev = info;
-        var prevCurrent = prev.current || {};
-        var np = patch.distillProvider !== undefined ? patch.distillProvider : prevCurrent.provider;
-        var nm = patch.distillModel !== undefined ? patch.distillModel : prevCurrent.model;
-        var nextEffective;
-        if (np && nm) nextEffective = { provider: np, model: nm };
-        else if (prev.default) nextEffective = { provider: prev.default.provider, model: prev.default.model };
-        else nextEffective = null;
-        setInfo(Object.assign({}, prev, {
-          current: Object.assign({}, prevCurrent, { provider: np, model: nm }),
-          effective: nextEffective,
-        }));
-        setDraft("");
+      function updateRow(i, patch) {
+        setRows(rows.map(function (r, j) { return j === i ? Object.assign({}, r, patch) : r; }));
+        setRowErrs({});
+      }
+
+      /** 行移动：位置即优先级。第 2 行上移 = 与主路由互换（主路由为空时为顶替：
+       *  空行代表「跟随默认」，落到回退位是非法空条目，直接消失不保留）。 */
+      function moveRow(i, dir) {
+        var next = rows.map(copyRow);
+        if (dir < 0 && i === 1) {
+          if (!next[0].provider) next = next.slice(1);
+          else { var t = next[0]; next[0] = next[1]; next[1] = t; }
+        } else if (dir < 0 && i > 1) {
+          var t2 = next[i - 1]; next[i - 1] = next[i]; next[i] = t2;
+        } else if (dir > 0 && i < next.length - 1 && !(i === 0 && !next[0].provider)) {
+          var t3 = next[i + 1]; next[i + 1] = next[i]; next[i] = t3;
+        }
+        setRows(next);
+        setRowErrs({});
+      }
+
+      function removeRow(i) {
+        // 主路由行的删除语义 = 重置为跟随默认（回退行保留）
+        if (i === 0) setRows([{ provider: "", model: "", reasoningEffort: "" }].concat(rows.slice(1)));
+        else setRows(rows.slice(0, i).concat(rows.slice(i + 1)));
+        setRowErrs({});
+      }
+
+      function addRow() {
+        var defProv = (rows[0] && rows[0].provider) || "";
+        if (!defProv && info.providers && info.providers[0]) defProv = info.providers[0].id;
+        setRows(rows.concat([{ provider: defProv, model: "", reasoningEffort: "" }]));
+        setRowErrs({});
+      }
+
+      /** 跟随态入口：把部署静态回退链拷为可编辑草稿（主路由保持跟随默认），
+       *  保存第一刻起运行时链接管静态链。 */
+      function forkStatic() {
+        var st = (info.chain && info.chain.static) || [];
+        setRows([{ provider: "", model: "", reasoningEffort: "" }].concat(st.map(copyRow)));
+        setRowErrs({});
+      }
+
+      function save() {
+        var errs = {};
+        var seen = {};
+        if ((rows[0].provider && !rows[0].model) || (!rows[0].provider && rows[0].model)) {
+          errs[0] = "主路由行供应商与模型须成对（双空 = 跟随默认模型）";
+        }
+        if (rows[0].provider && rows[0].model) seen[rows[0].provider + "::" + rows[0].model] = 0;
+        for (var i = 1; i < rows.length; i++) {
+          if (!rows[i].provider || !rows[i].model) { errs[i] = "回退路由必须显式选择供应商与模型"; continue; }
+          var key = rows[i].provider + "::" + rows[i].model;
+          if (seen[key] !== undefined) {
+            errs[i] = seen[key] === 0 ? "与主路由完全相同（运行时会跳过，请去重）" : "与第 " + (seen[key] + 1) + " 行重复";
+          } else {
+            seen[key] = i;
+          }
+        }
+        setRowErrs(errs);
+        if (Object.keys(errs).length) return;
+        // 乐观更新（写入在途时轮询响应被丢弃），成功后拉真值收敛
         pendingWrites.current += 1;
-        rpc("dsh-memory/settings-set", patch)
+        setInfo(Object.assign({}, info, {
+          chain: Object.assign({}, info.chain, { current: rows.map(copyRow), source: "runtime" }),
+        }));
+        rpc("dsh-memory/settings-set", { distillChain: rows })
           .then(function (r) {
             pendingWrites.current -= 1;
-            if (!r || !r.ok) {
-              setInfo(prev);
-              setDraft(draft);
-            } else {
-              refreshInfo();
-            }
+            setErr(!r || r.ok ? null : "路由链保存失败：" + ((r && r.error && r.error.message) || "未知错误"));
+            refreshInfo();
           })
-          .catch(function () {
+          .catch(function (e) {
             pendingWrites.current -= 1;
-            setInfo(prev);
-            setDraft(draft);
+            setErr("路由链保存失败：" + String((e && e.message) || e));
+            refreshInfo();
           });
-      };
+      }
+
+      function clearToFollow() {
+        pendingWrites.current += 1;
+        rpc("dsh-memory/settings-set", { distillChain: [] })
+          .then(function (r) {
+            pendingWrites.current -= 1;
+            setRows(null);
+            setRowErrs({});
+            setErr(!r || r.ok ? null : "清空失败，请重试");
+            refreshInfo();
+          })
+          .catch(function (e) {
+            pendingWrites.current -= 1;
+            setErr("清空失败：" + String((e && e.message) || e));
+            refreshInfo();
+          });
+      }
 
       if (!info) return null;
-      if (info.pinned) {
-        // 部署静态 pin：显示固定路由，选择器不出场
+
+      var providers = info.providers || [];
+      var providersById = {};
+      providers.forEach(function (p) { providersById[p.id] = p; });
+
+      var STY = {
+        wrap: { padding: "8px 0" },
+        row: { background: "var(--dsh-mem-bg-inset)", borderRadius: 8, padding: 8, marginBottom: 8, border: "1px solid transparent" },
+        rowErr: { border: "1px solid var(--dsh-mem-danger)" },
+        badge: { flexShrink: 0, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "var(--dsh-mem-accent-weak)", color: "var(--dsh-mem-accent-text)", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" },
+        head: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 },
+        foot: { display: "flex", alignItems: "center", gap: 8 },
+        ico: { padding: 0, width: 26, height: 26, minWidth: 26, fontSize: 13, lineHeight: "20px" },
+        add: { width: "100%", padding: "7px 0", fontSize: 12.5, color: "var(--dsh-mem-text-3)", background: "transparent", border: "1px dashed var(--dsh-mem-border-strong)", borderRadius: 8 },
+        ghost: { border: "none", background: "transparent", color: "var(--dsh-mem-text-3)" },
+        note: { fontSize: 11, color: "var(--dsh-mem-text-3)", marginTop: 6 },
+        warn: { fontSize: 11, color: "var(--dsh-mem-danger)", marginTop: 6 },
+        mono: { fontSize: 12.5, color: "var(--dsh-mem-text-1)", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+        roRow: { display: "flex", alignItems: "center", gap: 8, background: "var(--dsh-mem-bg-inset)", borderRadius: 8, padding: "7px 10px", marginBottom: 6 },
+      };
+
+      /** 只读行（pinned / 跟随态共用）。 */
+      function roRow(e, i) {
         return react.createElement(
-          "div", { style: S.switchRow },
-          react.createElement("div", null,
-            react.createElement("div", { style: S.switchLabel }, "蒸馏模型"),
-            react.createElement(
-              "div", { style: S.switchDesc },
-              "已由部署配置固定：" + info.effective.provider + " / " + info.effective.model +
-                "（如需在页面切换，请移除 profile cordis.patch.yml 中 llm 的 provider/model 覆盖）",
-            )),
+          "div", { key: "ro" + i, style: STY.roRow },
+          react.createElement("span", { style: STY.badge }, i === 0 ? "主" : String(i + 1)),
+          react.createElement("span", { style: STY.mono }, e.provider + " / " + e.model),
+          react.createElement("span", { style: { marginLeft: "auto", flexShrink: 0, fontSize: 11, color: "var(--dsh-mem-text-3)" } },
+            e.effort ? "档位 " + e.effort : "跟随部署配置"),
         );
       }
 
-      var providers = info.providers || [];
-      var models = modelsState[0];
-      var providerKnown = curProvider === "" || providers.some(function (p) { return p.id === curProvider; });
-      var modelKnown = models && models.some(function (m) { return m.id === curModel; });
-      // 供应商列表为空数组 = 适配器不提供模型目录：降级为手动输入模型 id
-      var manualInput = models !== null && models.length === 0;
-
-      var defaultLabel = info.default
-        ? "跟随默认（" + info.default.provider + " / " + info.default.model + "）"
-        : "跟随默认";
-
-      var providerOptions = [{ id: "", label: defaultLabel }].concat(
-        providers.map(function (p) { return { id: p.id, label: p.name + "（" + p.id + "）" }; }),
-      );
-      if (curProvider && !providerKnown) {
-        providerOptions.push({ id: curProvider, label: curProvider + "（已不在列表）" });
+      // pinned：整区块只读（部署锁定路由；静态链照常生效但不可在此编辑）
+      if (info.pinned) {
+        var effPin = (info.chain && info.chain.effectiveChain) || [];
+        return react.createElement(
+          "div", { style: STY.wrap },
+          effPin.map(roRow),
+          react.createElement("div", { style: STY.note }, "部署已锁定路由（pin 优先于运行时链）；调整请修改 profile cordis.patch.yml 中 llm 的配置。"),
+        );
       }
 
-      var modelOptions = (models || []).map(function (m) {
-        return { id: m.id, label: m.name !== m.id ? m.name + "（" + m.id + "）" : m.id };
+      // 跟随态：未配置运行时链 → 只读展示实际链 +「编辑为运行时链」
+      if (rows === null) {
+        var effFollow = (info.chain && info.chain.effectiveChain) || [];
+        return react.createElement(
+          "div", { style: STY.wrap },
+          effFollow.length === 0
+            ? react.createElement("div", { style: S.switchDesc }, "蒸馏跟随默认模型，未配置回退链。")
+            : effFollow.map(roRow),
+          react.createElement("div", { style: { marginTop: 6 } },
+            react.createElement(NButton, { onClick: forkStatic, disabled: disabled }, "编辑为运行时链")),
+          react.createElement("div", { style: STY.note }, "未配置运行时链时跟随部署配置；「编辑为运行时链」会拷贝部署回退链为草稿，保存起运行时链接管。"),
+        );
+      }
+
+      // 编辑态：统一列表（每行供应商 / 模型 / 档位 + 序调整 + 删除）
+      var capped = rows.length >= 8;
+      var dirty = JSON.stringify(rows) !== JSON.stringify((info.chain && info.chain.current) || []);
+
+      var rowEls = rows.map(function (row, i) {
+        var isPrimary = i === 0;
+        var known = !row.provider || !!providersById[row.provider];
+        var modelsLoaded = row.provider ? Object.prototype.hasOwnProperty.call(modelsCache, row.provider) : false;
+        var modelList = modelsLoaded ? modelsCache[row.provider] : [];
+        // 供应商列表为空数组 = 适配器不提供模型目录：该行降级为手动输入模型 id
+        var manualInput = modelsLoaded && modelList.length === 0;
+        var curEfforts = [];
+        for (var mi = 0; mi < modelList.length; mi++) {
+          if (modelList[mi].id === row.model) { curEfforts = modelList[mi].efforts || []; break; }
+        }
+        var providerOptions = providers.map(function (p) {
+          return { id: p.id, label: p.name !== p.id ? p.name + "（" + p.id + "）" : p.id };
+        });
+        if (isPrimary) {
+          providerOptions = [{
+            id: "",
+            label: info.default ? "跟随默认模型（" + info.default.provider + " / " + info.default.model + "）" : "跟随默认模型",
+          }].concat(providerOptions);
+        }
+        if (row.provider && !providersById[row.provider]) {
+          providerOptions.push({ id: row.provider, label: row.provider + "（已不在列表）" });
+        }
+        var modelOptions = modelList.map(function (m) {
+          return { id: m.id, label: m.name !== m.id ? m.name + "（" + m.id + "）" : m.id };
+        });
+        if (row.model && !modelList.some(function (m) { return m.id === row.model; })) {
+          modelOptions.push({ id: row.model, label: row.model + "（已不在列表）" });
+        }
+        var effortOptions = [{ id: "", label: "跟随部署配置" }].concat(
+          curEfforts.map(function (k) { return { id: k, label: k }; })
+        );
+
+        return react.createElement(
+          "div", { key: "row" + i, style: Object.assign({}, STY.row, rowErrs[i] ? STY.rowErr : null) },
+          react.createElement(
+            "div", { style: STY.head },
+            react.createElement("span", { style: STY.badge }, isPrimary ? "主" : String(i + 1)),
+            react.createElement(NSel, {
+              style: { flexShrink: 0, width: 168 },
+              options: providerOptions,
+              value: row.provider,
+              disabled: disabled,
+              placeholder: isPrimary ? "跟随默认模型" : "供应商",
+              onChange: function (v) { updateRow(i, { provider: v, model: "", reasoningEffort: "" }); },
+            }),
+            !row.provider
+              ? null
+              : manualInput
+                ? react.createElement(NInput, {
+                    style: { flex: 1, minWidth: 140 },
+                    placeholder: "模型 id（该供应商未提供列表，输入后回车）…",
+                    value: manual.idx === i ? manual.text : "",
+                    onChange: function (e) { setManual({ idx: i, text: e.target.value }); },
+                    onKeyDown: function (e) {
+                      if (e.key === "Enter") {
+                        var v = (manual.idx === i ? manual.text : "").trim();
+                        if (v) { updateRow(i, { model: v }); setManual({ idx: -1, text: "" }); }
+                      }
+                    },
+                  })
+                : react.createElement(NSel, {
+                    style: { flex: 1, minWidth: 140 },
+                    options: modelOptions,
+                    value: row.model,
+                    disabled: disabled || !modelsLoaded,
+                    placeholder: modelsLoaded ? (isPrimary ? "（选择模型，可留空跟随默认）" : "（选择模型）") : "加载模型列表…",
+                    onChange: function (v) { updateRow(i, { model: v }); },
+                  }),
+          ),
+          react.createElement(
+            "div", { style: STY.foot },
+            react.createElement(NSel, {
+              style: { width: 150 },
+              options: effortOptions,
+              value: row.reasoningEffort,
+              disabled: disabled || !(row.provider && row.model),
+              placeholder: "跟随部署配置",
+              onChange: function (v) { updateRow(i, { reasoningEffort: v }); },
+            }),
+            react.createElement("div", { style: S.grow }),
+            react.createElement(NButton, {
+              style: STY.ico,
+              disabled: disabled || i === 0,
+              title: i === 1 ? "上移（与主路由互换/顶替为主路由）" : "上移",
+              onClick: function () { moveRow(i, -1); },
+            }, "↑"),
+            react.createElement(NButton, {
+              style: STY.ico,
+              disabled: disabled || i === rows.length - 1 || (i === 0 && !row.provider),
+              title: "下移",
+              onClick: function () { moveRow(i, 1); },
+            }, "↓"),
+            react.createElement(NButton, {
+              style: STY.ico,
+              disabled: disabled,
+              title: isPrimary ? "重置为跟随默认" : "删除",
+              onClick: function () { removeRow(i); },
+            }, "✕"),
+          ),
+          isPrimary && !row.provider
+            ? react.createElement(
+                "div", { style: STY.note },
+                "跟随默认模型" + (info.default ? "：" + info.default.provider + " / " + info.default.model : "") +
+                  "（档位跟随部署配置，选定模型后可单独设置）",
+              )
+            : null,
+          !known
+            ? react.createElement(
+                "div", { style: STY.warn },
+                "⚠ 供应商 " + row.provider + " 已不在已注册路由中：该路由调用会失败并被链跳过（不阻止保存）。",
+              )
+            : null,
+          rowErrs[i]
+            ? react.createElement("div", { style: STY.warn }, "✕ " + rowErrs[i])
+            : null,
+        );
       });
-      if (curModel && !modelKnown) {
-        modelOptions.push({ id: curModel, label: curModel + "（已不在列表）" });
-      }
+
+      var effChain = (info.chain && info.chain.effectiveChain) || [];
 
       return react.createElement(
-        "div", { style: Object.assign({}, S.switchRow, { flexWrap: "wrap" }) },
-        react.createElement(NSel, {
-          style: { flexShrink: 0, width: 220 },
-          options: providerOptions,
-          value: curProvider,
-          disabled: disabled,
-          placeholder: "跟随默认",
-          onChange: function (v) {
-            if (v === "") {
-              writeLlm({ distillProvider: "", distillModel: "" });
-            } else {
-              setDraft(v);
-            }
-          },
-        }),
-        !curProvider
-          ? null
-          : manualInput
-            ? react.createElement(NInput, {
-                style: { flex: 1, minWidth: 160 },
-                placeholder: "模型 id（该供应商未提供列表，手动输入后回车）…",
-                value: manualModel,
-                onChange: function (e) { setManualModel(e.target.value); },
-                onKeyDown: function (e) {
-                  if (e.key === "Enter" && manualModel.trim()) {
-                    writeLlm({ distillProvider: curProvider, distillModel: manualModel.trim() });
-                    setManualModel("");
-                  }
-                },
-              })
-            : react.createElement(NSel, {
-                style: { flex: 1, minWidth: 160 },
-                options: modelOptions,
-                // 拉取期（无缓存首切）显示占位而非上一供应商的过期模型名
-                value: models === null ? "" : curModel,
-                disabled: disabled || models === null,
-                placeholder: models === null ? "加载模型列表…" : "（选择模型）",
-                onChange: function (v) {
-                  writeLlm({ distillProvider: curProvider, distillModel: v });
-                },
-              }),
-        react.createElement("div", null,
-          react.createElement("div", { style: S.switchLabel }, "蒸馏模型"),
+        "div", { style: STY.wrap },
+        react.createElement(
+          "div", { style: Object.assign({}, S.switchDesc, { marginBottom: 8 }) },
+          "路由按序尝试：第 1 行是主路由，失败（报错 / 掐断 / 网络异常 / 空输出）后按序降级；每行档位独立，缺省跟随部署配置。",
+        ),
+        rowEls,
+        react.createElement(NButton, {
+          style: STY.add,
+          disabled: disabled || capped,
+          onClick: addRow,
+        }, capped ? "已达上限（8 条）" : "+ 添加回退路由"),
+        react.createElement(
+          "div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 10 } },
+          react.createElement(NButton, { style: STY.ghost, disabled: disabled, onClick: clearToFollow }, "清空并跟随部署配置"),
+          react.createElement("div", { style: S.grow }),
+          react.createElement(NButton, { disabled: disabled, onClick: save }, "保存"),
+        ),
+        errState[0]
+          ? react.createElement("div", { style: Object.assign({}, STY.warn, { marginTop: 8 }) }, "✕ " + errState[0])
+          : null,
+        react.createElement(
+          "div", { style: { marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--dsh-mem-border)" } },
+          react.createElement("div", { style: { fontSize: 11, color: "var(--dsh-mem-text-3)", marginBottom: 4 } },
+            "实际链" + (dirty ? "（保存后更新；当前显示已保存值）" : "")),
           react.createElement(
-            "div", { style: S.switchDesc },
-            info.effective
-              ? "当前生效 " + info.effective.provider + " / " + info.effective.model +
-                  (curProvider ? "" : "（跟随默认选择）")
-              : "暂无可用路由（未选择且无默认）",
+            "div", { style: { fontSize: 12, color: "var(--dsh-mem-text-2)", wordBreak: "break-all", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace" } },
+            effChain.map(function (e) { return e.provider + "/" + e.model + (e.effort ? "（" + e.effort + "）" : ""); }).join(" → ") || "（暂无可用路由）",
           ),
-          !providerKnown || (curModel && models !== null && !modelKnown)
-            ? react.createElement(
-                "div", { style: { fontSize: 12, color: "var(--dsh-mem-danger)" } },
-                "所选供应商或模型已不在已配置列表中，蒸馏调用可能失败，建议重新选择。",
-              )
-            : null),
+        ),
       );
     }
 
@@ -2292,14 +2450,6 @@ window.__ModuleLoader__.load({
         var next = Object.assign({}, prev, {
           settings: Object.assign({}, prev.settings, patch),
         });
-        // 蒸馏思考选择器读 effort.current（非 settings 键）：乐观更新须同步该视图字段，
-        // 否则点击后选择器在下一个 5s 轮询前"弹回"旧值，看起来没生效
-        if (key === "reasoningEffort" && next.effort) {
-          next.effort = Object.assign({}, prev.effort, {
-            current: value,
-            effective: value,
-          });
-        }
         setSettingsData(next);
         rpc("dsh-memory/settings-set", patch)
           .then(function (r) {
@@ -2384,42 +2534,10 @@ window.__ModuleLoader__.load({
                   disabled: !master,
                   onChange: function (v) { toggle("recall", v); },
                 }),
-                // 分组：蒸馏参数（模型路由 / 思考档位 / 输出预算）
+                // 分组：蒸馏参数（统一路由链 + 输出预算）——旧「蒸馏思考」全局切换器
+                // 与「蒸馏模型」单路由选择器已并入 RouteChainEditor（档位逐路由设置）
                 react.createElement("div", { style: S.panelLabel }, "蒸馏参数"),
-                settingsData.effort
-                  ? (function () {
-                      // 档位表来自当前生效模型的能力声明（settings-get 的 effort.options；
-                      // 空声明 → 只显示 high）。首项固定「自动」（key=''，点击回写空串=
-                      // 按模型能力解析），选过显式档位后仍可回到自动；失效档位高亮实际生效值。
-                      var f = settingsData.effort;
-                      var opts = f.options && f.options.length ? f.options : ["high"];
-                      var segOptions = [{ key: "", label: "自动" }].concat(
-                        opts.map(function (k) { return { key: k, label: k }; })
-                      );
-                      var segValue = f.current === "" || opts.indexOf(f.current) >= 0
-                        ? f.current
-                        : opts.indexOf(f.effective) >= 0 ? f.effective : "high";
-                      return react.createElement(
-                        "div",
-                        { style: S.switchRow },
-                        react.createElement(Segmented, {
-                          value: segValue,
-                          options: segOptions,
-                          disabled: !master,
-                          onChange: function (v) { toggle("reasoningEffort", v); },
-                        }),
-                        react.createElement("div", null,
-                          react.createElement("div", { style: S.switchLabel }, "蒸馏思考"),
-                          react.createElement(
-                            "div",
-                            { style: S.switchDesc },
-                            "当前生效 " + (f.effective || "（不传，跟随模型默认）") +
-                              (f.current ? "" : "（自动）"),
-                          )),
-                      );
-                    })()
-                  : null,
-                react.createElement(LlmModelRow, { rpc: rpc, disabled: !master }),
+                react.createElement(RouteChainEditor, { rpc: rpc, disabled: !master }),
                 react.createElement(BudgetInputs, {
                   rpc: rpc,
                   disabled: !master,

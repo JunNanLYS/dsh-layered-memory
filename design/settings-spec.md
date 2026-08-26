@@ -57,8 +57,8 @@ disabled 统一 `opacity 0.45 + not-allowed`。
   焦点离开（relatedTarget 判定）收起并还焦触发钮；aria：trigger `haspopup=listbox`
   + `aria-expanded`，面板 `role=listbox`、选项 `role=option` + `aria-selected`。
 
-使用处：蒸馏模型供应商/模型两级、记忆 Tab 类型/情境过滤（共 4 处，bundle 内已无
-原生 `<select>`）。
+使用处：蒸馏路由链编辑器行内供应商/模型/档位三级下拉、记忆 Tab 类型/情境过滤
+（bundle 内已无原生 `<select>`）。
 
 ## 记忆类型标签：tint 系统
 
@@ -88,7 +88,7 @@ disabled 统一 `opacity 0.45 + not-allowed`。
 | 组 | 内容 |
 |---|---|
 | 记忆模式 | 总开关 + 捕获/蒸馏/召回三分项（SwitchRow×4） |
-| 蒸馏参数 | 蒸馏思考（Segmented）、蒸馏模型（LlmModelRow）、输出预算（BudgetInputs） |
+| 蒸馏参数 | 蒸馏路由链（RouteChainEditor）、输出预算（BudgetInputs） |
 
 语义检索（EmbeddingSection）与重建（RebuildPanel）是面板外的独立区块，各自带标题。
 
@@ -98,50 +98,49 @@ disabled 统一 `opacity 0.45 + not-allowed`。
 off = `--dsh-mem-track`；旋钮 `left .15s` inline 过渡（reduced-motion 压不住，
 已知限制见 global-spec）。写入走 `dsh-memory/settings-set` RPC，不另开写路径。
 
-### 蒸馏思考选择器（Segmented，跟随记忆模式开关面板）
+### 蒸馏路由链编辑器（RouteChainEditor，统一列表）
 
-选项**跟随当前生效模型的能力声明**：`settings-get` 返回的 `effort.options`
-（`resolveModelInfo().reasoning.efforts`，5s 轮询随模型切换自动刷新）；模型未声明
-档位时只显示 `high`（用户规则：无声明默认 high）。**首项固定「自动」（key=''）**，
-点击回写空串 = 按模型能力解析（模型默认档 → high，服务端 `decideSendableEffort`
-解析）——选过显式档位后仍可经首项回到自动。选择器值：`effort.current` 为 '' 或
-在表内用它，否则高亮 `effort.effective`（失效档位的实际发送值），再否则 `high`。
-描述行展示 `effort.effective`（'' = "不传，跟随模型默认"）+ "（自动）"后缀
-（current 为空时）。写入同样走 `settings-set`（`reasoningEffort` 键；'' 是合法
-值，服务端白名单与 schema 同源 `EFFORT_CHOICES`）。乐观更新必须**同时**写
-`settings.reasoningEffort` 与视图字段 `effort.current/effective`——选择器只读
-后者，漏掉会在下一个 5s 轮询前弹回旧值（已修过的不同步点）。
+取代旧「蒸馏思考」全局切换器与「蒸馏模型」单路由选择器（两者已删除）：**一张有序
+列表 = 完整路由故事**——第 1 行是主路由（徽标「主」），第 2..N 行按序降级（回退
+链，ADR-0004 语义：失败 = 报错/掐断/网络异常/空输出，每路由全额超时）；**档位
+逐路由设置**（行内第三级下拉，缺省「跟随部署配置」= 静态 `llm.reasoningEffort`，
+仍过服务端能力钳制）。写入走 `settings-set` 的 `distillChain`（数组；空数组 =
+跟随部署配置与默认模型）。
 
-### 蒸馏模型选择器（LlmModelRow，供应商/模型两级下拉）
+数据源：`llm-providers`（5s 轮询）新增的 `chain` 块——`current` 运行时链（含
+旧键 `distillProvider/distillModel` 的单行投影，`projectDistillChain` 仅作展示、
+不参与生效逻辑）/ `static` 部署回退链 / `effectiveChain` 实际链（buildRouteChain
+去重后、每条带档位候选）/ `source`（runtime|static）；`llm-models` 每模型附
+`efforts` 档位能力表（行内档位下拉数据源）。模型目录沿用模块级 `modelsCache`
+（面板加载预取全部供应商，切换同步渲染），写入在途 `pendingWrites` 丢弃轮询
+响应，乐观更新写 `chain.current` 视图。
 
-位于思考选择器之后，同属开关面板（记忆模式关闭时随面板禁用）。数据源
-`dsh-memory/llm-providers`（5s 轮询：`providers` 供应商目录 / `default` 默认选择 /
-`current` 运行时覆盖 / `effective` 实际生效路由 / `pinned` 部署 pin 位）与
-`dsh-memory/llm-models`（选供应商后按需拉取）。要点：
+状态机：
 
-- 两级 NSel 自绘下拉（供应商：首项"跟随默认（当前默认路由）"→ 模型：**无
-  "跟随默认"，只列具体模型**）；选供应商先入**本地草稿**（不打设置），模型列表
-  到手后**自动落第一个模型**（当前覆盖模型不在该供应商列表时成对提交
-  `distillProvider`/`distillModel`）；手动挑模型同样成对提交（单字段不算覆盖，
-  effectiveCfg 语义）；
-- **无真空期**：模型列表按供应商缓存在模块级 `modelsCache`（面板加载时后台预取
-  全部供应商，llm-providers 轮询兜底补漏），切换供应商时缓存命中**同步渲染**
-  （后台仍刷新一遍）；未命中才显示禁用态占位"加载模型列表…"（不再是上一供应商
-  的过期模型名）；失败整体回滚；
-- **乐观更新必须写视图键**：`writeLlm` 把覆盖映射成 `current.provider/model` +
-  同步推导 `effective`（"当前生效"描述行）。**坑**：直接把 settings 键
-  `distillProvider/distillModel` 合并进 `info.current` 对显示层是空操作（按钮文本
-  读 `.provider/.model`），文本要等 5s 轮询才变——0.8.2 后修掉的按钮延迟真因；
-- 写入在途（`pendingWrites` 计数）时 `refreshInfo` 丢弃轮询响应（在途请求读到
-  写入前的旧值，直接 set 会闪回旧文本）；settings-set 成功后立即拉一次
-  llm-providers 收敛服务器真值；
-- 供应商"跟随默认"一次提交双空串清掉覆盖；失败回滚（草稿一并恢复）；
-- **部署 pin**（`pinned=true`，cordis.patch.yml 的 `llm.provider`+`llm.model` 双字段
-  齐）：选择器不出场，改为静态文本"已由部署配置固定：provider / model（如需在
-  页面切换，请移除 profile cordis.patch.yml 中 llm 的 provider/model 覆盖）"；
-- **降级手输**：适配器 `listModels` 返回空列表时模型下拉换成 `NInput`（回车提交）；
-- **失效提示**：已存覆盖的供应商/模型不在列表（用户在宿主侧删掉）时注入
-  "（已不在列表）"选项并红字提示蒸馏调用可能失败（danger 色，12px）。
+- **pinned**（部署静态 pin）：整区块只读——实际链逐行展示（effort 候选随行）+
+  「部署已锁定路由」说明（运行时链整体失效，effectiveCfg 语义）；
+- **跟随态**（运行时链空）：只读展示实际链（主路由行显示解析出的默认模型）+
+  「编辑为运行时链」——拷贝部署静态回退链为草稿（主路由保持跟随默认），保存
+  第一刻起运行时链接管；
+- **编辑态**：行式编辑器（下述）+ 底部「清空并跟随部署配置」（ghost 钮）与
+  「保存」+ 实际链摘要行（服务端 effectiveChain 值，有未保存修改时注明）。
+
+行编辑器细则：
+
+- 行结构：徽标（主/序号）+ 供应商 NSel + 模型 NSel（或降级 NInput，供应商无
+  目录时回车提交）+ 档位 NSel（宽 150，「跟随部署配置」+ 该模型 efforts；
+  未选定模型时禁用）+ ↑ ↓ ✕（NButton 26×26 图标钮，inline 覆盖 padding；
+  行卡片 `--dsh-mem-bg-inset` 底、8px 圆角、校验失败 danger 描边）；
+- **位置即优先级**：第 2 行 ↑ = 与主路由互换；主路由为空（跟随默认）时是**顶替**
+  （空行不保留——回退行必须显式）；空主路由的 ↓ 禁用；主路由 ✕ = 重置为跟随
+  默认（回退行保留）；
+- 主路由行供应商首项「跟随默认模型（解析出的默认路由）」，模型可留空；回退行
+  必须显式（保存校验：行内红字；服务端 `validateDistillChain` 同规则拒收兜底）；
+- 上限 8 条（`DISTILL_CHAIN_MAX`，UI 与服务端同限，达限添加钮禁用）；完全重复
+  条目（含与主路由）保存时拒绝；
+- 供应商失效（不在 providers 列表）：行内红字警示「调用会失败并被链跳过（不
+  阻止保存）」+ 选项注入「（已不在列表）」；模型不在列表同款注入；
+- 新行默认供应商 = 主路由供应商（未选时取目录第一个）。
 
 ### 蒸馏预算（BudgetInputs，蒸馏参数组）
 

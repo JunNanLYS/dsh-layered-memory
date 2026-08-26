@@ -26,13 +26,28 @@ export function pickNextTaskIndex(tasks) {
 export function effectiveCfg(cfg, live) {
     const s = live?.get();
     // 思考档位：设置服务在场时运行时值整体接管——'' = 自动（按模型能力解析），
-    // 不再回退静态配置（"跟随配置"选项已删）；静态值仅无 settings 服务的部署生效
+    // 不再回退静态配置（"跟随配置"选项已删）；静态值仅无 settings 服务的部署生效。
+    // 统一路由链模式下（chain 非空）旧档位键不再参与：链内每条路由自带档位候选
     const eff = s?.reasoningEffort ?? '';
     // 可选链防御：smoke/测试缝构造的最小 cfg 可能没有 llm 字段
     const pinned = Boolean(cfg.llm?.provider && cfg.llm?.model);
-    const override = s && !pinned && s.distillProvider && s.distillModel
-        ? { provider: s.distillProvider, model: s.distillModel }
+    // 运行时统一路由链：**只认显式 distillChain**（非空即权威——主路由档位走
+    // primaryEffort、条目档位随链注入 fallbacks、旧键与全局档位接管让位）；
+    // 未配置链时旧键（distillProvider/distillModel/reasoningEffort）走下方完全
+    // 不变的旧路径——旧存量值的语义一个比特都不动（projectDistillChain 只是
+    // llm-providers 的 UI 展示视图，不参与生效逻辑）。
+    // pinned 时链整体失效（部署锁定路由，链编辑器只读）
+    const chain = s?.distillChain?.length ? s.distillChain : [];
+    const chainMode = chain.length > 0 && !pinned;
+    const chainEffort = chainMode && chain[0].reasoningEffort ? chain[0].reasoningEffort : null;
+    const chainFallbacks = chainMode && chain.length > 1
+        ? chain.slice(1).map((e) => ({ provider: e.provider, model: e.model, reasoningEffort: e.reasoningEffort || '' }))
         : null;
+    const override = chainMode && chain[0].provider && chain[0].model
+        ? { provider: chain[0].provider, model: chain[0].model }
+        : !chain.length && s && !pinned && s.distillProvider && s.distillModel
+            ? { provider: s.distillProvider, model: s.distillModel }
+            : null;
     const b = s?.distillBudgets;
     const budgets = b && (b.extract > 0 || b.dedup > 0 || b.l2 > 0 || b.l3 > 0)
         ? {
@@ -43,24 +58,28 @@ export function effectiveCfg(cfg, live) {
         }
         : null;
     const maxInput = s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : null;
-    // 运行时档位整体接管同样覆盖回退链条目（用户当下意图压过条目静态值；
-    // '' = 自动档无偏好，不压制条目——链解析时条目非空值优先于全局）
-    const fallbacksTakeover = eff && cfg.llm?.fallbacks?.length
+    // 旧档位键的全局接管（含给静态回退条目盖章）：仅非链模式保留（旧存量值兼容）
+    const fallbacksTakeover = !chainMode && eff && cfg.llm?.fallbacks?.length
         ? cfg.llm.fallbacks.map((f) => ({ ...f, reasoningEffort: eff }))
         : null;
-    // 无任何注入且（无 live，或运行时 '' 且静态本就 ''）→ 原引用返回，保持引用稳定性
-    const effNoop = eff === '' && (!live || !cfg.llm?.reasoningEffort);
-    if (!override && !budgets && !maxInput && !fallbacksTakeover && effNoop)
+    // 档位注入：链模式下不走全局接管（主路由档位走 primaryEffort、条目档位在链内，
+    // 空档位条目回退的是静态全局而非运行时旧键）；非链模式保持旧整体接管语义
+    const effortInject = live && !chainMode && (eff !== '' || Boolean(cfg.llm?.reasoningEffort))
+        ? { reasoningEffort: eff }
+        : null;
+    if (!override && !budgets && !maxInput && !fallbacksTakeover && !chainEffort && !chainFallbacks && !effortInject)
         return cfg;
     return {
         ...cfg,
         llm: {
             ...cfg.llm,
-            ...(live ? { reasoningEffort: eff } : {}),
+            ...(effortInject ?? {}),
             ...(override ?? {}),
             ...(budgets ? { budgets } : {}),
             ...(maxInput ? { maxInputChars: maxInput } : {}),
             ...(fallbacksTakeover ? { fallbacks: fallbacksTakeover } : {}),
+            ...(chainEffort ? { primaryEffort: chainEffort } : {}),
+            ...(chainFallbacks ? { fallbacks: chainFallbacks } : {}),
         },
     };
 }

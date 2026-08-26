@@ -12,6 +12,25 @@ import type { MemoryLogger } from './types.js';
 export type EffortChoice = (typeof EFFORT_CHOICES)[number];
 /** 分层输出预算（与 llm.ts 的 DistillBudgetLayer 同键；0 = 跟随内置默认）。 */
 export type DistillBudgets = Record<DistillBudgetLayer, number>;
+/**
+ * 运行时统一路由链条目：[0] = 主路由（provider/model 双空 = 跟随默认模型），
+ * [1..] = 回退链（按序降级）；reasoningEffort 为该路由的档位覆盖（'' = 跟随部署全局）。
+ */
+export interface DistillChainEntry {
+    provider: string;
+    model: string;
+    reasoningEffort: EffortChoice;
+}
+/** 运行时路由链上限（写入门与 UI 同限，防误粘贴巨数组撑爆 settings 存储）。 */
+export declare const DISTILL_CHAIN_MAX = 8;
+/**
+ * 运行时统一路由链视图（UI 与 effectiveCfg 共用）：distillChain 非空即权威；
+ * 为空时投影旧运行时键（distillProvider/distillModel 成对 → 单行主路由，
+ * 旧档位 reasoningEffort 作为该主路由的档位——旧语义里它作用的就是当时唯一的路由）。
+ */
+export declare function projectDistillChain(s: Partial<MemoryLiveSettings> | undefined): DistillChainEntry[];
+/** settings-set 写入门校验：返回错误文案（null = 通过）。 */
+export declare function validateDistillChain(chain: unknown): string | null;
 export interface MemoryLiveSettings {
     /** 总开关：关 = 捕获/蒸馏/召回注入全停（数据保留） */
     enabled: boolean;
@@ -28,6 +47,10 @@ export interface MemoryLiveSettings {
     distillProvider: string;
     /** 蒸馏模型运行时覆盖（模型 id）：'' = 跟随静态 config/默认选择。 */
     distillModel: string;
+    /** 运行时统一路由链（统一列表 UI 的存储形态，见 DistillChainEntry）；
+     *  非空即权威（旧 distillProvider/distillModel/reasoningEffort 不再参与），
+     *  空数组 = 跟随部署静态配置与默认模型。 */
+    distillChain: DistillChainEntry[];
     /** 分层输出预算运行时覆盖（token）：extract/dedup/l2/l3 四层，0 = 跟随内置默认；
      *  思考档 high/max 的 ×4 放大在覆盖值之上照常生效。 */
     distillBudgets: DistillBudgets;

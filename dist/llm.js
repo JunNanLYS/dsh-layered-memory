@@ -57,10 +57,11 @@ export async function resolveModelRoute(ctx, cfg) {
 /**
  * 组装蒸馏路由链（纯决策，smoke 决策表缝）：主路由在前、回退条目按配置顺序在后。
  * provider/model 缺失的条目剔除；与主路由或先前条目完全相同（provider+model）的
- * 条目跳过——注定失败的重复尝试不值得占位。每条路由携带生效档位候选。
+ * 条目跳过——注定失败的重复尝试不值得占位。每条路由携带生效档位候选：
+ * 主路由可带显式档位（运行时统一链注入 primaryEffort），条目档位非空覆盖全局。
  */
 export function buildRouteChain(primary, fallbacks, globalEffort) {
-    const routes = [{ ...primary, effort: globalEffort }];
+    const routes = [{ ...primary, effort: primary.effort || globalEffort }];
     const seen = new Set([`${primary.provider}::${primary.model}`]);
     for (const f of fallbacks ?? []) {
         if (!f.provider || !f.model)
@@ -165,7 +166,9 @@ export async function planDistillEffort(ctx, provider, model, cfgEffort, logger)
  */
 export async function callLLM(ctx, cfg, opts) {
     const primary = await resolveModelRoute(ctx, cfg);
-    const routes = buildRouteChain(primary, cfg.llm.fallbacks, cfg.llm.reasoningEffort);
+    const routes = buildRouteChain(
+    // 主路由显式档位来自运行时统一链（primaryEffort，'' = 跟随全局静态）
+    { provider: primary.provider, model: primary.model, effort: cfg.llm.primaryEffort || '' }, cfg.llm.fallbacks, cfg.llm.reasoningEffort);
     let lastErr;
     for (let i = 0; i < routes.length; i++) {
         const route = routes[i];

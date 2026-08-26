@@ -108,6 +108,9 @@ export interface MemoryConfig {
     maxTokens: number;
     /** 蒸馏调用的思考档位；空串不传（跟随模型默认）。 */
     reasoningEffort: string;
+    /** 运行时主路由显式档位（distillChain[0].reasoningEffort 经 effectiveCfg 注入）；
+     *  非静态 schema——'' = 跟随全局静态 reasoningEffort，仅供链模式传递主路由档位。 */
+    primaryEffort?: string;
     temperature: number;
     /** 单次蒸馏调用的用户 prompt 字符预算（≈token 数，按中文 1 字≈1 token 保守估算）。 */
     maxInputChars: number;

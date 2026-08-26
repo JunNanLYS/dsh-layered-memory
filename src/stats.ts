@@ -19,9 +19,9 @@ import type {} from '@deepseek-ai/dsh-agent-default-model';
 import { EFFORT_CHOICES, resolveDataDir, type MemoryConfig } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { emptyRecallStats, type RecallSessionStats } from './hooks/recall.js';
-import { decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
+import { buildRouteChain, decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
 import type { RebuildController } from './pipeline/rebuild.js';
-import type { LiveSettingsHandle } from './settings.js';
+import { projectDistillChain, validateDistillChain, type DistillChainEntry, type LiveSettingsHandle } from './settings.js';
 import type { L0Store } from './store/l0.js';
 import type { L1Store } from './store/l1.js';
 import type { PersonaStore } from './store/persona.js';
@@ -365,7 +365,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         supported: live?.supported ?? false,
         settings: s ?? {
           enabled: true, capture: true, distill: true, recall: true,
-          reasoningEffort: '', distillProvider: '', distillModel: '',
+          reasoningEffort: '', distillProvider: '', distillModel: '', distillChain: [],
           distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, distillMaxInputChars: 0,
         },
         // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
@@ -400,9 +400,15 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
     case 'dsh-memory/settings-set': {
       if (!live) throw new Error('开关通道未初始化');
       const patch = (payload ?? {}) as Record<string, unknown>;
-      const clean: Record<string, boolean | string | number | { extract: number; dedup: number; l2: number; l3: number }> = {};
+      const clean: Record<string, boolean | string | number | DistillChainEntry[] | { extract: number; dedup: number; l2: number; l3: number }> = {};
       for (const key of ['enabled', 'capture', 'distill', 'recall'] as const) {
         if (typeof patch[key] === 'boolean') clean[key] = patch[key] as boolean;
+      }
+      // 运行时统一路由链：结构校验后整体写入（空数组 = 回到跟随部署配置）
+      if (patch.distillChain !== undefined) {
+        const err = validateDistillChain(patch.distillChain);
+        if (err) throw new Error(err);
+        clean.distillChain = patch.distillChain as DistillChainEntry[];
       }
       if (patch.reasoningEffort !== undefined) {
         const v = String(patch.reasoningEffort);
@@ -545,9 +551,20 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       }
       const s = live?.get();
       const current = { provider: s?.distillProvider ?? '', model: s?.distillModel ?? '' };
+      // 统一路由链块：current = 运行时链（含旧键投影）；static = 部署静态回退链；
+      // effective = buildRouteChain 语义的实际链（主路由 + 有效条目去重，每条带档位候选）；
+      // source 标记当前链来自运行时还是部署静态（UI 的跟随态/接管态判定）
+      const chainCurrent = projectDistillChain(s);
+      let effectiveChain: Array<{ provider: string; model: string; effort: string }> = [];
       let effective: { provider: string; model: string } | null = null;
       try {
-        effective = await resolveModelRoute(deps.ctx, effectiveCfg(cfg, live));
+        const cfgView = effectiveCfg(cfg, live);
+        effective = await resolveModelRoute(deps.ctx, cfgView);
+        effectiveChain = buildRouteChain(
+          { provider: effective.provider, model: effective.model, effort: cfgView.llm.primaryEffort || '' },
+          cfgView.llm.fallbacks,
+          cfgView.llm.reasoningEffort,
+        );
       } catch {
         effective = null; // 无法解析（无默认选择且未覆盖）时 UI 显示占位
       }
@@ -561,6 +578,12 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         // 所选供应商是否仍在已注册路由中（用户删掉供应商后提示回退）
         currentRegistered: current.provider === '' || providers.some((p) => p.id === current.provider),
         effective,
+        chain: {
+          current: chainCurrent,
+          static: cfg.llm.fallbacks ?? [],
+          effectiveChain,
+          source: chainCurrent.length ? ('runtime' as const) : ('static' as const),
+        },
       };
     }
 
@@ -574,9 +597,21 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         deps.ctx.llm.listModels(p.provider),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error('模型列表查询超时')), 8000)),
       ]);
+      // 每个模型附思考档位能力表（resolveModelInfo 复用 effortCache，本地快照不触网）：
+      // 统一路由链编辑器的逐行档位下拉数据源；探询失败/未声明 → 空表（UI 只显示「跟随部署配置」）
+      const withEfforts: Array<{ id: string; name: string; description: string | null; efforts: string[] }> = [];
+      for (const m of models) {
+        let efforts: string[] = [];
+        try {
+          efforts = (await resolveModelEfforts(deps.ctx, p.provider, m.id))?.efforts ?? [];
+        } catch {
+          efforts = [];
+        }
+        withEfforts.push({ id: m.id, name: m.name, description: m.description ?? null, efforts });
+      }
       return {
         provider: p.provider,
-        models: models.map((m) => ({ id: m.id, name: m.name, description: m.description ?? null })),
+        models: withEfforts,
       };
     }
 
