@@ -667,6 +667,7 @@ var __defProp = Object.defineProperty;
 		var thFirst = { fontSize: 12, fontWeight: 600, color: "var(--dsh-mem-text-3)", textAlign: "left", padding: "4px 10px", borderBottom: "1px solid var(--dsh-mem-border)" };
 		var thStyle = { fontSize: 12, fontWeight: 600, color: "var(--dsh-mem-text-3)", textAlign: "right", padding: "4px 10px", borderBottom: "1px solid var(--dsh-mem-border)" };
 		var tdFirst = { fontSize: 12.5, fontWeight: 600, color: "var(--dsh-mem-text-1)", textAlign: "left", padding: "4px 10px" };
+		var tdStyle = { fontSize: 12.5, color: "var(--dsh-mem-text-1)", textAlign: "right", padding: "4px 10px", fontFamily: "ui-monospace, Consolas, monospace" };
 		function CostTab(props) {
 		  const rpc = props.rpc;
 		  const [data, setData] = (0, import_react2.useState)(null);
@@ -760,7 +761,7 @@ var __defProp = Object.defineProperty;
 		  });
 		  const cell = (lc, r, pick) => {
 		    const w = lc.win[r];
-		    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { children: w ? fmtInt(pick(w)) : "0" }, r);
+		    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("td", { style: tdStyle, children: w ? fmtInt(pick(w)) : "0" }, r);
 		  };
 		  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { ...S.flexRow, marginBottom: 10 }, children: [
@@ -1176,7 +1177,7 @@ var __defProp = Object.defineProperty;
 		// client/src/rpc.ts
 		function makeRpc(ctx) {
 		  return (endpoint, payload) => {
-		    if (!ctx.connection) return Promise.reject(new Error("connection 服务不可用"));
+		    if (!ctx.connection || !ctx.connection.rpc) return Promise.reject(new Error("connection 服务不可用"));
 		    return ctx.connection.rpc.call("/rpc", endpoint, payload ?? {});
 		  };
 		}
@@ -1417,7 +1418,7 @@ var __defProp = Object.defineProperty;
 		};
 		function RebuildPanel(props) {
 		  const rpc = props.rpc;
-		  const [rb, setRb] = (0, import_react6.useState)(null);
+		  const [rbRaw, setRb] = (0, import_react6.useState)(null);
 		  const [confirmOpen, setConfirmOpen] = (0, import_react6.useState)(false);
 		  const [busy, setBusy] = (0, import_react6.useState)(false);
 		  const [rbError, setRbError] = (0, import_react6.useState)(null);
@@ -1430,7 +1431,7 @@ var __defProp = Object.defineProperty;
 		  (0, import_react6.useEffect)(() => {
 		    refresh();
 		  }, [refresh]);
-		  const running = !!(rb && "running" in rb && rb.running);
+		  const running = !!(rbRaw && rbRaw.running);
 		  (0, import_react6.useEffect)(() => {
 		    if (!running) return;
 		    const timer = setInterval(refresh, 1500);
@@ -1438,7 +1439,9 @@ var __defProp = Object.defineProperty;
 		      clearInterval(timer);
 		    };
 		  }, [running, refresh]);
-		  if (!rb || "supported" in rb) return null;
+		  if (!rbRaw || rbRaw.supported === false) return null;
+		  const rb = rbRaw;
+		  ensureThemeStyle();
 		  const start = () => {
 		    setBusy(true);
 		    setRbError(null);
@@ -3005,6 +3008,11 @@ var __defProp = Object.defineProperty;
 		  });
 		}
 		
-		return module.exports;
+		// esbuild 对具名导出会整体替换 module.exports（__toCommonJS：getter + __esModule）；
+		// 摊平回官方 bundle 同款的普通数据属性对象（含 toStringTag），loader 只按属性读取。
+		var __flat = {};
+		for (var __k in module.exports) __flat[__k] = module.exports[__k];
+		Object.defineProperty(__flat, Symbol.toStringTag, { value: "Module" });
+		return __flat;
 	}
 });

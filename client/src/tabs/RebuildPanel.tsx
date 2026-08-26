@@ -1,7 +1,8 @@
 /** 重建面板：从 L0 重导 L1/L2/L3（确认弹窗 + 进度 + 取消；Light/Dark 双主题走 class）。 */
 import { useCallback, useEffect, useState } from 'react';
-import type { RebuildStatusResponse } from '../../../src/contract.js';
+import type { RebuildStatus, RebuildStatusResponse } from '../../../src/contract.js';
 import { fmtTime } from '../format.js';
+import { ensureThemeStyle } from '../theme.js';
 import { NButton, NModal } from '../ui/primitives.js';
 import type { RpcFn } from '../rpc.js';
 
@@ -13,7 +14,7 @@ const RB_PHASE_LABEL: Record<string, string> = {
 
 export function RebuildPanel(props: { rpc: RpcFn }) {
   const rpc = props.rpc;
-  const [rb, setRb] = useState<RebuildStatusResponse | null>(null);
+  const [rbRaw, setRb] = useState<RebuildStatusResponse | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rbError, setRbError] = useState<string | null>(null);
@@ -31,7 +32,7 @@ export function RebuildPanel(props: { rpc: RpcFn }) {
   }, [refresh]);
 
   // 运行中 1.5s 高频轮询进度；空闲不轮询（重新打开 Tab 时挂载刷新一次）
-  const running = !!(rb && 'running' in rb && rb.running);
+  const running = !!(rbRaw && rbRaw.running);
   useEffect(() => {
     if (!running) return;
     const timer = setInterval(refresh, 1500);
@@ -40,7 +41,9 @@ export function RebuildPanel(props: { rpc: RpcFn }) {
     };
   }, [running, refresh]);
 
-  if (!rb || 'supported' in rb) return null;
+  if (!rbRaw || (rbRaw as { supported?: boolean }).supported === false) return null;
+  const rb = rbRaw as RebuildStatus;
+  ensureThemeStyle();
 
   const start = () => {
     setBusy(true);

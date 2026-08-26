@@ -2345,7 +2345,9 @@ async function main(): Promise<void> {
     assert(clientSrc.startsWith('window.__ModuleLoader__.load({'), 'handoff 协议包装头');
     assert(clientSrc.includes('id: "dsh-layered-memory"'), 'loader id = 包名（三处同步）');
     assert(clientSrc.includes('factory: (require) =>'), 'factory(require) 签名');
-    assert(clientSrc.includes('return module.exports;'), 'factory 返回 module.exports');
+    // esbuild 具名导出会 getter 化 module.exports，wrapper 尾部摊平回普通对象（官方同款）
+    assert(clientSrc.includes('for (var __k in module.exports) __flat[__k] = module.exports[__k];'), 'factory 返回摊平后的 exports 对象');
+    assert(clientSrc.includes('Object.defineProperty(__flat, Symbol.toStringTag'), 'exports 对象带 Module toStringTag');
     // react/jsx-runtime/官方原语全部 external（require 注入，绝不打入 bundle——防双 react 实例）
     assert(clientSrc.includes('require("react")'), 'react 走宿主 require（external）');
     assert(clientSrc.includes('require("react/jsx-runtime")'), 'jsx-runtime 走宿主 require');

@@ -200,7 +200,11 @@ export function CostTab(props: { rpc: RpcFn }) {
 
   const cell = (lc: (typeof layerTable)[number], r: string, pick: (w: { outputTokens: number; avgOutputTokens: number; medianOutputTokens: number }) => number) => {
     const w = lc.win[r];
-    return <td key={r}>{w ? fmtInt(pick(w)) : '0'}</td>;
+    return (
+      <td key={r} style={tdStyle}>
+        {w ? fmtInt(pick(w)) : '0'}
+      </td>
+    );
   };
 
   return (

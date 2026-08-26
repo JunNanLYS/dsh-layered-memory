@@ -23,6 +23,7 @@ const result = await build({
   platform: 'browser',
   target: 'es2020',
   jsx: 'automatic',
+  charset: 'utf8',
   external: ['react', 'react/jsx-runtime', '@deepseek-ai/*'],
   minify: false,
   legalComments: 'none',
@@ -43,7 +44,12 @@ const out =
   '\t\tvar exports = module.exports;\n' +
   '\t\tObject.defineProperty(exports, Symbol.toStringTag, { value: "Module" });\n' +
   body.replace(/\n/g, '\n\t\t') +
-  '\n\t\treturn module.exports;\n' +
+  '\n\t\t// esbuild 对具名导出会整体替换 module.exports（__toCommonJS：getter + __esModule）；' +
+  '\n\t\t// 摊平回官方 bundle 同款的普通数据属性对象（含 toStringTag），loader 只按属性读取。' +
+  '\n\t\tvar __flat = {};' +
+  '\n\t\tfor (var __k in module.exports) __flat[__k] = module.exports[__k];' +
+  '\n\t\tObject.defineProperty(__flat, Symbol.toStringTag, { value: "Module" });' +
+  '\n\t\treturn __flat;\n' +
   '\t}\n' +
   '});\n';
 

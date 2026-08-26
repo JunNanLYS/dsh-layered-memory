@@ -18,7 +18,7 @@ export type RpcFn = <K extends DshMemoryEndpoint>(
 
 export function makeRpc(ctx: MemoryClientCtx): RpcFn {
   return (endpoint, payload) => {
-    if (!ctx.connection) return Promise.reject(new Error('connection 服务不可用'));
+    if (!ctx.connection || !ctx.connection.rpc) return Promise.reject(new Error('connection 服务不可用'));
     // 信封由宿主 rpc 层保证；这里断言到契约类型（契约漂移在 host 侧编译期已锁）
     // RpcResult<never> 经协变可赋给任意 RpcResult<K>（信封由宿主 rpc 层保证）
     return ctx.connection.rpc.call('/rpc', endpoint, payload ?? {}) as unknown as Promise<RpcResult<never>>;
