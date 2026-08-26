@@ -2025,8 +2025,8 @@ window.__ModuleLoader__.load({
         row: { background: "var(--dsh-mem-bg-inset)", borderRadius: 8, padding: 8, marginBottom: 8, border: "1px solid transparent" },
         rowErr: { border: "1px solid var(--dsh-mem-danger)" },
         badge: { flexShrink: 0, width: 20, height: 18, borderRadius: 999, background: "var(--dsh-mem-accent-weak)", color: "var(--dsh-mem-accent-text)", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" },
-        head: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 },
-        foot: { display: "flex", alignItems: "center", gap: 8 },
+        // 单行控件行：flexWrap 兜底窄面板（放不下时尾部控件自然折行）
+        line: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
         ico: { padding: 0, width: 26, height: 26, minWidth: 26, fontSize: 13, lineHeight: "20px" },
         add: { width: "100%", padding: "7px 0", fontSize: 12.5, color: "var(--dsh-mem-text-3)", background: "transparent", border: "1px dashed var(--dsh-mem-border-strong)", borderRadius: 8 },
         ghost: { border: "none", background: "transparent", color: "var(--dsh-mem-text-3)" },
@@ -2111,10 +2111,10 @@ window.__ModuleLoader__.load({
         return react.createElement(
           "div", { key: "row" + i, style: Object.assign({}, STY.row, rowErrs[i] ? STY.rowErr : null) },
           react.createElement(
-            "div", { style: STY.head },
+            "div", { style: STY.line },
             react.createElement("span", { style: STY.badge }, isPrimary ? "主" : String(i + 1)),
             react.createElement(NSel, {
-              style: { flexShrink: 0, width: 168 },
+              style: { flex: 1, minWidth: 150 },
               options: providerOptions,
               value: row.provider,
               disabled: disabled,
@@ -2125,7 +2125,7 @@ window.__ModuleLoader__.load({
               ? null
               : manualInput
                 ? react.createElement(NInput, {
-                    style: { flex: 1, minWidth: 140 },
+                    style: { flex: 1, minWidth: 150 },
                     placeholder: "模型 id（该供应商未提供列表，输入后回车）…",
                     value: manual.idx === i ? manual.text : "",
                     onChange: function (e) { setManual({ idx: i, text: e.target.value }); },
@@ -2137,27 +2137,22 @@ window.__ModuleLoader__.load({
                     },
                   })
                 : react.createElement(NSel, {
-                    style: { flex: 1, minWidth: 140 },
+                    style: { flex: 1, minWidth: 150 },
                     options: modelOptions,
                     value: row.model,
                     disabled: disabled || !modelsLoaded,
                     placeholder: modelsLoaded ? (isPrimary ? "（选择模型，可留空跟随默认）" : "（选择模型）") : "加载模型列表…",
                     onChange: function (v) { updateRow(i, { model: v }); },
                   }),
-          ),
-          react.createElement(
-            "div", { style: STY.foot },
-            // 前导占位 = 徽标宽（20）+ 行内间距（8）：档位下拉与上一行的供应商下拉左对齐
-            react.createElement("div", { style: { flexShrink: 0, width: 28 } }),
+            // 档位与供应商/模型同行：词表固定且短（跟随部署配置/off/low/high…），收窄即可
             react.createElement(NSel, {
-              style: { width: 150 },
+              style: { flexShrink: 0, width: 118 },
               options: effortOptions,
               value: row.reasoningEffort,
               disabled: disabled || !(row.provider && row.model),
               placeholder: "跟随部署配置",
               onChange: function (v) { updateRow(i, { reasoningEffort: v }); },
             }),
-            react.createElement("div", { style: S.grow }),
             react.createElement(NButton, {
               style: STY.ico,
               disabled: disabled || i === 0,
