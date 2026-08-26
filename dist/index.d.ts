@@ -59,7 +59,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
         includePersona: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         includeSceneNav: import("@deepseek-ai/schemastery").default<boolean, boolean>;
-        strategy: import("@deepseek-ai/schemastery").default<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
+        strategy: import("@deepseek-ai/schemastery").default<"hybrid" | "keyword" | "embedding", "hybrid" | "keyword" | "embedding">;
         scoreThreshold: import("@deepseek-ai/schemastery").default<number, number>;
         decayHalfLifeDays: import("@deepseek-ai/schemastery").default<number, number>;
     }>, Schemastery.ObjectT<{
@@ -70,7 +70,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
         includePersona: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         includeSceneNav: import("@deepseek-ai/schemastery").default<boolean, boolean>;
-        strategy: import("@deepseek-ai/schemastery").default<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
+        strategy: import("@deepseek-ai/schemastery").default<"hybrid" | "keyword" | "embedding", "hybrid" | "keyword" | "embedding">;
         scoreThreshold: import("@deepseek-ai/schemastery").default<number, number>;
         decayHalfLifeDays: import("@deepseek-ai/schemastery").default<number, number>;
     }>>;
@@ -190,7 +190,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
         includePersona: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         includeSceneNav: import("@deepseek-ai/schemastery").default<boolean, boolean>;
-        strategy: import("@deepseek-ai/schemastery").default<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
+        strategy: import("@deepseek-ai/schemastery").default<"hybrid" | "keyword" | "embedding", "hybrid" | "keyword" | "embedding">;
         scoreThreshold: import("@deepseek-ai/schemastery").default<number, number>;
         decayHalfLifeDays: import("@deepseek-ai/schemastery").default<number, number>;
     }>, Schemastery.ObjectT<{
@@ -201,7 +201,7 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
         timeoutMs: import("@deepseek-ai/schemastery").default<number, number>;
         includePersona: import("@deepseek-ai/schemastery").default<boolean, boolean>;
         includeSceneNav: import("@deepseek-ai/schemastery").default<boolean, boolean>;
-        strategy: import("@deepseek-ai/schemastery").default<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
+        strategy: import("@deepseek-ai/schemastery").default<"hybrid" | "keyword" | "embedding", "hybrid" | "keyword" | "embedding">;
         scoreThreshold: import("@deepseek-ai/schemastery").default<number, number>;
         decayHalfLifeDays: import("@deepseek-ai/schemastery").default<number, number>;
     }>>;

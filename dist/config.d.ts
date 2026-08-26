@@ -4,6 +4,7 @@
  * 默认数据目录：$DSH_HOME/memory（用官方 dshHomePath 解析，DSH_HOME 缺省 ~/.dsh）。
  */
 import Schema from '@deepseek-ai/schemastery';
+import type { StaticFallbackEntry } from './contract.js';
 import type { ExtractMode } from './types.js';
 /**
  * 蒸馏思考档位全词汇表（唯一事实源）：'' = 自动（模型默认档 → high），
@@ -101,11 +102,7 @@ export interface MemoryConfig {
          *  条目 reasoningEffort 非空时覆盖全局档位（未配置运行时链 distillChain 时，
          *  旧档位键 reasoningEffort 的整体接管——含给条目盖章——仍对存量值生效）；
          *  空数组（缺省）= 单路由行为不变。 */
-        fallbacks?: Array<{
-            provider: string;
-            model: string;
-            reasoningEffort?: string;
-        }>;
+        fallbacks?: StaticFallbackEntry[];
         /** 单次蒸馏调用的输出 token 上限（推理模型的 reasoning 与正文共享该预算）。 */
         maxTokens: number;
         /** 蒸馏调用的思考档位；空串不传（跟随模型默认）。 */
@@ -188,7 +185,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         timeoutMs: Schema<number, number>;
         includePersona: Schema<boolean, boolean>;
         includeSceneNav: Schema<boolean, boolean>;
-        strategy: Schema<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
+        strategy: Schema<"hybrid" | "keyword" | "embedding", "hybrid" | "keyword" | "embedding">;
         scoreThreshold: Schema<number, number>;
         decayHalfLifeDays: Schema<number, number>;
     }>, Schemastery.ObjectT<{
@@ -199,7 +196,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         timeoutMs: Schema<number, number>;
         includePersona: Schema<boolean, boolean>;
         includeSceneNav: Schema<boolean, boolean>;
-        strategy: Schema<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
+        strategy: Schema<"hybrid" | "keyword" | "embedding", "hybrid" | "keyword" | "embedding">;
         scoreThreshold: Schema<number, number>;
         decayHalfLifeDays: Schema<number, number>;
     }>>;
@@ -319,7 +316,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         timeoutMs: Schema<number, number>;
         includePersona: Schema<boolean, boolean>;
         includeSceneNav: Schema<boolean, boolean>;
-        strategy: Schema<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
+        strategy: Schema<"hybrid" | "keyword" | "embedding", "hybrid" | "keyword" | "embedding">;
         scoreThreshold: Schema<number, number>;
         decayHalfLifeDays: Schema<number, number>;
     }>, Schemastery.ObjectT<{
@@ -330,7 +327,7 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
         timeoutMs: Schema<number, number>;
         includePersona: Schema<boolean, boolean>;
         includeSceneNav: Schema<boolean, boolean>;
-        strategy: Schema<"keyword" | "embedding" | "hybrid", "keyword" | "embedding" | "hybrid">;
+        strategy: Schema<"hybrid" | "keyword" | "embedding", "hybrid" | "keyword" | "embedding">;
         scoreThreshold: Schema<number, number>;
         decayHalfLifeDays: Schema<number, number>;
     }>>;

@@ -35,24 +35,8 @@ export declare function buildRecallQuery(messages: Array<{
  *  命中率 = hitTurns / injectedTurns。去重语义（0.8.6）：全量压制轮计入 hitTurns
  *  （相关记忆已在模型上下文里，本质是命中而非未命中），injectedTurns 仍计全部
  *  发生过检索的轮次（保住分母语义与悬浮卡口径连续性）。 */
-export interface RecallSessionStats {
-    /** 发生过召回检索的轮次数（含零命中、全量压制与超时）。 */
-    injectedTurns: number;
-    /** 命中（≥1 条实际注入，或有命中但被去重全量压制）轮次数。 */
-    hitTurns: number;
-    /** 累计注入条数（去重过滤后、预算截断前）。 */
-    totalHits: number;
-    /** 总预算超时跳过次数。 */
-    timeouts: number;
-    /** 累计被去重压制的命中条数（同会话已注入过，不重复注入）。 */
-    suppressedRecalls: number;
-    /** 最近一轮实际注入条数（0 = 零命中/超时/全量压制；工具指南门控沿用此信号）。 */
-    lastHits: number;
-    /** 最近一轮检索耗时 ms。 */
-    lastDurationMs: number;
-    /** 最近一次记账时间（LRU 清理依据）。 */
-    updatedAt: number;
-}
+import type { RecallSessionStats } from '../contract.js';
+export type { RecallSessionStats } from '../contract.js';
 /** 新建零值统计（首次出现的会话）。 */
 export declare function emptyRecallStats(now?: number): RecallSessionStats;
 export interface RecallHooks {

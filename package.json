@@ -31,9 +31,10 @@
     "cordis.patch.yml"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-client.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/build-client.mjs && node scripts/copy-client.mjs",
     "smoke": "node dist-smoke/smoke.js",
-    "verify-catalog": "npm run build && node scripts/verify-catalog.mjs"
+    "verify-catalog": "npm run build && node scripts/verify-catalog.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
   "engines": {
     "node": ">=22.16.0"

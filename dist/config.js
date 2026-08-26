@@ -11,6 +11,7 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
  * schema（config/settings）、运行时解析（settings.resolveSettings）与 RPC
  * 写入门（stats.settings-set）共用，勿在别处再抄字面量表。
  */
+// satisfies 反向锁定：词汇表扩词必须同步契约的 EffortChoice 联合（host 与 TS 化的 client 共用）
 export const EFFORT_CHOICES = ['', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 export const memorySchema = Schema.object({
     dataDir: Schema.string().default(''),

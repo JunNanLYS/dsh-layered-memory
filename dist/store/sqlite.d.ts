@@ -20,15 +20,8 @@ export interface CostAggregate {
     /** 单次调用输出 token 中位数（无数据为 0）。 */
     medianOutputTokens: number;
 }
-/** 按 model 分组的成本行（成本看板用）。 */
-export interface CostByModel {
-    provider: string;
-    model: string;
-    calls: number;
-    inputChars: number;
-    outputTokens: number;
-    reasoningTokens: number;
-}
+import type { CostByModel } from '../contract.js';
+export type { CostByModel } from '../contract.js';
 /** 按层级（l1/l2/l3 归并）分组的成本行。 */
 export interface CostByLayer {
     layer: string;

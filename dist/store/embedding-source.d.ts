@@ -7,7 +7,8 @@ import { LocalEmbeddingService } from './local-embedding.js';
 import { ModelDownloadQueue } from './download-queue.js';
 import { RuntimeInstaller } from './runtime-installer.js';
 import type { MemoryDb } from './sqlite.js';
-export type EmbeddingSourceKind = 'remote' | 'local' | 'off';
+import type { EmbeddingSourceKind, EmbeddingStateView } from '../contract.js';
+export type { ApplyPhase, EmbeddingSourceKind, EmbeddingStateView, ReindexProgressState } from '../contract.js';
 export interface EmbeddingSourceState {
     source: EmbeddingSourceKind;
     /** source=local 时启用的目录模型 id。 */
@@ -38,17 +39,6 @@ export declare function resolveInitialEmbedding(cfg: MemoryConfig, sourceStore: 
 /** 本地服务构造工厂（index.ts 的初始解析与 Manager 共用一份实现，防漂移）。
  *  推理在 worker 线程（见 local-embedding.ts）；此处只传 runtime 目录与模型目录。 */
 export declare function makeLocalServiceFactory(installer: RuntimeInstaller, downloader: ModelDownloadQueue, logger?: MemoryLogger, maxInputChars?: number): (modelId: string) => LocalEmbeddingService | null;
-export type ApplyPhase = 'idle' | 'installing-runtime' | 'warming' | 'switching' | 'reindexing' | 'done' | 'error';
-export interface ReindexProgressState {
-    running: boolean;
-    l1Done: number;
-    l1Total: number;
-    l0Done: number;
-    l0Total: number;
-    startedAt: number;
-    cancelled: boolean;
-    error?: string;
-}
 export interface EmbeddingManagerDeps {
     dataDir: string;
     cfg: MemoryConfig;
@@ -118,44 +108,4 @@ export declare class EmbeddingManager {
     private reindexNow;
     /** RPC 快照（设置页嵌入区块数据源；client 忙时 1s 轮询）。 */
     snapshot(): Promise<EmbeddingStateView>;
-}
-export interface EmbeddingStateView {
-    source: EmbeddingSourceKind;
-    activeModel: string | null;
-    ceilings: {
-        remote: boolean;
-        local: boolean;
-    };
-    runtime: {
-        targetVersion: string;
-        phase: 'idle' | 'installing' | 'ready' | 'error' | 'cancelled';
-        installedVersion: string | null;
-        elapsedMs: number;
-        lastLines: string[];
-        error?: string;
-    };
-    models: Array<{
-        id: string;
-        name: string;
-        dims: number;
-        contextTokens: number;
-        tags: string[];
-        description: string;
-        totalBytes: number;
-        bytesOnDisk: number;
-        state: 'none' | 'partial' | 'downloaded';
-    }>;
-    download: ReturnType<ModelDownloadQueue['getProgress']>;
-    apply: {
-        phase: ApplyPhase;
-        message: string;
-        startedAt: number;
-        busy: boolean;
-    };
-    local: {
-        state: 'idle' | 'loading' | 'ready' | 'failed' | 'terminated';
-        error: string | null;
-    } | null;
-    reindex: ReindexProgressState;
-    activeNote?: string;
 }

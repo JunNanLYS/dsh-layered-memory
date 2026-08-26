@@ -15,27 +15,8 @@ export interface RebuildStores {
     persona: Record<MemoryFamily, PersonaStore>;
     state: StateStore;
 }
-export type RebuildPhase = 'idle' | 'preparing' | 'distilling' | 'finalizing' | 'done' | 'cancelled' | 'failed';
-export interface RebuildStatus {
-    running: boolean;
-    phase: RebuildPhase;
-    /** 已完成的会话块数 / 总块数。 */
-    done: number;
-    total: number;
-    /** L0 体量（idle 时为实时预估，运行中为快照值）。 */
-    sessionCount: number;
-    messageCount: number;
-    /** 预计 LLM 抽取调用次数（下界估算：块数与字符预算取大）。 */
-    estCalls: number;
-    /** 重建产出的 L1 记录累计条数。 */
-    recordsBuilt: number;
-    cancelRequested: boolean;
-    startedAt: number | null;
-    finishedAt: number | null;
-    error: string | null;
-    /** 归档产物名（提示用户可手工找回）。 */
-    archiveNote: string | null;
-}
+import type { RebuildStatus } from '../contract.js';
+export type { RebuildPhase, RebuildStatus } from '../contract.js';
 export interface RebuildChunk {
     sessionId: string;
     messages: ConversationMessage[];

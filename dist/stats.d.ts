@@ -44,31 +44,7 @@ export interface SessionInfoSource {
         vectorSearch: boolean;
     };
 }
-export interface MemoryStats {
-    ok: boolean;
-    dataDir: string;
-    /** 新会话默认记忆档位（auto/chat/work）。 */
-    family: string;
-    version: string;
-    l0Today: number;
-    l1Count: number;
-    l1TotalExtracted: number;
-    sceneCount: number;
-    personaChars: number;
-    hasPersona: boolean;
-    lastExtractAt: string | null;
-    lastL2At: string | null;
-    lastL3At: string | null;
-    memoriesSinceL2: number;
-    memoriesSinceL3: number;
-    pendingExtract: number;
-    message: string;
-    /** 实际生效的阈值（概览进度分母用，避免 UI 硬编码与部署配置脱节）。 */
-    thresholds: {
-        l2MinNewMemories: number;
-        l3Interval: number;
-    };
-}
+export type { MemoryStats } from './contract.js';
 /** 注册状态 RPC（web 侧 connection 服务可选，缺失时跳过，不影响插件主体）。 */
 export declare function registerMemoryRpc(ctx: Context, cfg: MemoryConfig, stores: {
     l0: L0Store;
