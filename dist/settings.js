@@ -1,6 +1,57 @@
 import Schema from '@deepseek-ai/schemastery';
 import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 import { EFFORT_CHOICES } from './config.js';
+/** 运行时路由链上限（写入门与 UI 同限，防误粘贴巨数组撑爆 settings 存储）。 */
+export const DISTILL_CHAIN_MAX = 8;
+/**
+ * 运行时统一路由链的**展示投影**（llm-providers 的 chain.current 数据源）：
+ * distillChain 非空即原样返回；为空时投影旧运行时键（distillProvider/distillModel
+ * 成对 → 单行主路由，旧档位 reasoningEffort 作为该主路由的档位——旧语义里它
+ * 作用的就是当时唯一的路由）。注意：生效逻辑（effectiveCfg）只认显式
+ * distillChain、不走本投影——旧键路径在未配链时按旧语义原样生效。
+ */
+export function projectDistillChain(s) {
+    if (s?.distillChain?.length)
+        return s.distillChain;
+    if (s?.distillProvider && s?.distillModel) {
+        return [{ provider: s.distillProvider, model: s.distillModel, reasoningEffort: s.reasoningEffort || '' }];
+    }
+    return [];
+}
+/** settings-set 写入门校验：返回错误文案（null = 通过）。 */
+export function validateDistillChain(chain) {
+    if (!Array.isArray(chain))
+        return 'distillChain 须为数组';
+    if (chain.length > DISTILL_CHAIN_MAX)
+        return `路由链最多 ${DISTILL_CHAIN_MAX} 条`;
+    const seen = new Set();
+    for (let i = 0; i < chain.length; i++) {
+        if (!chain[i] || typeof chain[i] !== 'object')
+            return `第 ${i + 1} 行须为对象`;
+        const e = chain[i];
+        const p = typeof e.provider === 'string' ? e.provider : '';
+        const m = typeof e.model === 'string' ? e.model : '';
+        const eff = typeof e.reasoningEffort === 'string' ? e.reasoningEffort : '';
+        if (p.length > 200 || m.length > 200)
+            return `第 ${i + 1} 行 provider/model 过长（≤200 字符）`;
+        if (!EFFORT_CHOICES.includes(eff))
+            return `第 ${i + 1} 行思考档位非法: ${eff || '(空)'}`;
+        if (i === 0) {
+            if ((p && !m) || (!p && m))
+                return '主路由行 provider 与 model 须成对（双空 = 跟随默认模型）';
+        }
+        else if (!p || !m) {
+            return `第 ${i + 1} 行回退路由必须显式选择供应商与模型`;
+        }
+        if (p && m) {
+            const key = `${p}::${m}`;
+            if (seen.has(key))
+                return `第 ${i + 1} 行与前面的路由重复（${p}/${m}）`;
+            seen.add(key);
+        }
+    }
+    return null;
+}
 const NS = settingsNamespace('dsh-memory');
 const ALWAYS_ON = {
     enabled: true,
@@ -10,6 +61,7 @@ const ALWAYS_ON = {
     reasoningEffort: '',
     distillProvider: '',
     distillModel: '',
+    distillChain: [],
     distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
     distillMaxInputChars: 0,
 };
@@ -40,6 +92,11 @@ export function liveSettingsSchema() {
         reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
         distillProvider: Schema.string().default(''),
         distillModel: Schema.string().default(''),
+        distillChain: Schema.array(Schema.object({
+            provider: Schema.string().default(''),
+            model: Schema.string().default(''),
+            reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
+        })).default([]),
         distillBudgets: Schema.object({
             extract: budget(),
             dedup: budget(),
@@ -153,10 +210,28 @@ export function registerLiveSettings(ctx, logger) {
 /** scope.get() 的防御性解析：异常值回退全开（宁可多记不可静默停摆）。 */
 function resolveSettings(value) {
     if (!value || typeof value !== 'object')
-        return { ...ALWAYS_ON };
+        return { ...ALWAYS_ON, distillChain: [] };
     const v = value;
     const num = (x) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
     const rawBudgets = (v.distillBudgets ?? {});
+    // 路由链逐条防御：非对象条目剔除、超长截断、非法档位归空、超限截断到上限
+    const rawChain = Array.isArray(v.distillChain) ? v.distillChain : [];
+    const chain = [];
+    for (const item of rawChain) {
+        if (chain.length >= DISTILL_CHAIN_MAX)
+            break;
+        if (!item || typeof item !== 'object')
+            continue;
+        const e = item;
+        const eff = typeof e.reasoningEffort === 'string' && EFFORT_CHOICES.includes(e.reasoningEffort)
+            ? e.reasoningEffort
+            : '';
+        chain.push({
+            provider: typeof e.provider === 'string' ? e.provider.slice(0, 200) : '',
+            model: typeof e.model === 'string' ? e.model.slice(0, 200) : '',
+            reasoningEffort: eff,
+        });
+    }
     return {
         enabled: v.enabled !== false,
         capture: v.capture !== false,
@@ -167,6 +242,7 @@ function resolveSettings(value) {
             : '',
         distillProvider: typeof v.distillProvider === 'string' ? v.distillProvider : '',
         distillModel: typeof v.distillModel === 'string' ? v.distillModel : '',
+        distillChain: chain,
         distillBudgets: {
             extract: num(rawBudgets.extract),
             dedup: num(rawBudgets.dedup),

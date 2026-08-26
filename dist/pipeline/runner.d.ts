@@ -36,9 +36,9 @@ export interface PipelineTask {
 /** 选取下一个要执行的任务下标：最早的 live 优先，否则队首（rebuild 分块让位）。 */
 export declare function pickNextTaskIndex(tasks: PipelineTask[]): number;
 /**
- * 运行时调参视图：UI 选择器可临时覆盖蒸馏思考档位、蒸馏模型路由与分层输出预算
- * （空串/0 回退静态 config / 内置默认）。浅拷贝只覆盖 llm 一层，其余键与原 cfg
- * 共享只读引用；pipeline 全链继续收 cfg，无需感知。
+ * 运行时调参视图：设置页运行时链（distillChain）与旧单路由/档位键、分层输出预算
+ * 可临时覆盖静态 config（空串/0 回退静态 config / 内置默认）。浅拷贝只覆盖 llm
+ * 一层，其余键与原 cfg 共享只读引用；pipeline 全链继续收 cfg，无需感知。
  *
  * 蒸馏模型覆盖优先级：部署静态 pin（cfg.llm.provider+model 双字段齐）不可被
  * 运行时覆盖（部署可强制蒸馏走内网路由，防用户选择把对话外送）；未 pin 时

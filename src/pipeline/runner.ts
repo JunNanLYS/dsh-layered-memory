@@ -70,9 +70,9 @@ export function pickNextTaskIndex(tasks: PipelineTask[]): number {
 }
 
 /**
- * 运行时调参视图：UI 选择器可临时覆盖蒸馏思考档位、蒸馏模型路由与分层输出预算
- * （空串/0 回退静态 config / 内置默认）。浅拷贝只覆盖 llm 一层，其余键与原 cfg
- * 共享只读引用；pipeline 全链继续收 cfg，无需感知。
+ * 运行时调参视图：设置页运行时链（distillChain）与旧单路由/档位键、分层输出预算
+ * 可临时覆盖静态 config（空串/0 回退静态 config / 内置默认）。浅拷贝只覆盖 llm
+ * 一层，其余键与原 cfg 共享只读引用；pipeline 全链继续收 cfg，无需感知。
  *
  * 蒸馏模型覆盖优先级：部署静态 pin（cfg.llm.provider+model 双字段齐）不可被
  * 运行时覆盖（部署可强制蒸馏走内网路由，防用户选择把对话外送）；未 pin 时
@@ -82,13 +82,31 @@ export function pickNextTaskIndex(tasks: PipelineTask[]): number {
 export function effectiveCfg(cfg: MemoryConfig, live?: LiveSettingsHandle): MemoryConfig {
   const s = live?.get();
   // 思考档位：设置服务在场时运行时值整体接管——'' = 自动（按模型能力解析），
-  // 不再回退静态配置（"跟随配置"选项已删）；静态值仅无 settings 服务的部署生效
+  // 不再回退静态配置（"跟随配置"选项已删）；静态值仅无 settings 服务的部署生效。
+  // 统一路由链模式下（chain 非空）旧档位键不再参与：链内每条路由自带档位候选
   const eff = s?.reasoningEffort ?? '';
   // 可选链防御：smoke/测试缝构造的最小 cfg 可能没有 llm 字段
   const pinned = Boolean(cfg.llm?.provider && cfg.llm?.model);
-  const override = s && !pinned && s.distillProvider && s.distillModel
-    ? { provider: s.distillProvider, model: s.distillModel }
+  // 运行时统一路由链：**只认显式 distillChain**（非空即权威——主路由档位走
+  // primaryEffort、条目档位随链注入 fallbacks、旧键与全局档位接管让位）；
+  // 未配置链时旧键（distillProvider/distillModel/reasoningEffort）走下方完全
+  // 不变的旧路径——旧存量值的语义一个比特都不动（projectDistillChain 只是
+  // llm-providers 的 UI 展示视图，不参与生效逻辑）。
+  // pinned 时链整体失效（部署锁定路由，链编辑器只读）
+  const chain = s?.distillChain?.length ? s.distillChain : [];
+  const chainMode = chain.length > 0 && !pinned;
+  const chainEffort = chainMode && chain[0].reasoningEffort ? chain[0].reasoningEffort : null;
+  // 链非空即整体接管：回退链以运行时链为准（slice(1)），**单行链 = 显式无回退**
+  // （空数组覆盖静态 cfg.llm.fallbacks——"UI 所见即所跑"，审查修复的语义不对称：
+  // 此前单显式行不清静态、单空主路由行清静态，同一意图两种表达）
+  const chainFallbacks = chainMode
+    ? chain.slice(1).map((e) => ({ provider: e.provider, model: e.model, reasoningEffort: e.reasoningEffort || '' }))
     : null;
+  const override = chainMode && chain[0].provider && chain[0].model
+    ? { provider: chain[0].provider, model: chain[0].model }
+    : !chain.length && s && !pinned && s.distillProvider && s.distillModel
+      ? { provider: s.distillProvider, model: s.distillModel }
+      : null;
   const b = s?.distillBudgets;
   const budgets =
     b && (b.extract > 0 || b.dedup > 0 || b.l2 > 0 || b.l3 > 0)
@@ -100,17 +118,27 @@ export function effectiveCfg(cfg: MemoryConfig, live?: LiveSettingsHandle): Memo
         }
       : null;
   const maxInput = s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : null;
-  // 无任何注入且（无 live，或运行时 '' 且静态本就 ''）→ 原引用返回，保持引用稳定性
-  const effNoop = eff === '' && (!live || !cfg.llm?.reasoningEffort);
-  if (!override && !budgets && !maxInput && effNoop) return cfg;
+  // 旧档位键的全局接管（含给静态回退条目盖章）：仅非链模式保留（旧存量值兼容）
+  const fallbacksTakeover = !chainMode && eff && cfg.llm?.fallbacks?.length
+    ? cfg.llm.fallbacks.map((f) => ({ ...f, reasoningEffort: eff }))
+    : null;
+  // 档位注入：链模式下不走全局接管（主路由档位走 primaryEffort、条目档位在链内，
+  // 空档位条目回退的是静态全局而非运行时旧键）；非链模式保持旧整体接管语义
+  const effortInject = live && !chainMode && (eff !== '' || Boolean(cfg.llm?.reasoningEffort))
+    ? { reasoningEffort: eff }
+    : null;
+  if (!override && !budgets && !maxInput && !fallbacksTakeover && !chainEffort && !chainFallbacks && !effortInject) return cfg;
   return {
     ...cfg,
     llm: {
       ...cfg.llm,
-      ...(live ? { reasoningEffort: eff } : {}),
+      ...(effortInject ?? {}),
       ...(override ?? {}),
       ...(budgets ? { budgets } : {}),
       ...(maxInput ? { maxInputChars: maxInput } : {}),
+      ...(fallbacksTakeover ? { fallbacks: fallbacksTakeover } : {}),
+      ...(chainEffort ? { primaryEffort: chainEffort } : {}),
+      ...(chainFallbacks ? { fallbacks: chainFallbacks } : {}),
     },
   };
 }

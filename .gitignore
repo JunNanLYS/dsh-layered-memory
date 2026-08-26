@@ -22,3 +22,6 @@ bench/harness/bench.env
 
 # git worktree 隔离工作区
 .worktree/
+
+# codegraph 本地代码图谱索引（二进制 SQLite，按机器重建即可）
+.codegraph/

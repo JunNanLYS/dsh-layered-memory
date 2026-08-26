@@ -99,10 +99,19 @@ export interface MemoryConfig {
     provider: string;
     /** 蒸馏用的模型；留空用当前默认选择。 */
     model: string;
+    /** 回退链（#31）：主路由失败（报错/掐断/网络异常/空输出）后按序降级的备用路由，
+     *  条目顺序即优先级。与主路由完全相同的条目自动跳过；provider/model 缺失的条目剔除；
+     *  条目 reasoningEffort 非空时覆盖全局档位（未配置运行时链 distillChain 时，
+     *  旧档位键 reasoningEffort 的整体接管——含给条目盖章——仍对存量值生效）；
+     *  空数组（缺省）= 单路由行为不变。 */
+    fallbacks?: Array<{ provider: string; model: string; reasoningEffort?: string }>;
     /** 单次蒸馏调用的输出 token 上限（推理模型的 reasoning 与正文共享该预算）。 */
     maxTokens: number;
     /** 蒸馏调用的思考档位；空串不传（跟随模型默认）。 */
     reasoningEffort: string;
+    /** 运行时主路由显式档位（distillChain[0].reasoningEffort 经 effectiveCfg 注入）；
+     *  非静态 schema——'' = 跟随全局静态 reasoningEffort，仅供链模式传递主路由档位。 */
+    primaryEffort?: string;
     temperature: number;
     /** 单次蒸馏调用的用户 prompt 字符预算（≈token 数，按中文 1 字≈1 token 保守估算）。 */
     maxInputChars: number;
@@ -179,6 +188,13 @@ export const memorySchema = Schema.object({
   llm: Schema.object({
     provider: Schema.string().default(''),
     model: Schema.string().default(''),
+    // 回退链（#31）：主路由失败后按序降级；每条路由各享全额 timeoutMs（慢 TTFT 模型的
+    // 回退位正是要给它留足首包时间，共享预算会让回退链失效）；条目档位经能力钳制后发送
+    fallbacks: Schema.array(Schema.object({
+      provider: Schema.string().default(''),
+      model: Schema.string().default(''),
+      reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
+    })).default([]),
     // 推理模型（如 v4-flash）的 reasoning 计入输出预算：预算不足会被思考吃光导致正文 0 字符。
     // 0.8.0 起各蒸馏层显式传分层预算（见 llm.ts LAYER_MAX_TOKENS_*），本值为未分层调用的兜底总闸
     maxTokens: Schema.number().min(1024).max(1_000_000).default(65_536),

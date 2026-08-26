@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { type MemoryConfig } from './config.js';
 import { type RecallSessionStats } from './hooks/recall.js';
 import type { RebuildController } from './pipeline/rebuild.js';
-import type { LiveSettingsHandle } from './settings.js';
+import { type LiveSettingsHandle } from './settings.js';
 import type { L0Store } from './store/l0.js';
 import type { L1Store } from './store/l1.js';
 import type { PersonaStore } from './store/persona.js';

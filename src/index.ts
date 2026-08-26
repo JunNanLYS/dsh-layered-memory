@@ -47,7 +47,7 @@ import { StateStore } from './store/state.js';
 import { registerMemoryTools } from './tools/index.js';
 import type { MemoryLogger } from './types.js';
 import { errDetail, withFileLog } from './util/filelog.js';
-import { resolveModelRoute, invalidateEffortCache } from './llm.js';
+import { buildRouteChain, resolveModelRoute, invalidateEffortCache } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { initTokenCost, resetTokenCost } from './token-cost.js';
 
@@ -199,8 +199,13 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
   // 蒸馏模型路由：启动期解析一次并记录（路由错误是最难事后排查的问题之一）；
   // 用运行时调参视图解析——用户已用 UI 覆盖蒸馏模型时，日志反映实际路由
   try {
-    const route = await resolveModelRoute(ctx, effectiveCfg(config, live));
-    logger.info(`[memory] 蒸馏模型路由: ${route.provider}/${route.model}`);
+    const cfgView = effectiveCfg(config, live);
+    const route = await resolveModelRoute(ctx, cfgView);
+    // 链长度按同一解析口径计（相同条目会被去重），排障时无需 --dump-config 即可确认回退链生效
+    const chain = buildRouteChain(route, cfgView.llm.fallbacks, cfgView.llm.reasoningEffort);
+    logger.info(
+      `[memory] 蒸馏模型路由: ${route.provider}/${route.model}${chain.length > 1 ? `（+${chain.length - 1} 回退）` : ''}`,
+    );
   } catch (err) {
     logger.warn(`[memory] 蒸馏模型路由解析失败: ${errDetail(err)}`);
   }

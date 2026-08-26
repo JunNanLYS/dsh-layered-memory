@@ -19,9 +19,9 @@ import type {} from '@deepseek-ai/dsh-agent-default-model';
 import { EFFORT_CHOICES, resolveDataDir, type MemoryConfig } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { emptyRecallStats, type RecallSessionStats } from './hooks/recall.js';
-import { decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
+import { buildRouteChain, decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
 import type { RebuildController } from './pipeline/rebuild.js';
-import type { LiveSettingsHandle } from './settings.js';
+import { projectDistillChain, validateDistillChain, type DistillChainEntry, type LiveSettingsHandle } from './settings.js';
 import type { L0Store } from './store/l0.js';
 import type { L1Store } from './store/l1.js';
 import type { PersonaStore } from './store/persona.js';
@@ -346,7 +346,9 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       const budgets = s?.distillBudgets ?? { extract: 0, dedup: 0, l2: 0, l3: 0 };
       // 蒸馏思考档位：current 是运行时值（'' = 自动）；effective 是能力探询后实际发送值
       // （'' = 不传，跟随模型默认）；options 是当前生效模型声明的档位表（空声明 → 只显示
-      // high，用户规则：无声明默认 high），供蒸馏思考选择器渲染；fallback 是静态部署值
+      // high，用户规则：无声明默认 high），fallback 是静态部署值。注：旧「蒸馏思考」
+      // 选择器已删，本块保留给旧 client 版本与 smoke 兼容；新 UI（路由链编辑器）
+      // 的逐行档位词表走 llm-models 的 efforts 字段
       let effortEffective = s?.reasoningEffort || cfg.llm.reasoningEffort;
       let effortOptions: string[] = ['high'];
       let effortRoute: { provider: string; model: string } | null = null;
@@ -365,7 +367,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         supported: live?.supported ?? false,
         settings: s ?? {
           enabled: true, capture: true, distill: true, recall: true,
-          reasoningEffort: '', distillProvider: '', distillModel: '',
+          reasoningEffort: '', distillProvider: '', distillModel: '', distillChain: [],
           distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, distillMaxInputChars: 0,
         },
         // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
@@ -400,9 +402,15 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
     case 'dsh-memory/settings-set': {
       if (!live) throw new Error('开关通道未初始化');
       const patch = (payload ?? {}) as Record<string, unknown>;
-      const clean: Record<string, boolean | string | number | { extract: number; dedup: number; l2: number; l3: number }> = {};
+      const clean: Record<string, boolean | string | number | DistillChainEntry[] | { extract: number; dedup: number; l2: number; l3: number }> = {};
       for (const key of ['enabled', 'capture', 'distill', 'recall'] as const) {
         if (typeof patch[key] === 'boolean') clean[key] = patch[key] as boolean;
+      }
+      // 运行时统一路由链：结构校验后整体写入（空数组 = 回到跟随部署配置）
+      if (patch.distillChain !== undefined) {
+        const err = validateDistillChain(patch.distillChain);
+        if (err) throw new Error(err);
+        clean.distillChain = patch.distillChain as DistillChainEntry[];
       }
       if (patch.reasoningEffort !== undefined) {
         const v = String(patch.reasoningEffort);
@@ -530,6 +538,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
     // ── 蒸馏模型选择器（用户已配置的供应商路由） ──
     case 'dsh-memory/llm-providers': {
       // 供应商目录（已注册适配器的活动路由）+ 默认选择 + 当前覆盖与实际生效路由
+      // ——蒸馏路由链编辑器的数据源（供应商下拉/默认模型展示/链状态 chain 块）
       let providers: Array<{ id: string; name: string }> = [];
       try {
         providers = deps.ctx.llm.listProviders();
@@ -545,9 +554,20 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       }
       const s = live?.get();
       const current = { provider: s?.distillProvider ?? '', model: s?.distillModel ?? '' };
+      // 统一路由链块：current = 运行时链（含旧键投影）；static = 部署静态回退链；
+      // effective = buildRouteChain 语义的实际链（主路由 + 有效条目去重，每条带档位候选）；
+      // source 标记当前链来自运行时还是部署静态（UI 的跟随态/接管态判定）
+      const chainCurrent = projectDistillChain(s);
+      let effectiveChain: Array<{ provider: string; model: string; effort: string }> = [];
       let effective: { provider: string; model: string } | null = null;
       try {
-        effective = await resolveModelRoute(deps.ctx, effectiveCfg(cfg, live));
+        const cfgView = effectiveCfg(cfg, live);
+        effective = await resolveModelRoute(deps.ctx, cfgView);
+        effectiveChain = buildRouteChain(
+          { provider: effective.provider, model: effective.model, effort: cfgView.llm.primaryEffort || '' },
+          cfgView.llm.fallbacks,
+          cfgView.llm.reasoningEffort,
+        );
       } catch {
         effective = null; // 无法解析（无默认选择且未覆盖）时 UI 显示占位
       }
@@ -561,6 +581,12 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         // 所选供应商是否仍在已注册路由中（用户删掉供应商后提示回退）
         currentRegistered: current.provider === '' || providers.some((p) => p.id === current.provider),
         effective,
+        chain: {
+          current: chainCurrent,
+          static: cfg.llm.fallbacks ?? [],
+          effectiveChain,
+          source: chainCurrent.length ? ('runtime' as const) : ('static' as const),
+        },
       };
     }
 
@@ -574,9 +600,32 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         deps.ctx.llm.listModels(p.provider),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error('模型列表查询超时')), 8000)),
       ]);
+      // 每个模型附思考档位能力表（resolveModelInfo 复用 effortCache，本地快照不触
+      // 网）：统一路由链编辑器的逐行档位下拉数据源。整体限时限流——第三方适配器的
+      // resolveModelInfo 若为远端查询会拖死端点（client 5s 轮询放大），超时降级空表
+      // （探询失败/未声明同样 → 空表，UI 只显示「跟随部署配置」）
+      const baseModels = models.map((m) => ({ id: m.id, name: m.name, description: m.description ?? null, efforts: [] as string[] }));
+      const providerId = p.provider;
+      type ModelWithEfforts = { id: string; name: string; description: string | null; efforts: string[] };
+      const withEfforts = await Promise.race([
+        (async (): Promise<ModelWithEfforts[]> => {
+          const out: ModelWithEfforts[] = [];
+          for (const m of models) {
+            let efforts: string[] = [];
+            try {
+              efforts = (await resolveModelEfforts(deps.ctx, providerId, m.id))?.efforts ?? [];
+            } catch {
+              efforts = [];
+            }
+            out.push({ id: m.id, name: m.name, description: m.description ?? null, efforts });
+          }
+          return out;
+        })(),
+        new Promise<ModelWithEfforts[]>((resolve) => setTimeout(() => resolve(baseModels), 4000)),
+      ]);
       return {
         provider: p.provider,
-        models: models.map((m) => ({ id: m.id, name: m.name, description: m.description ?? null })),
+        models: withEfforts,
       };
     }
 

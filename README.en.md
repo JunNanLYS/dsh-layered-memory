@@ -230,8 +230,8 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
   config:                    # keys replace whole lines (no deep merge); write out all keys you want to keep
     family: auto             # default mode for new sessions: auto | chat | work
     llm:                     # static distillation route (both fields set = deployment pin,
-      provider: ''           # which outranks the settings-page selection; when empty the route
-      model: ''              # follows the settings-page "distillation model" picker or the default model)
+      provider: ''           # which outranks the settings-page route chain; when empty the route
+      model: ''              # follows the route-chain primary row in the settings page or the default model)
 ```
 
 | Field | Default | Description |
@@ -272,15 +272,38 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `embedding.allowLocalModels` | `true` | Allow the local embedding tier (deployment ceiling; when off, no model downloads and no local tier in settings) |
 | `embedding.mirror` | `https://hf-mirror.com` | Download mirror root for local models (can be changed back to `https://huggingface.co`) |
 | `embedding.proxy` | `''` | Three-state download proxy: `''` (default) = auto-detect proxy env vars (`HTTPS_PROXY`/`ALL_PROXY` etc., honoring `NO_PROXY`); `none` = disable, always direct; any other value = proxy URL (e.g. `http://127.0.0.1:7890`). Direct connections to the mirror are intermittently unreachable on some networks (connect timeouts and poisoned bytes have both been observed) — keep the default auto-detection on machines with a proxy |
-| `llm.provider/model` | empty | Static distillation route (deployment pin): when **both** fields are set the route is locked, outranking the settings-page selection and the default model (deployments can force distillation onto a specific route); when empty the route follows "settings-page selection → default model". At runtime, switch among **configured providers** (including custom ones added in dsh Settings → Models) via the "distillation model" picker in Settings → Memory → Overview — effective immediately, no restart needed |
+| `llm.provider/model` | empty | Static distillation route (deployment pin): when **both** fields are set the route is locked, outranking the settings-page runtime route chain and the default model (deployments can force distillation onto a specific route); when empty the route follows "settings-page route-chain primary → default model". At runtime, configure the primary route and fallback chain in the **route-chain editor** under Settings → Memory → Overview → distillation parameters (pick from **configured providers**, including custom ones added in dsh Settings → Models; the primary row may stay empty to follow the default model) — a non-empty chain takes over this static config wholesale, effective immediately with no restart |
+| `llm.fallbacks` | `[]` | Distillation fallback chain: an ordered list of backup routes tried one by one when the primary route fails (error / cut-off / network error / **empty output**); each entry is `{provider, model, reasoningEffort?}` (a non-empty effort overrides the global `llm.reasoningEffort`, still clamped by model capability); entries identical to the primary route are skipped; **each route gets the full `timeoutMs`**; when all routes fail, the existing per-session backoff takes over. Empty list (default) = single-route behavior unchanged (see [Distillation fallback chain & slow-TTFT models](#distillation-fallback-chain--slow-ttft-models) below); a non-empty settings-page runtime chain (`distillChain`) takes over **both** the primary route and the fallback chain (a single-row chain = explicitly no fallbacks), empty = follow this config |
 | `llm.maxTokens` | `65536` | Fallback output cap for non-layered calls. Each distillation stage has its own budget (extraction 16k / dedup 8k / L2 32k / L3 16k; auto ×4 when the reasoning effort is high/xhigh/max, so thinking can't starve the text budget); the per-layer budgets are runtime-adjustable in Settings → Memory → Overview → distillation parameters (empty/0 = built-in defaults) |
-| `llm.reasoningEffort` | empty | Distillation reasoning effort: empty = **auto** (resolved from model capability: the model's default tier, else `high`); an explicit value (`off`/`none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`) is only sent when the model declares support — effort vocabularies differ across providers (deepseek accepts `off`, OpenAI-style APIs use `none`, models that declare no tiers get nothing), and unsupported tiers degrade to not-sending with a one-time warning; output budgets auto-×4 at high/xhigh/max. Switchable at runtime in Settings → Memory → Overview; the selectable tiers follow the current model live |
+| `llm.reasoningEffort` | empty | Distillation reasoning effort: empty = **auto** (resolved from model capability: the model's default tier, else `high`); an explicit value (`off`/`none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`) is only sent when the model declares support — effort vocabularies differ across providers (deepseek accepts `off`, OpenAI-style APIs use `none`, models that declare no tiers get nothing), and unsupported tiers degrade to not-sending with a one-time warning; output budgets auto-×4 at high/xhigh/max. At runtime, override the effort **per route** in the settings-page route-chain editor (per-row dropdown; the tier list follows each model's declared capability live, defaulting to this value) |
 | `llm.temperature` | `0.3` | Distillation temperature |
 | `llm.maxInputChars` | `700000` | Input character budget per distillation call (over-budget L1 inputs are chunked automatically); runtime-adjustable in Settings → distillation parameters → input budget (empty/0 = follow this value) |
 | `llm.timeoutMs` | `120000` | Per-call distillation timeout (ms) |
 | `tokenCost.retentionDays` | `365` | Retention (days) for distillation cost details (the `token_cost` table); rows older than this are rolled away on write. `0` = keep forever. Also the upper bound of the cost dashboard's "last N days" window |
 | `tools` | `true` | Whether to register model-callable memory tools |
 | `benchControl` | `false` | Register the in-process bench control service (rebuild trigger / session-mode setting / distillation usage snapshot — used by the benchmark's lifecycle track). Off by default — zero surface in production deployments; do not enable casually |
+
+### Distillation fallback chain & slow-TTFT models
+
+Free/slow tiers of some inference providers have **first-token latencies (TTFT) upwards of 20 seconds**, while some upstream gateways cut a silent connection at ~20s — distillation calls then fail at a fixed ~20s (`llm aborted`) long before the plugin's 120s timeout could ever matter (the scenario measured in [#31](https://github.com/JunNanLYS/dsh-layered-memory/issues/31)). Three mitigations, pick as needed:
+
+1. **Switch route** (most direct): change the primary route live in the route-chain editor under Settings → Memory → Overview → distillation parameters (or move a fast route to the head of the chain), or pin `llm.provider`/`llm.model` statically.
+2. **Fallback chain** (automatic demotion): when the primary route fails, backup routes are tried in order with no manual intervention:
+
+   ```yaml
+   llm:
+     provider: opencode-go          # primary route (may be left unpinned: settings-page route-chain primary / default model)
+     model: ox-alpha-free
+     fallbacks:                     # entry order = demotion priority; unset = single-route behavior unchanged
+       - provider: opencode-go
+         model: deepseek-v4-flash
+         reasoningEffort: low       # optional: per-route effort override (defaults to the global value)
+       - provider: deepseek-official
+         model: deepseek-v4-flash
+   ```
+
+   Failure = error / cut-off / network error / **empty output** (stream ends normally with 0 characters — worthless for distillation since parsing always fails, so it is treated as a route failure rather than an empty return); caller-initiated cancellation does not demote; each route gets the **full** `llm.timeoutMs` (a shared budget would give a slow-TTFT fallback route less time than its real first-packet needs, defeating the chain); token costs are recorded per attempt (failed attempts get a row too, with whatever tokens arrived before the stream broke), and successful calls are attributed to the route that actually served. The route chain can also be adjusted at runtime in the route-chain editor under Settings → Memory → Overview → distillation parameters (no config edit or restart needed); the YAML below suits deployments that want to pin the static chain.
+3. **Raise the timeout**: `llm.timeoutMs` only helps when the route is genuinely slow but the gateway doesn't cut; if the gateway kills at 20s, raising the plugin timeout is futile — use the first two layers.
 
 ## Storage Layout
 

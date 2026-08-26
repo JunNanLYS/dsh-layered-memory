@@ -38,8 +38,8 @@ import { SceneStore, sanitizeFilename } from './store/scenes.js';
 import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
 import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts, applyDecayWeight, DECAY_FLOOR } from './store/search-utils.js';
-import { liveSettingsSchema, registerLiveSettings, type LiveSettingsHandle, type MemoryLiveSettings } from './settings.js';
-import { callLLM, decideSendableEffort, layerMaxTokens, resolveLayerTokens } from './llm.js';
+import { liveSettingsSchema, projectDistillChain, registerLiveSettings, validateDistillChain, type LiveSettingsHandle, type MemoryLiveSettings } from './settings.js';
+import { buildRouteChain, callLLM, decideSendableEffort, layerMaxTokens, resolveLayerTokens } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { registerMemoryRpc } from './stats.js';
 import { registerMemoryTools } from './tools/index.js';
@@ -547,7 +547,7 @@ async function main(): Promise<void> {
       // fake live 开关句柄
       let liveVal = {
         enabled: true, capture: true, distill: true, recall: true,
-        reasoningEffort: '', distillProvider: '', distillModel: '',
+        reasoningEffort: '', distillProvider: '', distillModel: '', distillChain: [] as unknown[],
         distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
       };
       const live = {
@@ -686,7 +686,7 @@ async function main(): Promise<void> {
       }
       await call('dsh-memory/settings-set', { reasoningEffort: '' });
 
-      // 蒸馏模型选择器端点：供应商目录 + 默认选择 + 覆盖写透
+      // 蒸馏路由链编辑器数据源端点：供应商目录 + 默认选择 + 覆盖写透
       const lp0 = await call('dsh-memory/llm-providers') as never as {
         providers: Array<{ id: string }>; default: { provider: string; model: string } | null;
         pinned: boolean; current: { provider: string; model: string }; currentRegistered: boolean;
@@ -713,6 +713,42 @@ async function main(): Promise<void> {
       let badLen = false;
       try { await call('dsh-memory/settings-set', { distillModel: 'x'.repeat(201) }); } catch { badLen = true; }
       assert(badLen, 'settings-set 拒绝超长模型 id');
+
+      // 统一路由链（distillChain）：往返 + llm-providers chain 块 + 校验拒收 + 清空回跟随
+      const sc1 = await call('dsh-memory/settings-set', { distillChain: [
+        { provider: 'custom-oai', model: 'custom-model', reasoningEffort: 'low' },
+        { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: '' },
+      ] }) as never as { settings: { distillChain: unknown[] } };
+      assert(sc1.settings.distillChain.length === 2, 'distillChain 写入往返');
+      const lp2 = await call('dsh-memory/llm-providers') as never as {
+        chain: { current: Array<{ provider: string }>; source: string; effectiveChain: Array<{ provider: string; effort: string }> };
+      };
+      assert(lp2.chain.current.length === 2 && lp2.chain.source === 'runtime', 'llm-providers chain 块反映运行时链（接管态）');
+      assert(
+        lp2.chain.effectiveChain[0].provider === 'custom-oai' && lp2.chain.effectiveChain[0].effort === 'low' &&
+          lp2.chain.effectiveChain[1].provider === 'deepseek-official' && lp2.chain.effectiveChain[1].effort === 'off',
+        'effectiveChain：主路由显式档位生效、条目空档位回退部署全局（本部署静态 off）',
+      );
+      // 主路由行双空 = 跟随默认模型，合法（空链行不注入任何路由）
+      const scEmpty = await call('dsh-memory/settings-set', { distillChain: [{ provider: '', model: '', reasoningEffort: '' }] }) as never as { settings: { distillChain: unknown[] } };
+      assert(scEmpty.settings.distillChain.length === 1, 'distillChain 主路由行双空（跟随默认）合法');
+      const badChain: Array<[string, unknown[]]> = [
+        ['超上限', Array.from({ length: 9 }, () => ({ provider: 'p', model: 'm', reasoningEffort: '' }))],
+        ['回退行缺模型', [{ provider: 'p1', model: 'm1', reasoningEffort: '' }, { provider: 'p2', model: '', reasoningEffort: '' }]],
+        ['主路由半空', [{ provider: 'p1', model: '', reasoningEffort: '' }]],
+        ['重复条目', [{ provider: 'p1', model: 'm1', reasoningEffort: '' }, { provider: 'p1', model: 'm1', reasoningEffort: 'low' }]],
+        ['非法档位', [{ provider: 'p1', model: 'm1', reasoningEffort: 'banana' }]],
+      ];
+      for (const [name, payload] of badChain) {
+        let rejected = false;
+        try { await call('dsh-memory/settings-set', { distillChain: payload }); } catch { rejected = true; }
+        assert(rejected, `distillChain 校验拒收：${name}`);
+      }
+      const sc2 = await call('dsh-memory/settings-set', { distillChain: [] }) as never as { settings: { distillChain: unknown[] } };
+      assert(sc2.settings.distillChain.length === 0, 'distillChain 清空（回到跟随部署配置）');
+      const lm2 = await call('dsh-memory/llm-models', { provider: 'custom-oai' }) as never as { models: Array<{ id: string; efforts: string[] }> };
+      assert(lm2.models.some((m) => m.id === 'custom-model' && m.efforts.join('/') === 'low/high'), 'llm-models 附带模型档位能力表（行内档位下拉数据源）');
+
 
       // 分层输出预算：settings-get 返回 current/defaults/effective；set 校验并写透
       const bg0 = await call('dsh-memory/settings-get') as never as { budgets: { current: Record<string, number>; defaults: Record<string, number>; effective: Record<string, number> } };
@@ -1873,6 +1909,181 @@ async function main(): Promise<void> {
       assert(captured.maxTokens === 1000, '显式 high 同样只乘一次');
       await callLLM(capCtx, capCfg(''), { system: 's', user: 'u', maxTokens: 1000 });
       assert(captured.maxTokens === 4000 && captured.reasoningEffort === 'xhigh', '自动档解析出高档（模型默认 xhigh）防线补 ×4');
+    }
+
+    // g4. 蒸馏回退链（#31）：链解析纯决策 + effectiveCfg 档位接管 + callLLM 多路由行为
+    {
+      // g4a. buildRouteChain 决策表：拼接 / 去重 / 缺失剔除 / 条目档位覆盖
+      const chain = buildRouteChain(
+        { provider: 'p0', model: 'm0' },
+        [
+          { provider: 'p0', model: 'm0' },                          // 与主路由相同 → 跳过
+          { provider: '', model: 'mx' },                            // provider 缺失 → 剔除
+          { provider: 'p1', model: 'm1', reasoningEffort: 'low' },  // 条目档位覆盖全局
+          { provider: 'p1', model: 'm1' },                          // 与先前条目相同 → 跳过
+          { provider: 'p2', model: 'm2' },                          // 无档位 → 跟随全局
+        ],
+        'high',
+      );
+      assert(chain.length === 3, '回退链 = 主路由 + 有效条目（相同条目与缺失字段剔除）');
+      assert(
+        chain[0].provider === 'p0' && chain[0].effort === 'high' && chain[1].effort === 'low' && chain[2].effort === 'high',
+        '条目档位非空覆盖全局、缺省跟随全局',
+      );
+      assert(buildRouteChain({ provider: 'p', model: 'm' }, undefined, 'high').length === 1, '无回退配置 = 单路由链');
+      assert(buildRouteChain({ provider: 'p0', model: 'm0', effort: 'low' }, undefined, 'high')[0].effort === 'low', '主路由显式档位覆盖全局档位');
+      assert(buildRouteChain({ provider: 'p0', model: 'm0' }, undefined, 'high')[0].effort === 'high', '主路由无显式档位跟随全局');
+
+      // g4b. effectiveCfg：运行时档位整体接管同样覆盖回退条目；自动档（''）不压制条目
+      const mkCfgE = (llm: Record<string, unknown>) => ({ family: 'auto', llm }) as never as Parameters<typeof effectiveCfg>[0];
+      const mkLiveE = (patch: Record<string, unknown>) =>
+        ({ get: () => ({ reasoningEffort: '', distillProvider: '', distillModel: '', distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, ...patch }) }) as never;
+      const fbEntry = [{ provider: 'p1', model: 'm1', reasoningEffort: 'low' }];
+      const stamped = effectiveCfg(mkCfgE({ provider: '', model: '', reasoningEffort: 'high', fallbacks: fbEntry }), mkLiveE({ reasoningEffort: 'medium' }));
+      assert(
+        stamped.llm.reasoningEffort === 'medium' && stamped.llm.fallbacks![0].reasoningEffort === 'medium',
+        '运行时档位非空时整体接管（含回退条目）',
+      );
+      const autoKeep = effectiveCfg(mkCfgE({ provider: '', model: '', reasoningEffort: 'high', fallbacks: fbEntry }), mkLiveE({ reasoningEffort: '' }));
+      assert(
+        autoKeep.llm.reasoningEffort === '' && autoKeep.llm.fallbacks![0].reasoningEffort === 'low',
+        '运行时自动档（空串）接管全局静态值但不压制条目档位',
+      );
+
+      // g4b2. 运行时统一路由链（distillChain 非空即权威）：主路由/条目/主路由档位注入，
+      // 旧键与全局档位接管让位；pinned 时链整体失效
+      const chainLive = (chain: Array<{ provider: string; model: string; reasoningEffort: string }>) =>
+        ({ get: () => ({ reasoningEffort: 'high', distillProvider: 'old-p', distillModel: 'old-m', distillChain: chain, distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 } }) }) as never;
+      // 静态档位取 off（与 live 旧档位 high 区分——若链模式对旧档位接管的抑制漏网，
+      // reasoningEffort 会变 high，此锚即失败）
+      const cfgChain = mkCfgE({ provider: '', model: '', reasoningEffort: 'off', fallbacks: [{ provider: 'sf-p', model: 'sf-m', reasoningEffort: '' }] });
+      const c1 = effectiveCfg(cfgChain, chainLive([
+        { provider: 'p1', model: 'm1', reasoningEffort: 'low' },
+        { provider: 'p2', model: 'm2', reasoningEffort: '' },
+      ]));
+      assert(
+        c1.llm.provider === 'p1' && c1.llm.model === 'm1' && c1.llm.primaryEffort === 'low' &&
+          c1.llm.fallbacks!.length === 1 && c1.llm.fallbacks![0].provider === 'p2' &&
+          c1.llm.reasoningEffort === 'off',
+        'distillChain 非空：主路由 + 主路由档位（primaryEffort）+ 条目注入；旧档位键（high）被链模式抑制、静态档位（off）保持',
+      );
+      // 链非空即整体接管：单行链（不论主路由行是否显式）= 显式无回退，空数组覆盖静态链
+      const c2 = effectiveCfg(cfgChain, chainLive([{ provider: '', model: '', reasoningEffort: '' }]));
+      assert(
+        c2 !== cfgChain && c2.llm.fallbacks!.length === 0 && c2.llm.provider === '' && c2.llm.reasoningEffort === 'off',
+        '链只有空主路由行：主路由仍跟随默认 + 空回退覆盖静态链（显式无回退）',
+      );
+      const c2b = effectiveCfg(cfgChain, chainLive([{ provider: 'p1', model: 'm1', reasoningEffort: '' }]));
+      assert(
+        c2b.llm.provider === 'p1' && c2b.llm.model === 'm1' && c2b.llm.fallbacks!.length === 0 && c2b.llm.primaryEffort === undefined,
+        '单显式行链：主路由注入、空档位跟随静态全局、空回退覆盖静态链（与单空行语义对称）',
+      );
+      const cfgPin = mkCfgE({ provider: 'pin-p', model: 'pin-m', reasoningEffort: 'high' });
+      const c3 = effectiveCfg(cfgPin, chainLive([{ provider: 'p1', model: 'm1', reasoningEffort: 'low' }]));
+      assert(
+        c3.llm.provider === 'pin-p' && c3.llm.model === 'pin-m' && c3.llm.primaryEffort === undefined && (c3.llm.fallbacks ?? []).length === 0,
+        'pinned 时运行时链整体失效（静态 pin 赢）',
+      );
+
+      // g4b3. projectDistillChain 旧键投影（UI 与 effectiveCfg 共用的链视图）
+      assert(projectDistillChain({ distillChain: [{ provider: 'a', model: 'b', reasoningEffort: '' }] } as never as MemoryLiveSettings).length === 1, 'chain 非空直接采信');
+      assert(
+        projectDistillChain({ distillProvider: 'lp', distillModel: 'lm', reasoningEffort: 'low' } as never as MemoryLiveSettings)[0].reasoningEffort === 'low',
+        '旧键投影：单行主路由带旧档位',
+      );
+      assert(projectDistillChain(undefined).length === 0, '无 live 值空链');
+      assert(validateDistillChain([{ provider: 'p', model: 'm', reasoningEffort: '' }, { provider: 'p', model: 'm', reasoningEffort: 'low' }]) !== null, 'validateDistillChain 重复条目非空错误');
+
+      // g4c. callLLM 多路由行为：fake stream 按模型编排 chunk 序列并记录每次调用的路由与档位
+      const calls: Array<{ provider: string; model: string; effort?: string }> = [];
+      const fbCtx = {
+        llm: {
+          stream: async function* (o: { provider: string; model: string; reasoningEffort?: string }) {
+            calls.push({ provider: o.provider, model: o.model, effort: o.reasoningEffort });
+            if (o.model === 'dead-m') {
+              yield { type: 'finish', reason: { kind: 'aborted', failure: { message: 'gateway 20s cutoff' } } };
+              return;
+            }
+            if (o.model === 'empty-m') {
+              yield { type: 'usage', usage: { outputTokens: 5, reasoningTokens: 5 } };
+              yield { type: 'finish', reason: { kind: 'stop' } };
+              return;
+            }
+            yield { type: 'block-end', block: { type: 'text', text: `ok-from-${o.model}` } };
+            yield { type: 'finish', reason: { kind: 'stop' } };
+          },
+          resolveModelInfo: async (_p: string, m: string) =>
+            m === 'main-m' || m === 'eff-m'
+              ? { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } }
+              : { reasoning: {} },
+        },
+        get: () => undefined,
+      } as never;
+      const fbCfg = (model: string, fallbacks: unknown[]) =>
+        ({ llm: { provider: 'main-p', model, reasoningEffort: 'high', fallbacks, maxTokens: 2000, temperature: 0.3, maxInputChars: 100_000, timeoutMs: 10_000 } }) as never as MemoryConfig;
+
+      // c1. 主路由 aborted finish → 降级成功；逐次记账（失败 + 成功都计入）
+      calls.length = 0;
+      const before1 = snapshotDistillUsage().layers['l1-extract'] ?? { calls: 0, failures: 0 };
+      const r1 = await callLLM(fbCtx, fbCfg('dead-m', [{ provider: 'fb-p', model: 'ok-m' }]), { system: 's', user: 'u', layer: 'l1-extract' });
+      const after1 = snapshotDistillUsage().layers['l1-extract'];
+      assert(r1 === 'ok-from-ok-m' && calls.length === 2, '主路由 aborted finish 自动降级到回退路由并成功');
+      assert(after1.calls - before1.calls === 2 && after1.failures - before1.failures === 1, '逐次记账：失败尝试与成功尝试都计入该层');
+
+      // c2. 空输出 → 降级成功；失败记账走 empty-output 分支（failed=true）
+      calls.length = 0;
+      const before2 = snapshotDistillUsage().layers['l1-dedup'] ?? { calls: 0, failures: 0 };
+      const r2 = await callLLM(fbCtx, fbCfg('empty-m', [{ provider: 'fb-p', model: 'ok-m' }]), { system: 's', user: 'u', layer: 'l1-dedup' });
+      const after2 = snapshotDistillUsage().layers['l1-dedup'];
+      assert(r2 === 'ok-from-ok-m' && calls.length === 2, '空输出视为路由失败并降级');
+      assert(after2.calls - before2.calls === 2 && after2.failures - before2.failures === 1, '空输出的失败尝试按 failed 记账');
+
+      // c3. 调用方主动取消 → 单次尝试后原样上抛、不降级
+      calls.length = 0;
+      const ac = new AbortController();
+      ac.abort();
+      let threw = false;
+      try {
+        await callLLM(fbCtx, fbCfg('dead-m', [{ provider: 'fb-p', model: 'ok-m' }]), { system: 's', user: 'u', signal: ac.signal });
+      } catch {
+        threw = true;
+      }
+      assert(threw && calls.length === 1, '调用方取消不降级（一次尝试后原样上抛）');
+
+      // c4. 全部路由失败 → 抛最后一个错误（交由按会话退避接管）
+      calls.length = 0;
+      threw = false;
+      let lastMsg = '';
+      try {
+        await callLLM(fbCtx, fbCfg('dead-m', [{ provider: 'fb2-p', model: 'dead-m' }]), { system: 's', user: 'u' });
+      } catch (e) {
+        threw = true;
+        lastMsg = (e as Error).message;
+      }
+      assert(threw && calls.length === 2 && lastMsg.includes('llm aborted'), '全部路由失败抛最后一个错误');
+
+      // c5. 档位随路由：主路由发全局档位；回退条目档位覆盖全局（各经能力钳制）
+      calls.length = 0;
+      await callLLM(fbCtx, fbCfg('main-m', [{ provider: 'fb-p', model: 'eff-m', reasoningEffort: 'low' }]), { system: 's', user: 'u' });
+      assert(calls.length === 1 && calls[0].effort === 'high', '主路由发送全局档位（模型声明支持照发）');
+      calls.length = 0;
+      await callLLM(fbCtx, fbCfg('dead-m', [{ provider: 'fb-p', model: 'eff-m', reasoningEffort: 'low' }]), { system: 's', user: 'u' });
+      assert(calls.length === 2 && calls[1].effort === 'low', '回退条目档位覆盖全局档位发送');
+
+      // c6. 未配置回退链：单路由；空输出同样抛错（原"返回空串"改判为失败）
+      calls.length = 0;
+      threw = false;
+      let emptyMsg = '';
+      const before6 = snapshotDistillUsage().layers['l2'] ?? { calls: 0, failures: 0 };
+      try {
+        await callLLM(fbCtx, fbCfg('empty-m', []), { system: 's', user: 'u', layer: 'l2' });
+      } catch (e) {
+        threw = true;
+        emptyMsg = (e as Error).message;
+      }
+      const after6 = snapshotDistillUsage().layers['l2'];
+      assert(threw && calls.length === 1 && emptyMsg.includes('empty output'), '未配置回退链时空输出抛明确错误（不再返回空串）');
+      assert(after6.calls - before6.calls === 1 && after6.failures - before6.failures === 1, '未配置链时空输出同样按失败记账');
     }
 
     // h. 输入预算覆盖：>0 注入 cfg.llm.maxInputChars（L1 分块/callLLM 截断/rebuild 估算全链消费）
