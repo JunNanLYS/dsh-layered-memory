@@ -77,6 +77,18 @@ function assert(cond: boolean, label: string): void {
   }
 }
 
+/** 条件轮询等待（替代固定睡眠）：固定毫秒在慢速 CI runner 上会与异步管线（含 fs I/O 的
+ *  pending.json 原子落盘、任务队列入桶）赛跑产生假失败（2026-08-26 PR 事件实测：同树
+ *  push 绿 / PR 红）。超时抛错中断——状态未就位时后续断言只会连环误报，直接给出明确原因。 */
+async function waitFor(cond: () => boolean | Promise<boolean>, what: string, timeoutMs = 4000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await cond()) return;
+    if (Date.now() > deadline) throw new Error(`[smoke] waitFor 超时（${timeoutMs}ms）：${what}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
 const silentLogger = {
   debug: () => {},
   info: () => {},
@@ -1324,38 +1336,43 @@ async function main(): Promise<void> {
 
       // 爬坡起点 1：A 首条消息立即触发抽取，切片消费、warmup→2
       runnerT3.enqueue('A', [msg('a1', 1)], 'chat');
-      await settle();
+      await waitFor(() => llmCalls === 1 && runnerT3.pendingCount === 0, '首轮抽取完成');
       assert(llmCalls === 1 && runnerT3.pendingCount === 0, `首轮即出记忆（calls=${llmCalls}，桶清空）`);
       // 阈值 2：B 插入 1 条不触发（B 切片 1 < 2）；A 再 1 条（A 切片 1 < 2）也不触发
       runnerT3.enqueue('B', [msg('b1', 2)], 'chat');
-      await settle();
+      await waitFor(() => runnerT3.pendingCount === 1, 'B 首条入桶');
       runnerT3.enqueue('A', [msg('a2', 3)], 'chat');
-      await settle();
+      await waitFor(() => runnerT3.pendingCount === 2, 'A 第二条入桶');
       assert(llmCalls === 1 && runnerT3.pendingCount === 2, `未达阈值不触发，两会话切片并存（calls=${llmCalls}，桶 ${runnerT3.pendingCount}）`);
       // A 第 3 条 → A 切片 2 ≥ 2 触发：只抽 A 的切片，B 的 1 条留存；warmup→4
       runnerT3.enqueue('A', [msg('a3', 4)], 'chat');
-      await settle();
+      await waitFor(() => llmCalls === 2 && runnerT3.pendingCount === 1, '第二次抽取完成');
       assert(llmCalls === 2 && runnerT3.pendingCount === 1, `只消费 A 切片，B 切片留存（calls=${llmCalls}，桶 ${runnerT3.pendingCount}）`);
-      // 爬坡状态持久化：重读 pending.json 验证 chat=4
-      const { warmup: wReload } = await loadPending(pendingPathFor(tmpT3), silentLogger);
-      assert(wReload.chat === 4, `warmup 随 pending.json 持久化（chat=${wReload.chat}）`);
+      // 爬坡状态持久化：轮询重读 pending.json 直到 warmup=4 可见（原子写落盘与本断言赛跑
+      // 是 13g 曾在 CI 假失败的直接原因——内存态已就位 ≠ 文件已刷盘）
+      let wReloadChat = -1;
+      await waitFor(async () => {
+        wReloadChat = (await loadPending(pendingPathFor(tmpT3), silentLogger)).warmup.chat;
+        return wReloadChat === 4;
+      }, 'warmup=4 落盘可见');
+      assert(wReloadChat === 4, `warmup 随 pending.json 持久化（chat=${wReloadChat}）`);
 
       // 档位切换同步：切 off 挂起（切片留存、无 LLM 调用）；切回按捕获档位落袋
       runnerT3.enqueue('B', [msg('b2', 5)], 'chat'); // B 切片 2 条（阈值 4 攒批中）
-      await settle();
+      await waitFor(() => runnerT3.pendingCount === 2 && llmCalls === 2, 'B 第二条入桶（不触发抽取）');
       assert(runnerT3.pendingCount === 2 && llmCalls === 2, '切换前 B 攒批中（不触发）');
       runnerT3.onModeChange('B', 'chat', 'off');
-      await settle();
+      await settle(); // 挂起断言是"什么都不发生"：前置状态已就位，短睡兜底即可
       assert(llmCalls === 2 && runnerT3.pendingCount === 2, `切 off 挂起：切片留存不蒸馏（calls=${llmCalls}）`);
       runnerT3.onModeChange('B', 'off', 'chat');
-      await settle();
+      await waitFor(() => llmCalls === 3 && runnerT3.pendingCount === 0, '切回落袋完成');
       assert(llmCalls === 3 && runnerT3.pendingCount === 0, `切回按捕获档位落袋（calls=${llmCalls}，桶清空）`);
       // 非 off 档间切换同样立即落袋
       runnerT3.enqueue('A', [msg('a4', 6)], 'chat');
-      await settle();
+      await waitFor(() => runnerT3.pendingCount === 1, 'A 新切片入桶');
       assert(runnerT3.pendingCount === 1, 'A 新切片 1 条（阈值 4 攒批中）');
       runnerT3.onModeChange('A', 'chat', 'work');
-      await settle();
+      await waitFor(() => llmCalls === 4 && runnerT3.pendingCount === 0, '切走落袋完成');
       assert(llmCalls === 4 && runnerT3.pendingCount === 0, `切走按捕获档位（chat 桶）落袋（calls=${llmCalls}）`);
 
       runnerT3.stop();
@@ -1459,7 +1476,7 @@ async function main(): Promise<void> {
       runner2.enqueue('s', [], 'chat');
       runner2.enqueue('s', [], 'chat');
       runner2.stop(); // 同步置位：drain 在首任务完成后退出
-      await new Promise((r) => setTimeout(r, 50));
+      await waitFor(() => ran === 1, 'stop 后首任务完成');
       assert(ran === 1, `stop 后不再取新任务（完成 ${ran} 个）`);
       db4.close();
     } finally {
@@ -1666,7 +1683,7 @@ async function main(): Promise<void> {
         modesT5,
         tmpT5,
       );
-      await new Promise((r) => setTimeout(r, 30)); // 等 profileCache 首刷
+      await waitFor(() => (contextText2['memory:profile']() ?? '').includes('用户画像内容'), 'profileCache 首刷可见');
       const profileNoTools = contextText2['memory:profile']() ?? '';
       assert(profileNoTools.includes('用户画像内容') && !profileNoTools.includes('记忆工具调用指南'), '工具关闭 → 画像照常、指南不注入');
       personaText = '';
@@ -3197,7 +3214,7 @@ async function main(): Promise<void> {
         }) as SpawnImpl;
         const insD = new RuntimeInstaller(path.join(tmp25, 'd'), '1.0.0', { logger: silentLogger, spawnImpl: dImpl, lockfileSource: lockSrc });
         const dPromise = insD.ensure();
-        await new Promise((r) => setTimeout(r, 30)); // 等 ci 起跑
+        await waitFor(() => dCalls.length === 1, 'ci 子进程起跑');
         assert(insD.cancel() === true, 'ci 阶段取消被接受');
         assert((await dPromise) === false, '取消后 ensure 返回 false');
         assert(dCalls.length === 1 && dCalls[0].args[0] === 'ci', `取消后不回退 install（实际调用 ${dCalls.map((x) => x.args[0]).join(',')}）`);
