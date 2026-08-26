@@ -1948,10 +1948,13 @@ async function main(): Promise<void> {
       assert(r1 === 'ok-from-ok-m' && calls.length === 2, '主路由 aborted finish 自动降级到回退路由并成功');
       assert(after1.calls - before1.calls === 2 && after1.failures - before1.failures === 1, '逐次记账：失败尝试与成功尝试都计入该层');
 
-      // c2. 空输出 → 降级成功
+      // c2. 空输出 → 降级成功；失败记账走 empty-output 分支（failed=true）
       calls.length = 0;
-      const r2 = await callLLM(fbCtx, fbCfg('empty-m', [{ provider: 'fb-p', model: 'ok-m' }]), { system: 's', user: 'u' });
+      const before2 = snapshotDistillUsage().layers['l1-dedup'] ?? { calls: 0, failures: 0 };
+      const r2 = await callLLM(fbCtx, fbCfg('empty-m', [{ provider: 'fb-p', model: 'ok-m' }]), { system: 's', user: 'u', layer: 'l1-dedup' });
+      const after2 = snapshotDistillUsage().layers['l1-dedup'];
       assert(r2 === 'ok-from-ok-m' && calls.length === 2, '空输出视为路由失败并降级');
+      assert(after2.calls - before2.calls === 2 && after2.failures - before2.failures === 1, '空输出的失败尝试按 failed 记账');
 
       // c3. 调用方主动取消 → 单次尝试后原样上抛、不降级
       calls.length = 0;
@@ -1989,13 +1992,16 @@ async function main(): Promise<void> {
       calls.length = 0;
       threw = false;
       let emptyMsg = '';
+      const before6 = snapshotDistillUsage().layers['l2'] ?? { calls: 0, failures: 0 };
       try {
-        await callLLM(fbCtx, fbCfg('empty-m', []), { system: 's', user: 'u' });
+        await callLLM(fbCtx, fbCfg('empty-m', []), { system: 's', user: 'u', layer: 'l2' });
       } catch (e) {
         threw = true;
         emptyMsg = (e as Error).message;
       }
+      const after6 = snapshotDistillUsage().layers['l2'];
       assert(threw && calls.length === 1 && emptyMsg.includes('empty output'), '未配置回退链时空输出抛明确错误（不再返回空串）');
+      assert(after6.calls - before6.calls === 1 && after6.failures - before6.failures === 1, '未配置链时空输出同样按失败记账');
     }
 
     // h. 输入预算覆盖：>0 注入 cfg.llm.maxInputChars（L1 分块/callLLM 截断/rebuild 估算全链消费）

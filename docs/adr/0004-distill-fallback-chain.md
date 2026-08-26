@@ -10,7 +10,8 @@
 1. **链结构与条目形态**：主路由解析优先级不动（静态 pin > 设置页运行时选择 >
    默认模型），`llm.fallbacks` 对象列表（`{provider, model, reasoningEffort?}`）
    按序追加在后；与主路由或先前条目完全相同（provider+model）的条目跳过；
-   provider/model 缺失的条目剔除。
+   provider/model 缺失的条目剔除。边界：主路由**本身解析失败**（未 pin 且探不到
+   默认模型服务）直接上抛、fallbacks 不参与——那是配置错误，不是路由故障。
 2. **失败判定**：error/aborted finish、网络异常、空输出（流正常结束但 0 字符）
    触发降级；调用方 signal 主动取消不降级（取消不是路由故障，立刻上抛）；
    JSON 解析失败不触发（发生在调用边界之外，属于成功调用的输出质量问题）。

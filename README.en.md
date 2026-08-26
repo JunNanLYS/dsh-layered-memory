@@ -302,7 +302,7 @@ Free/slow tiers of some inference providers have **first-token latencies (TTFT) 
          model: deepseek-v4-flash
    ```
 
-   Failure = error / cut-off / network error / **empty output** (stream ends normally with 0 characters — worthless for distillation since parsing always fails, so it is treated as a route failure rather than an empty return); caller-initiated cancellation does not demote; each route gets the **full** `llm.timeoutMs` (a shared budget would give a slow-TTFT fallback route less time than its real first-packet needs, defeating the chain); the token cost dashboard records the route that actually served. A visual chain editor in the settings page ships later — for now, configure via the composed config.
+   Failure = error / cut-off / network error / **empty output** (stream ends normally with 0 characters — worthless for distillation since parsing always fails, so it is treated as a route failure rather than an empty return); caller-initiated cancellation does not demote; each route gets the **full** `llm.timeoutMs` (a shared budget would give a slow-TTFT fallback route less time than its real first-packet needs, defeating the chain); token costs are recorded per attempt (failed attempts get a row too, with whatever tokens arrived before the stream broke), and successful calls are attributed to the route that actually served. A visual chain editor in the settings page ships later — for now, configure via the composed config.
 3. **Raise the timeout**: `llm.timeoutMs` only helps when the route is genuinely slow but the gateway doesn't cut; if the gateway kills at 20s, raising the plugin timeout is futile — use the first two layers.
 
 ## Storage Layout
