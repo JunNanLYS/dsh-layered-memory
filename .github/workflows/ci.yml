@@ -1,0 +1,31 @@
+# CI 门禁：PR 与分支推送跑全量验证链（typecheck → build → smoke → 目录核验）。
+# 这是 2026-08 体检后的 P0 修复——此前唯一工作流是 tag 触发的 publish.yml，
+# smoke 从未在 CI 跑过，回归防护全靠本地自觉。
+# 注意：`npm run build:smoke` 重建 dist-smoke（tsconfig exclude 了 src/smoke.ts，
+# `npm run build` 不产出它）——先跑它再跑 smoke，消除"陈旧产物"陷阱。
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # engines >=22.16（node:sqlite 与加载 sqlite-vec 的最低要求）
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run build:smoke
+      - run: npm run smoke
+      - run: node scripts/verify-catalog.mjs
