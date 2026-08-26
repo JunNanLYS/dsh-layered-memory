@@ -22,19 +22,9 @@ import type { MemoryLogger } from '../types.js';
 /** 钉死的 transformers.js 版本（D8：精确版本，升级插件时在此变更并重装运行时）。 */
 export const PINNED_TRANSFORMERS_VERSION = '4.2.0';
 
-export interface RuntimeProgress {
-  phase: 'idle' | 'installing' | 'ready' | 'error' | 'cancelled';
-  /** 插件钉死的目标版本。 */
-  targetVersion: string;
-  /** runtime 里实际就位的版本（未安装为 null）。 */
-  installedVersion: string | null;
-  startedAt: number;
-  /** 已运行毫秒（读时计算）。 */
-  elapsedMs: number;
-  /** npm 输出尾行（最近 5 行，让用户看到 npm 在干什么）。 */
-  lastLines: string[];
-  error?: string;
-}
+// RuntimeProgress 已迁入契约单一事实源（src/contract.ts）；import type 供本地使用，re-export 不断裂既有引用。
+import type { RuntimeProgress } from '../contract.js';
+export type { RuntimeProgress } from '../contract.js';
 
 /** 子进程抽象（测试注入缝）：注册输出行回调 + 终止 + 终态。 */
 export interface SpawnedProcess {

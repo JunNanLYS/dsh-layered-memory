@@ -51,15 +51,9 @@ export interface CostAggregate {
   medianOutputTokens: number;
 }
 
-/** 按 model 分组的成本行（成本看板用）。 */
-export interface CostByModel {
-  provider: string;
-  model: string;
-  calls: number;
-  inputChars: number;
-  outputTokens: number;
-  reasoningTokens: number;
-}
+// CostByModel 已迁入契约单一事实源（src/contract.ts）；import type 供本地使用，re-export 不断裂既有引用
+import type { CostByModel } from '../contract.js';
+export type { CostByModel } from '../contract.js';
 
 /** 按层级（l1/l2/l3 归并）分组的成本行。 */
 export interface CostByLayer {

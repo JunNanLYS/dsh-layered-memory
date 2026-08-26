@@ -9,25 +9,17 @@ import type {} from '@deepseek-ai/dsh-settings';
 import Schema from '@deepseek-ai/schemastery';
 import { settingsNamespace, type SettingsScope } from '@deepseek-ai/dsh-settings';
 import { EFFORT_CHOICES } from './config.js';
-import type { DistillBudgetLayer } from './llm.js';
 import type { MemoryLogger } from './types.js';
 
-/** 蒸馏思考档位：'' = 自动（模型默认档 → high）；词汇表单源于 config.ts 的 EFFORT_CHOICES。 */
-export type EffortChoice = (typeof EFFORT_CHOICES)[number];
-
-/** 分层输出预算（与 llm.ts 的 DistillBudgetLayer 同键；0 = 跟随内置默认）。 */
-export type DistillBudgets = Record<DistillBudgetLayer, number>;
+// EffortChoice/DistillBudgets/DistillChainEntry/MemoryLiveSettings 已迁入契约单一事实源
+// （src/contract.ts）：host 与 client（TS 化后的浏览器侧）共享同一套形状。
+import type { DistillBudgetLayer, DistillBudgets, DistillChainEntry, EffortChoice, MemoryLiveSettings } from './contract.js';
+export type { DistillBudgets, DistillChainEntry, EffortChoice, MemoryLiveSettings } from './contract.js';
 
 /**
  * 运行时统一路由链条目：[0] = 主路由（provider/model 双空 = 跟随默认模型），
  * [1..] = 回退链（按序降级）；reasoningEffort 为该路由的档位覆盖（'' = 跟随部署全局）。
  */
-export interface DistillChainEntry {
-  provider: string;
-  model: string;
-  reasoningEffort: EffortChoice;
-}
-
 /** 运行时路由链上限（写入门与 UI 同限，防误粘贴巨数组撑爆 settings 存储）。 */
 export const DISTILL_CHAIN_MAX = 8;
 
@@ -73,34 +65,6 @@ export function validateDistillChain(chain: unknown): string | null {
     }
   }
   return null;
-}
-
-export interface MemoryLiveSettings {
-  /** 总开关：关 = 捕获/蒸馏/召回注入全停（数据保留） */
-  enabled: boolean;
-  /** L0 捕获（原始对话落盘） */
-  capture: boolean;
-  /** L1 抽取 + L2/L3 蒸馏 */
-  distill: boolean;
-  /** 召回注入（画像/记忆上下文） */
-  recall: boolean;
-  /** 蒸馏思考档位运行时覆盖：'' = 跟随静态 config（llm.reasoningEffort） */
-  reasoningEffort: EffortChoice;
-  /** 蒸馏模型运行时覆盖（供应商 id，用户已配置的路由）：'' = 跟随静态 config/默认选择。
-   *  与 distillModel 成对生效（单字段不算）；部署静态 pin（provider+model 双字段）优先。 */
-  distillProvider: string;
-  /** 蒸馏模型运行时覆盖（模型 id）：'' = 跟随静态 config/默认选择。 */
-  distillModel: string;
-  /** 运行时统一路由链（统一列表 UI 的存储形态，见 DistillChainEntry）；
-   *  非空即权威（旧 distillProvider/distillModel/reasoningEffort 不再参与），
-   *  空数组 = 跟随部署静态配置与默认模型。 */
-  distillChain: DistillChainEntry[];
-  /** 分层输出预算运行时覆盖（token）：extract/dedup/l2/l3 四层，0 = 跟随内置默认；
-   *  思考档 high/max 的 ×4 放大在覆盖值之上照常生效。 */
-  distillBudgets: DistillBudgets;
-  /** 输入预算运行时覆盖（字符，≈token）：单次蒸馏调用的输入上限，L1 按此分块、
-   *  超限截断；0 = 跟随静态配置 llm.maxInputChars。 */
-  distillMaxInputChars: number;
 }
 
 export interface LiveSettingsHandle {
