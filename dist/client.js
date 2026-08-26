@@ -2025,8 +2025,10 @@ window.__ModuleLoader__.load({
         row: { background: "var(--dsh-mem-bg-inset)", borderRadius: 8, padding: 8, marginBottom: 8, border: "1px solid transparent" },
         rowErr: { border: "1px solid var(--dsh-mem-danger)" },
         badge: { flexShrink: 0, width: 20, height: 18, borderRadius: 999, background: "var(--dsh-mem-accent-weak)", color: "var(--dsh-mem-accent-text)", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center" },
-        // 单行控件行：flexWrap 兜底窄面板（放不下时尾部控件自然折行）
+        // 控件行：供应商/模型/档位；flexWrap 兜底窄面板（放不下时档位自然折行）
         line: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
+        // 操作按钮行：右下角对齐
+        actions: { display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, marginTop: 6 },
         ico: { padding: 0, width: 26, height: 26, minWidth: 26, fontSize: 13, lineHeight: "20px" },
         add: { width: "100%", padding: "7px 0", fontSize: 12.5, color: "var(--dsh-mem-text-3)", background: "transparent", border: "1px dashed var(--dsh-mem-border-strong)", borderRadius: 8 },
         ghost: { border: "none", background: "transparent", color: "var(--dsh-mem-text-3)" },
@@ -2153,6 +2155,10 @@ window.__ModuleLoader__.load({
               placeholder: "跟随部署配置",
               onChange: function (v) { updateRow(i, { reasoningEffort: v }); },
             }),
+          ),
+          // 序调整/删除按钮独立成行，右下角对齐（不与控件行混排）
+          react.createElement(
+            "div", { style: STY.actions },
             react.createElement(NButton, {
               style: STY.ico,
               disabled: disabled || i === 0,

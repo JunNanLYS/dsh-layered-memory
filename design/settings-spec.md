@@ -127,11 +127,12 @@ off = `--dsh-mem-track`；旋钮 `left .15s` inline 过渡（reduced-motion 压�
 
 行编辑器细则：
 
-- 行结构（单行，flexWrap 兜底窄面板）：徽标（主/序号，定宽 20）+ 供应商 NSel
-  （flex 1 / min 150）+ 模型 NSel（flex 1 / min 150；或降级 NInput，供应商无
-  目录时回车提交）+ 档位 NSel（定宽 118——词表固定且短，「跟随部署配置」/
-  off/low/high…；未选定模型时禁用）+ ↑ ↓ ✕（NButton 26×26 图标钮，inline
-  覆盖 padding；行卡片 `--dsh-mem-bg-inset` 底、8px 圆角、校验失败 danger 描边）；
+- 行结构（两行）：控件行 = 徽标（主/序号，定宽 20）+ 供应商 NSel（flex 1 / min
+  150）+ 模型 NSel（flex 1 / min 150；或降级 NInput，供应商无目录时回车提交）+
+  档位 NSel（定宽 118——词表固定且短，「跟随部署配置」/off/low/high…；未选定
+  模型时禁用），flexWrap 兜底窄面板；操作行 = ↑ ↓ ✕（NButton 26×26 图标钮，
+  inline 覆盖 padding）**右下角对齐**（justifyContent flex-end，不与控件行
+  混排）。行卡片 `--dsh-mem-bg-inset` 底、8px 圆角、校验失败 danger 描边；
 - **位置即优先级**：第 2 行 ↑ = 与主路由互换；主路由为空（跟随默认）时是**顶替**
   （空行不保留——回退行必须显式）；空主路由的 ↓ 禁用；主路由 ✕ = 重置为跟随
   默认（回退行保留）；
