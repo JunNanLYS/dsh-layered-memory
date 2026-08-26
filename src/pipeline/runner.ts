@@ -70,9 +70,9 @@ export function pickNextTaskIndex(tasks: PipelineTask[]): number {
 }
 
 /**
- * 运行时调参视图：UI 选择器可临时覆盖蒸馏思考档位、蒸馏模型路由与分层输出预算
- * （空串/0 回退静态 config / 内置默认）。浅拷贝只覆盖 llm 一层，其余键与原 cfg
- * 共享只读引用；pipeline 全链继续收 cfg，无需感知。
+ * 运行时调参视图：设置页运行时链（distillChain）与旧单路由/档位键、分层输出预算
+ * 可临时覆盖静态 config（空串/0 回退静态 config / 内置默认）。浅拷贝只覆盖 llm
+ * 一层，其余键与原 cfg 共享只读引用；pipeline 全链继续收 cfg，无需感知。
  *
  * 蒸馏模型覆盖优先级：部署静态 pin（cfg.llm.provider+model 双字段齐）不可被
  * 运行时覆盖（部署可强制蒸馏走内网路由，防用户选择把对话外送）；未 pin 时
@@ -96,7 +96,10 @@ export function effectiveCfg(cfg: MemoryConfig, live?: LiveSettingsHandle): Memo
   const chain = s?.distillChain?.length ? s.distillChain : [];
   const chainMode = chain.length > 0 && !pinned;
   const chainEffort = chainMode && chain[0].reasoningEffort ? chain[0].reasoningEffort : null;
-  const chainFallbacks = chainMode && chain.length > 1
+  // 链非空即整体接管：回退链以运行时链为准（slice(1)），**单行链 = 显式无回退**
+  // （空数组覆盖静态 cfg.llm.fallbacks——"UI 所见即所跑"，审查修复的语义不对称：
+  // 此前单显式行不清静态、单空主路由行清静态，同一意图两种表达）
+  const chainFallbacks = chainMode
     ? chain.slice(1).map((e) => ({ provider: e.provider, model: e.model, reasoningEffort: e.reasoningEffort || '' }))
     : null;
   const override = chainMode && chain[0].provider && chain[0].model

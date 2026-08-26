@@ -24,9 +24,11 @@ export interface DistillChainEntry {
 /** 运行时路由链上限（写入门与 UI 同限，防误粘贴巨数组撑爆 settings 存储）。 */
 export declare const DISTILL_CHAIN_MAX = 8;
 /**
- * 运行时统一路由链视图（UI 与 effectiveCfg 共用）：distillChain 非空即权威；
- * 为空时投影旧运行时键（distillProvider/distillModel 成对 → 单行主路由，
- * 旧档位 reasoningEffort 作为该主路由的档位——旧语义里它作用的就是当时唯一的路由）。
+ * 运行时统一路由链的**展示投影**（llm-providers 的 chain.current 数据源）：
+ * distillChain 非空即原样返回；为空时投影旧运行时键（distillProvider/distillModel
+ * 成对 → 单行主路由，旧档位 reasoningEffort 作为该主路由的档位——旧语义里它
+ * 作用的就是当时唯一的路由）。注意：生效逻辑（effectiveCfg）只认显式
+ * distillChain、不走本投影——旧键路径在未配链时按旧语义原样生效。
  */
 export declare function projectDistillChain(s: Partial<MemoryLiveSettings> | undefined): DistillChainEntry[];
 /** settings-set 写入门校验：返回错误文案（null = 通过）。 */

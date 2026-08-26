@@ -218,7 +218,9 @@ async function handleEndpoint(endpoint, payload, deps) {
             const budgets = s?.distillBudgets ?? { extract: 0, dedup: 0, l2: 0, l3: 0 };
             // 蒸馏思考档位：current 是运行时值（'' = 自动）；effective 是能力探询后实际发送值
             // （'' = 不传，跟随模型默认）；options 是当前生效模型声明的档位表（空声明 → 只显示
-            // high，用户规则：无声明默认 high），供蒸馏思考选择器渲染；fallback 是静态部署值
+            // high，用户规则：无声明默认 high），fallback 是静态部署值。注：旧「蒸馏思考」
+            // 选择器已删，本块保留给旧 client 版本与 smoke 兼容；新 UI（路由链编辑器）
+            // 的逐行档位词表走 llm-models 的 efforts 字段
             let effortEffective = s?.reasoningEffort || cfg.llm.reasoningEffort;
             let effortOptions = ['high'];
             let effortRoute = null;
@@ -415,6 +417,7 @@ async function handleEndpoint(endpoint, payload, deps) {
         // ── 蒸馏模型选择器（用户已配置的供应商路由） ──
         case 'dsh-memory/llm-providers': {
             // 供应商目录（已注册适配器的活动路由）+ 默认选择 + 当前覆盖与实际生效路由
+            // ——蒸馏路由链编辑器的数据源（供应商下拉/默认模型展示/链状态 chain 块）
             let providers = [];
             try {
                 providers = deps.ctx.llm.listProviders();
@@ -477,19 +480,29 @@ async function handleEndpoint(endpoint, payload, deps) {
                 deps.ctx.llm.listModels(p.provider),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('模型列表查询超时')), 8000)),
             ]);
-            // 每个模型附思考档位能力表（resolveModelInfo 复用 effortCache，本地快照不触网）：
-            // 统一路由链编辑器的逐行档位下拉数据源；探询失败/未声明 → 空表（UI 只显示「跟随部署配置」）
-            const withEfforts = [];
-            for (const m of models) {
-                let efforts = [];
-                try {
-                    efforts = (await resolveModelEfforts(deps.ctx, p.provider, m.id))?.efforts ?? [];
-                }
-                catch {
-                    efforts = [];
-                }
-                withEfforts.push({ id: m.id, name: m.name, description: m.description ?? null, efforts });
-            }
+            // 每个模型附思考档位能力表（resolveModelInfo 复用 effortCache，本地快照不触
+            // 网）：统一路由链编辑器的逐行档位下拉数据源。整体限时限流——第三方适配器的
+            // resolveModelInfo 若为远端查询会拖死端点（client 5s 轮询放大），超时降级空表
+            // （探询失败/未声明同样 → 空表，UI 只显示「跟随部署配置」）
+            const baseModels = models.map((m) => ({ id: m.id, name: m.name, description: m.description ?? null, efforts: [] }));
+            const providerId = p.provider;
+            const withEfforts = await Promise.race([
+                (async () => {
+                    const out = [];
+                    for (const m of models) {
+                        let efforts = [];
+                        try {
+                            efforts = (await resolveModelEfforts(deps.ctx, providerId, m.id))?.efforts ?? [];
+                        }
+                        catch {
+                            efforts = [];
+                        }
+                        out.push({ id: m.id, name: m.name, description: m.description ?? null, efforts });
+                    }
+                    return out;
+                })(),
+                new Promise((resolve) => setTimeout(() => resolve(baseModels), 4000)),
+            ]);
             return {
                 provider: p.provider,
                 models: withEfforts,

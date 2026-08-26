@@ -686,7 +686,7 @@ async function main(): Promise<void> {
       }
       await call('dsh-memory/settings-set', { reasoningEffort: '' });
 
-      // 蒸馏模型选择器端点：供应商目录 + 默认选择 + 覆盖写透
+      // 蒸馏路由链编辑器数据源端点：供应商目录 + 默认选择 + 覆盖写透
       const lp0 = await call('dsh-memory/llm-providers') as never as {
         providers: Array<{ id: string }>; default: { provider: string; model: string } | null;
         pinned: boolean; current: { provider: string; model: string }; currentRegistered: boolean;
@@ -1954,7 +1954,9 @@ async function main(): Promise<void> {
       // 旧键与全局档位接管让位；pinned 时链整体失效
       const chainLive = (chain: Array<{ provider: string; model: string; reasoningEffort: string }>) =>
         ({ get: () => ({ reasoningEffort: 'high', distillProvider: 'old-p', distillModel: 'old-m', distillChain: chain, distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 } }) }) as never;
-      const cfgChain = mkCfgE({ provider: '', model: '', reasoningEffort: 'high', fallbacks: [{ provider: 'sf-p', model: 'sf-m', reasoningEffort: '' }] });
+      // 静态档位取 off（与 live 旧档位 high 区分——若链模式对旧档位接管的抑制漏网，
+      // reasoningEffort 会变 high，此锚即失败）
+      const cfgChain = mkCfgE({ provider: '', model: '', reasoningEffort: 'off', fallbacks: [{ provider: 'sf-p', model: 'sf-m', reasoningEffort: '' }] });
       const c1 = effectiveCfg(cfgChain, chainLive([
         { provider: 'p1', model: 'm1', reasoningEffort: 'low' },
         { provider: 'p2', model: 'm2', reasoningEffort: '' },
@@ -1962,11 +1964,20 @@ async function main(): Promise<void> {
       assert(
         c1.llm.provider === 'p1' && c1.llm.model === 'm1' && c1.llm.primaryEffort === 'low' &&
           c1.llm.fallbacks!.length === 1 && c1.llm.fallbacks![0].provider === 'p2' &&
-          c1.llm.reasoningEffort === 'high',
-        'distillChain 非空：主路由 + 主路由档位（primaryEffort）+ 条目注入，全局档位与旧键不动',
+          c1.llm.reasoningEffort === 'off',
+        'distillChain 非空：主路由 + 主路由档位（primaryEffort）+ 条目注入；旧档位键（high）被链模式抑制、静态档位（off）保持',
       );
+      // 链非空即整体接管：单行链（不论主路由行是否显式）= 显式无回退，空数组覆盖静态链
       const c2 = effectiveCfg(cfgChain, chainLive([{ provider: '', model: '', reasoningEffort: '' }]));
-      assert(c2 === cfgChain, '链只有空主路由行（跟随默认）→ 无注入返回原引用');
+      assert(
+        c2 !== cfgChain && c2.llm.fallbacks!.length === 0 && c2.llm.provider === '' && c2.llm.reasoningEffort === 'off',
+        '链只有空主路由行：主路由仍跟随默认 + 空回退覆盖静态链（显式无回退）',
+      );
+      const c2b = effectiveCfg(cfgChain, chainLive([{ provider: 'p1', model: 'm1', reasoningEffort: '' }]));
+      assert(
+        c2b.llm.provider === 'p1' && c2b.llm.model === 'm1' && c2b.llm.fallbacks!.length === 0 && c2b.llm.primaryEffort === undefined,
+        '单显式行链：主路由注入、空档位跟随静态全局、空回退覆盖静态链（与单空行语义对称）',
+      );
       const cfgPin = mkCfgE({ provider: 'pin-p', model: 'pin-m', reasoningEffort: 'high' });
       const c3 = effectiveCfg(cfgPin, chainLive([{ provider: 'p1', model: 'm1', reasoningEffort: 'low' }]));
       assert(

@@ -1848,6 +1848,11 @@ window.__ModuleLoader__.load({
     // （后台仍刷新），面板首次加载时预取全部供应商——消除"切换后模型按钮几秒真空期"
     var modelsCache = {};
 
+    // 档位词表（与 src/config.ts 的 EFFORT_CHOICES 同源——bundle 无法 import host
+    // 代码，词表扩容时两处须同步；适配器声明的表外 id 会被 settings-set 拒收，
+    // 行内下拉在此先过滤，防"能选出、存不进"）
+    var EFFORT_VOCAB = ["", "off", "none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
     // ── 蒸馏路由链编辑器（统一列表：第 1 行主路由 + 后续回退链）──
     // 数据源：dsh-memory/llm-providers 的 chain 块（current 运行时链（含旧键投影）/
     // static 部署回退链 / effective 实际链（去重后、每条带档位候选）/ source 跟随或
@@ -1957,7 +1962,8 @@ window.__ModuleLoader__.load({
        *  保存第一刻起运行时链接管静态链。 */
       function forkStatic() {
         var st = (info.chain && info.chain.static) || [];
-        setRows([{ provider: "", model: "", reasoningEffort: "" }].concat(st.map(copyRow)));
+        // 静态 fallbacks 无条数上限，fork 截到运行时上限内（1 主路由 + 7 回退 = 8）
+        setRows([{ provider: "", model: "", reasoningEffort: "" }].concat(st.slice(0, 7).map(copyRow)));
         setRowErrs({});
       }
 
@@ -1978,6 +1984,10 @@ window.__ModuleLoader__.load({
           }
         }
         setRowErrs(errs);
+        if (rows.length > 8) {
+          setErr("路由链最多 8 行（含主路由行），请删除多余行");
+          return;
+        }
         if (Object.keys(errs).length) return;
         // 乐观更新（写入在途时轮询响应被丢弃），成功后拉真值收敛
         pendingWrites.current += 1;
@@ -1999,7 +2009,10 @@ window.__ModuleLoader__.load({
 
       function clearToFollow() {
         pendingWrites.current += 1;
-        rpc("dsh-memory/settings-set", { distillChain: [] })
+        // 清空链必须连带清旧运行时键——链空时旧键覆盖（distillProvider/distillModel）
+        // 与旧档位接管（reasoningEffort）会立即复活，"跟随部署配置"就成了假承诺
+        // （新 UI 已无旧键编辑入口，不清即永久滞留）
+        rpc("dsh-memory/settings-set", { distillChain: [], distillProvider: "", distillModel: "", reasoningEffort: "" })
           .then(function (r) {
             pendingWrites.current -= 1;
             setRows(null);
@@ -2107,7 +2120,9 @@ window.__ModuleLoader__.load({
           modelOptions.push({ id: row.model, label: row.model + "（已不在列表）" });
         }
         var effortOptions = [{ id: "", label: "跟随部署配置" }].concat(
-          curEfforts.map(function (k) { return { id: k, label: k }; })
+          curEfforts
+            .filter(function (k) { return EFFORT_VOCAB.indexOf(k) >= 0; })
+            .map(function (k) { return { id: k, label: k }; })
         );
 
         return react.createElement(
@@ -2129,7 +2144,9 @@ window.__ModuleLoader__.load({
                 ? react.createElement(NInput, {
                     style: { flex: 1, minWidth: 150 },
                     placeholder: "模型 id（该供应商未提供列表，输入后回车）…",
-                    value: manual.idx === i ? manual.text : "",
+                    // 非编辑态回填已设模型 id：该供应商无目录时 NSel 分支不渲染，
+                    // NInput 是行内唯一的模型展示位（提交后置空会让已设值不可见）
+                    value: manual.idx === i ? manual.text : row.model,
                     onChange: function (e) { setManual({ idx: i, text: e.target.value }); },
                     onKeyDown: function (e) {
                       if (e.key === "Enter") {
@@ -2215,7 +2232,7 @@ window.__ModuleLoader__.load({
           "div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 10 } },
           react.createElement(NButton, { style: STY.ghost, disabled: disabled, onClick: clearToFollow }, "清空并跟随部署配置"),
           react.createElement("div", { style: S.grow }),
-          react.createElement(NButton, { disabled: disabled, onClick: save }, "保存"),
+          react.createElement(NButton, { variant: "primary", disabled: disabled, onClick: save }, "保存"),
         ),
         errState[0]
           ? react.createElement("div", { style: Object.assign({}, STY.warn, { marginTop: 8 }) }, "✕ " + errState[0])
@@ -2237,7 +2254,7 @@ window.__ModuleLoader__.load({
     // 内置默认 / effective 实际生效）与 inputBudget（current 0=跟随配置 /
     // fallback 静态配置值 / effective）。输出四键经 settings-set 的
     // distillBudgets 成对提交；输入走 distillMaxInputChars 单键提交。
-    // 思考档 high/max 的 ×4 放大只作用于输出预算（提示文案注明）。
+    // 思考档 high/xhigh/max 的 ×4 放大只作用于输出预算（提示文案注明）。
     function BudgetInputs(props) {
       var rpc = props.rpc;
       var disabled = !!props.disabled;

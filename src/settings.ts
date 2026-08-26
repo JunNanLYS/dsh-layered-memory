@@ -32,9 +32,11 @@ export interface DistillChainEntry {
 export const DISTILL_CHAIN_MAX = 8;
 
 /**
- * 运行时统一路由链视图（UI 与 effectiveCfg 共用）：distillChain 非空即权威；
- * 为空时投影旧运行时键（distillProvider/distillModel 成对 → 单行主路由，
- * 旧档位 reasoningEffort 作为该主路由的档位——旧语义里它作用的就是当时唯一的路由）。
+ * 运行时统一路由链的**展示投影**（llm-providers 的 chain.current 数据源）：
+ * distillChain 非空即原样返回；为空时投影旧运行时键（distillProvider/distillModel
+ * 成对 → 单行主路由，旧档位 reasoningEffort 作为该主路由的档位——旧语义里它
+ * 作用的就是当时唯一的路由）。注意：生效逻辑（effectiveCfg）只认显式
+ * distillChain、不走本投影——旧键路径在未配链时按旧语义原样生效。
  */
 export function projectDistillChain(
   s: Partial<MemoryLiveSettings> | undefined,
@@ -52,7 +54,8 @@ export function validateDistillChain(chain: unknown): string | null {
   if (chain.length > DISTILL_CHAIN_MAX) return `路由链最多 ${DISTILL_CHAIN_MAX} 条`;
   const seen = new Set<string>();
   for (let i = 0; i < chain.length; i++) {
-    const e = (chain[i] ?? {}) as Partial<DistillChainEntry>;
+    if (!chain[i] || typeof chain[i] !== 'object') return `第 ${i + 1} 行须为对象`;
+    const e = chain[i] as Partial<DistillChainEntry>;
     const p = typeof e.provider === 'string' ? e.provider : '';
     const m = typeof e.model === 'string' ? e.model : '';
     const eff = typeof e.reasoningEffort === 'string' ? e.reasoningEffort : '';

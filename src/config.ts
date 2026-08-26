@@ -101,7 +101,8 @@ export interface MemoryConfig {
     model: string;
     /** 回退链（#31）：主路由失败（报错/掐断/网络异常/空输出）后按序降级的备用路由，
      *  条目顺序即优先级。与主路由完全相同的条目自动跳过；provider/model 缺失的条目剔除；
-     *  条目 reasoningEffort 非空时覆盖全局档位（运行时设置页档位仍整体接管）；
+     *  条目 reasoningEffort 非空时覆盖全局档位（未配置运行时链 distillChain 时，
+     *  旧档位键 reasoningEffort 的整体接管——含给条目盖章——仍对存量值生效）；
      *  空数组（缺省）= 单路由行为不变。 */
     fallbacks?: Array<{ provider: string; model: string; reasoningEffort?: string }>;
     /** 单次蒸馏调用的输出 token 上限（推理模型的 reasoning 与正文共享该预算）。 */
