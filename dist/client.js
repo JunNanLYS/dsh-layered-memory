@@ -42,7 +42,7 @@ var __defProp = Object.defineProperty;
 		      const b = buttons[i];
 		      const span = b.querySelector("span");
 		      const svg = b.querySelector("svg");
-		      if (span && svg && span.textContent && span.textContent.trim() === "\u8BB0\u5FC6" && svg.getAttribute("data-mem-icon") !== "1") {
+		      if (span && svg && span.textContent && span.textContent.trim() === "记忆" && svg.getAttribute("data-mem-icon") !== "1") {
 		        svg.outerHTML = BOOK_ICON_SVG;
 		      }
 		    }
@@ -577,7 +577,7 @@ var __defProp = Object.defineProperty;
 		}
 		function NModal(props) {
 		  if (props.open === false) return null;
-		  if (P && P.Modal) return (0, import_react.createElement)(P.Modal, { closeLabel: "\u5173\u95ED", ...props });
+		  if (P && P.Modal) return (0, import_react.createElement)(P.Modal, { closeLabel: "关闭", ...props });
 		  return (0, import_react.createElement)(
 		    "div",
 		    {
@@ -641,17 +641,17 @@ var __defProp = Object.defineProperty;
 		    })
 		  ] });
 		}
-		var RANGE_LABELS = { day: "\u4ECA\u65E5", week: "\u672C\u5468", month: "\u672C\u6708", all: "\u7D2F\u8BA1" };
+		var RANGE_LABELS = { day: "今日", week: "本周", month: "本月", all: "累计" };
 		var LAYER_OPTS = [
-		  { key: "", label: "\u5168\u90E8" },
+		  { key: "", label: "全部" },
 		  { key: "l1", label: "L1" },
 		  { key: "l2", label: "L2" },
 		  { key: "l3", label: "L3" }
 		];
 		var GRAN_OPTS = [
-		  { key: "day", label: "\u65E5" },
-		  { key: "week", label: "\u5468" },
-		  { key: "month", label: "\u6708" }
+		  { key: "day", label: "日" },
+		  { key: "week", label: "周" },
+		  { key: "month", label: "月" }
 		];
 		var PALETTE = [
 		  "var(--dsh-mem-chart-1)",
@@ -700,7 +700,7 @@ var __defProp = Object.defineProperty;
 		    try {
 		      const d = new Date(ts);
 		      const g = data && data.trend ? data.trend.granularity : granularity;
-		      if (g === "month") return d.getMonth() + 1 + "\u6708";
+		      if (g === "month") return d.getMonth() + 1 + "月";
 		      return d.getMonth() + 1 + "/" + d.getDate();
 		    } catch {
 		      return "";
@@ -772,19 +772,19 @@ var __defProp = Object.defineProperty;
 		          onClick: () => {
 		            setRangeOpen(!rangeOpen);
 		          },
-		          children: rangeDays > 0 ? "\u8FD1 " + rangeDays + " \u5929" : "\u8FD1N\u5929"
+		          children: rangeDays > 0 ? "近 " + rangeDays + " 天" : "近N天"
 		        }
 		      ),
 		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.grow }),
-		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(NButton, { onClick: load, children: "\u5237\u65B0" })
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(NButton, { onClick: load, children: "刷新" })
 		    ] }),
 		    rangeOpen ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: { ...S.flexRow, marginBottom: 10 }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: S.muted, children: "\u5C55\u793A\u8FD1 N \u5929\uFF08\u6B63\u6574\u6570\uFF0C\u6E05\u7A7A=\u9ED8\u8BA4\u7A97\u53E3\uFF1B\u8D85\u51FA\u4FDD\u7559\u671F\u540E\u7AEF\u81EA\u52A8\u56DE\u9000\uFF09" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: S.muted, children: "展示近 N 天（正整数，清空=默认窗口；超出保留期后端自动回退）" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
 		        NInput,
 		        {
 		          value: rangeDays === 0 ? "" : String(rangeDays),
-		          placeholder: "\u5982 30",
+		          placeholder: "如 30",
 		          style: { width: 90 },
 		          onChange: (e) => {
 		            const v = String(e.target.value || "").trim();
@@ -798,8 +798,8 @@ var __defProp = Object.defineProperty;
 		        }
 		      )
 		    ] }) : null,
-		    error ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.error, children: "\u6210\u672C\u8BFB\u53D6\u5931\u8D25\uFF1A" + error }) : null,
-		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "\u6210\u672C\u8D8B\u52BF\uFF08\u6309\u6A21\u578B\uFF09" }),
+		    error ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.error, children: "成本读取失败：" + error }) : null,
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "成本趋势（按模型）" }),
 		    buckets.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { children: [
 		      renderCostChart(buckets, models, maxY, fmtDate, fmtInt, PALETTE),
 		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: { display: "flex", flexWrap: "wrap", gap: "4px 12px", margin: "6px 0 14px" }, children: models.map((m, mi) => {
@@ -815,11 +815,11 @@ var __defProp = Object.defineProperty;
 		          "lg" + m
 		        );
 		      }) })
-		    ] }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { style: S.muted, children: data ? "\u6682\u65E0\u6210\u672C\u6570\u636E\uFF08\u89E6\u53D1\u4E00\u6B21\u84B8\u998F\u540E\u8FD9\u91CC\u4F1A\u51FA\u73B0\u8D8B\u52BF\uFF09\u3002" : "\u52A0\u8F7D\u4E2D\u2026" }),
-		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "\u5C42\u7EA7\u6210\u672C\uFF08\u8F93\u51FA token\uFF09" }),
+		    ] }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { style: S.muted, children: data ? "暂无成本数据（触发一次蒸馏后这里会出现趋势）。" : "加载中…" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "层级成本（输出 token）" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 }, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tr", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thFirst, children: "\u5C42\u7EA7" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thFirst, children: "层级" }),
 		        RANGES.map((r) => {
 		          return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thStyle, children: RANGE_LABELS[r] }, r);
 		        })
@@ -831,10 +831,10 @@ var __defProp = Object.defineProperty;
 		        ] }, lc.layer);
 		      }) })
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "\u5C42\u7EA7\u6210\u672C\uFF08\u5355\u6B21 avg\uFF09" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "层级成本（单次 avg）" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 }, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tr", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thFirst, children: "\u5C42\u7EA7" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thFirst, children: "层级" }),
 		        RANGES.map((r) => {
 		          return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thStyle, children: RANGE_LABELS[r] + "-avg" }, r);
 		        })
@@ -846,10 +846,10 @@ var __defProp = Object.defineProperty;
 		        ] }, lc.layer);
 		      }) })
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "\u5C42\u7EA7\u6210\u672C\uFF08\u5355\u6B21 median\uFF09" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "层级成本（单次 median）" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("table", { style: { width: "100%", borderCollapse: "collapse", marginBottom: 14 }, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("tr", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thFirst, children: "\u5C42\u7EA7" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thFirst, children: "层级" }),
 		        RANGES.map((r) => {
 		          return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("th", { style: thStyle, children: RANGE_LABELS[r] + "-median" }, r);
 		        })
@@ -861,25 +861,25 @@ var __defProp = Object.defineProperty;
 		        ] }, lc.layer);
 		      }) })
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "\u65F6\u95F4\u7A97\u53E3\u603B\u89C8" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "时间窗口总览" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.statGrid, children: windows.map((w) => {
 		      return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dsh-mem-card", style: S.statTile, children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.statNum, children: fmtInt(w.outputTokens + w.reasoningTokens) }),
-		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.statLabel, children: RANGE_LABELS[w.range] + " \xB7 \u603B\u8F93\u51FA token" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.muted, children: "\u6587\u5B57 " + fmtInt(w.outputTokens) + " \xB7 \u601D\u8003 " + fmtInt(w.reasoningTokens) + " \xB7 " + w.calls + " \u6B21\u8C03\u7528" })
+		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.statLabel, children: RANGE_LABELS[w.range] + " · 总输出 token" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.muted, children: "文字 " + fmtInt(w.outputTokens) + " · 思考 " + fmtInt(w.reasoningTokens) + " · " + w.calls + " 次调用" })
 		      ] }, w.range);
 		    }) }),
 		    byModel.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "\u6309\u6A21\u578B\uFF08\u7D2F\u8BA1\uFF09" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { style: S.panelLabel, children: "按模型（累计）" }),
 		      byModel.map((m) => {
 		        const label = fmtModel(m.provider, m.model);
 		        return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { style: S.infoRow, children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: S.infoKey, children: label }),
-		          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: S.infoVal, children: m.calls + " \u6B21 \xB7 \u8F93\u51FA " + fmtInt(m.outputTokens) + " \xB7 \u601D\u8003 " + fmtInt(m.reasoningTokens) })
+		          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { style: S.infoVal, children: m.calls + " 次 · 输出 " + fmtInt(m.outputTokens) + " · 思考 " + fmtInt(m.reasoningTokens) })
 		        ] }, "m-" + label);
 		      })
 		    ] }) : null,
-		    data ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { style: S.hint, children: "\u8F93\u5165\u6309\u5B57\u7B26\u3001\u8F93\u51FA/\u601D\u8003\u6309 token \u8BA1\uFF1B\u8D8B\u52BF\u56FE Y \u8F74\u4E3A\u8F93\u51FA token\uFF0C\u4E0A\u65B9\u53EF\u5207\u6362\u5C42\u7EA7\u4E0E\u9897\u7C92\u5EA6\u3002" }) : null
+		    data ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { style: S.hint, children: "输入按字符、输出/思考按 token 计；趋势图 Y 轴为输出 token，上方可切换层级与颗粒度。" }) : null
 		  ] });
 		}
 		
@@ -908,11 +908,11 @@ var __defProp = Object.defineProperty;
 		  }, [lines]);
 		  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { ...S.flexRow, marginBottom: 10 }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: S.muted, children: error ? "\u52A0\u8F7D\u5931\u8D25" : lines === null ? "\u52A0\u8F7D\u4E2D\u2026" : "\u6700\u8FD1 " + lines.length + " \u884C\uFF08memory.log\uFF09" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: S.muted, children: error ? "加载失败" : lines === null ? "加载中…" : "最近 " + lines.length + " 行（memory.log）" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: S.grow }),
-		      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(NButton, { onClick: load, children: "\u5237\u65B0" })
+		      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(NButton, { onClick: load, children: "刷新" })
 		    ] }),
-		    error ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { ...S.error, marginBottom: 10 }, children: "\u65E5\u5FD7\u8BFB\u53D6\u5931\u8D25\uFF1A" + error + "\uFF08\u70B9\u53F3\u4E0A\u201C\u5237\u65B0\u201D\u91CD\u8BD5\uFF09" }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("pre", { style: S.pre, ref: preRef, children: (lines || []).join("\n") || "(\u6682\u65E0\u65E5\u5FD7)" })
+		    error ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { ...S.error, marginBottom: 10 }, children: "日志读取失败：" + error + "（点右上“刷新”重试）" }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("pre", { style: S.pre, ref: preRef, children: (lines || []).join("\n") || "(暂无日志)" })
 		  ] });
 		}
 		
@@ -921,13 +921,13 @@ var __defProp = Object.defineProperty;
 		
 		// client/src/format.ts
 		var TYPE_LABELS = {
-		  persona: "\u753B\u50CF\u504F\u597D",
-		  episodic: "\u5BA2\u89C2\u4E8B\u4EF6",
-		  instruction: "\u5168\u5C40\u6307\u4EE4",
-		  work_fact: "\u5DE5\u4F5C\u4E8B\u5B9E",
-		  work_task: "\u5DE5\u4F5C\u4EFB\u52A1",
-		  work_method: "\u5DE5\u4F5C\u65B9\u6CD5",
-		  work_artifact: "\u5DE5\u4F5C\u8D44\u4EA7"
+		  persona: "画像偏好",
+		  episodic: "客观事件",
+		  instruction: "全局指令",
+		  work_fact: "工作事实",
+		  work_task: "工作任务",
+		  work_method: "工作方法",
+		  work_artifact: "工作资产"
 		};
 		function fmtTime(iso) {
 		  if (!iso) return "-";
@@ -944,10 +944,10 @@ var __defProp = Object.defineProperty;
 		    if (!t) return null;
 		    let s = Math.floor((Date.now() - t) / 1e3);
 		    if (s < 0) s = 0;
-		    if (s < 45) return "\u521A\u521A";
-		    if (s < 3600) return Math.floor(s / 60) + " \u5206\u949F\u524D";
-		    if (s < 86400) return Math.floor(s / 3600) + " \u5C0F\u65F6\u524D";
-		    return Math.floor(s / 86400) + " \u5929\u524D";
+		    if (s < 45) return "刚刚";
+		    if (s < 3600) return Math.floor(s / 60) + " 分钟前";
+		    if (s < 86400) return Math.floor(s / 3600) + " 小时前";
+		    return Math.floor(s / 86400) + " 天前";
 		  } catch {
 		    return null;
 		  }
@@ -960,10 +960,10 @@ var __defProp = Object.defineProperty;
 		
 		// client/src/pill/modes.ts
 		var MODES = [
-		  { key: "off", label: "\u5173\u95ED", color: "var(--dsh-mem-text-2)" },
-		  { key: "chat", label: "\u65E5\u5E38", color: "var(--dsh-mem-mode-chat)" },
-		  { key: "work", label: "\u5DE5\u4F5C", color: "var(--dsh-mem-mode-work)" },
-		  { key: "auto", label: "\u667A\u80FD", color: "var(--dsh-mem-mode-auto)" }
+		  { key: "off", label: "关闭", color: "var(--dsh-mem-text-2)" },
+		  { key: "chat", label: "日常", color: "var(--dsh-mem-mode-chat)" },
+		  { key: "work", label: "工作", color: "var(--dsh-mem-mode-work)" },
+		  { key: "auto", label: "智能", color: "var(--dsh-mem-mode-auto)" }
 		];
 		var TRACK_W = 200;
 		var THUMB = 16;
@@ -987,10 +987,10 @@ var __defProp = Object.defineProperty;
 		  return MODES[3];
 		}
 		function modeLabel(key) {
-		  if (key === "auto") return "\u667A\u80FD\uFF08\u53CC\u65CF\uFF09";
-		  if (key === "chat") return "\u65E5\u5E38\uFF08\u4E2A\u4EBA\uFF09";
-		  if (key === "work") return "\u5DE5\u4F5C\uFF08\u56E2\u961F\uFF09";
-		  return "\u5173\u95ED";
+		  if (key === "auto") return "智能（双族）";
+		  if (key === "chat") return "日常（个人）";
+		  if (key === "work") return "工作（团队）";
+		  return "关闭";
 		}
 		function modeIndex(key) {
 		  for (let i = 0; i < MODES.length; i++) if (MODES[i].key === key) return i;
@@ -1001,10 +1001,10 @@ var __defProp = Object.defineProperty;
 		var import_react4 = require("react");
 		var import_jsx_runtime4 = require("react/jsx-runtime");
 		var LAYERS = [
-		  ["extract", "\u62BD\u53D6"],
-		  ["dedup", "\u53BB\u91CD"],
-		  ["l2", "L2 \u573A\u666F"],
-		  ["l3", "L3 \u753B\u50CF"]
+		  ["extract", "抽取"],
+		  ["dedup", "去重"],
+		  ["l2", "L2 场景"],
+		  ["l3", "L3 画像"]
 		];
 		function BudgetInputs(props) {
 		  const rpc = props.rpc;
@@ -1037,7 +1037,7 @@ var __defProp = Object.defineProperty;
 		      const min = key === "input" ? raw === "" ? 0 : 1e3 : 0;
 		      if (!Number.isInteger(n) || n < min || n > max) {
 		        onError(
-		          key === "input" ? "\u8F93\u5165\u9884\u7B97\u987B\u4E3A 0 \u6216 1000~1000000 \u7684\u6574\u6570\uFF08\u7559\u7A7A\u6216 0 = \u8DDF\u968F\u914D\u7F6E\uFF09" : "\u8F93\u51FA\u9884\u7B97\u987B\u4E3A 0~1000000 \u7684\u6574\u6570\uFF08\u7559\u7A7A\u6216 0 = \u8DDF\u968F\u9ED8\u8BA4\uFF09"
+		          key === "input" ? "输入预算须为 0 或 1000~1000000 的整数（留空或 0 = 跟随配置）" : "输出预算须为 0~1000000 的整数（留空或 0 = 跟随默认）"
 		        );
 		        setDraft(null);
 		        return;
@@ -1050,13 +1050,13 @@ var __defProp = Object.defineProperty;
 		    rpc("dsh-memory/settings-set", buildPayload(values)).then((r) => {
 		      if (!r || !r.ok) {
 		        setData(prev);
-		        onError(r && r.error ? "\u9884\u7B97\u5199\u5165\u5931\u8D25\uFF1A" + r.error.message : "\u9884\u7B97\u5199\u5165\u5931\u8D25");
+		        onError(r && r.error ? "预算写入失败：" + r.error.message : "预算写入失败");
 		      } else {
 		        onError(null);
 		      }
 		    }).catch((e) => {
 		      setData(prev);
-		      onError("\u9884\u7B97\u5199\u5165\u5931\u8D25\uFF1A" + String(e && e.message || e));
+		      onError("预算写入失败：" + String(e && e.message || e));
 		    });
 		  };
 		  const commitOutputs = () => {
@@ -1142,29 +1142,29 @@ var __defProp = Object.defineProperty;
 		        return inputBox(
 		          l[0],
 		          l[1],
-		          l[1] + " \u8F93\u51FA\u9884\u7B97\uFF08token\uFF0C\u7559\u7A7A = \u9ED8\u8BA4 " + (def[l[0]] || "?") + "\uFF09",
+		          l[1] + " 输出预算（token，留空 = 默认 " + (def[l[0]] || "?") + "）",
 		          92,
 		          def[l[0]],
 		          commitOutputs
 		        );
 		      }) }),
 		      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchLabel, children: "\u8F93\u51FA\u9884\u7B97" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchDesc, children: "\u5404\u84B8\u998F\u5C42\u5355\u6B21\u8F93\u51FA\u7684 token \u4E0A\u9650\uFF08\u62BD\u53D6/\u53BB\u91CD/L2/L3\uFF09\uFF1B\u7559\u7A7A\u6216 0 = \u8DDF\u968F\u9ED8\u8BA4\uFF08\u5F53\u524D\u751F\u6548 " + layers.map((l) => eff[l[0]] || "?").join(" / ") + "\uFF09\uFF1B\u601D\u8003\u6863 high/xhigh/max \u65F6\u5B9E\u9645\u9650\u989D\u81EA\u52A8 \xD74" })
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchLabel, children: "输出预算" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchDesc, children: "各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 " + layers.map((l) => eff[l[0]] || "?").join(" / ") + "）；思考档 high/xhigh/max 时实际限额自动 ×4" })
 		      ] })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: S.switchRow, children: [
 		      inputBox(
 		        "input",
-		        "\u8F93\u5165",
-		        "\u5355\u6B21\u84B8\u998F\u8F93\u5165\u5B57\u7B26\u4E0A\u9650\uFF08\u2248token\uFF0C\u4E2D\u6587 1 \u5B57\u22481 token\uFF1B\u7559\u7A7A = \u8DDF\u968F\u914D\u7F6E " + (ib.fallback || "?") + "\uFF09",
+		        "输入",
+		        "单次蒸馏输入字符上限（≈token，中文 1 字≈1 token；留空 = 跟随配置 " + (ib.fallback || "?") + "）",
 		        120,
 		        ib.fallback,
 		        commitInput
 		      ),
 		      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchLabel, children: "\u8F93\u5165\u9884\u7B97" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchDesc, children: "\u5355\u6B21\u84B8\u998F\u8C03\u7528\u7684\u8F93\u5165\u5B57\u7B26\u4E0A\u9650\uFF08\u2248token\uFF09\uFF1AL1 \u62BD\u53D6\u6309\u6B64\u5206\u5757\u3001L2/L3 \u8D85\u9650\u622A\u65AD\uFF1B\u7559\u7A7A\u6216 0 = \u8DDF\u968F\u914D\u7F6E\uFF08\u5F53\u524D\u751F\u6548 " + (effIn || "?") + "\uFF0C\u6765\u81EA llm.maxInputChars\uFF09" })
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchLabel, children: "输入预算" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchDesc, children: "单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；留空或 0 = 跟随配置（当前生效 " + (effIn || "?") + "，来自 llm.maxInputChars）" })
 		      ] })
 		    ] })
 		  ] });
@@ -1176,7 +1176,7 @@ var __defProp = Object.defineProperty;
 		// client/src/rpc.ts
 		function makeRpc(ctx) {
 		  return (endpoint, payload) => {
-		    if (!ctx.connection) return Promise.reject(new Error("connection \u670D\u52A1\u4E0D\u53EF\u7528"));
+		    if (!ctx.connection) return Promise.reject(new Error("connection 服务不可用"));
 		    return ctx.connection.rpc.call("/rpc", endpoint, payload ?? {});
 		  };
 		}
@@ -1233,7 +1233,7 @@ var __defProp = Object.defineProperty;
 		  const call = (endpoint, payload, confirmText) => {
 		    if (confirmText && !window.confirm(confirmText)) return;
 		    loose(endpoint, payload).then((r) => {
-		      if (!r || !r.ok) setErr(r && r.error ? r.error.message : "\u64CD\u4F5C\u5931\u8D25");
+		      if (!r || !r.ok) setErr(r && r.error ? r.error.message : "操作失败");
 		      else {
 		        setErr(null);
 		        load();
@@ -1244,23 +1244,23 @@ var __defProp = Object.defineProperty;
 		  };
 		  if (err === "__unsupported__") {
 		    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-mem-rb-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { fontWeight: 600, marginBottom: 4 }, children: "\u8BED\u4E49\u68C0\u7D22\uFF08\u5D4C\u5165\uFF09" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", children: "\u5B58\u50A8\u5904\u4E8E\u964D\u7EA7\u72B6\u6001\uFF0C\u5D4C\u5165\u7BA1\u7406\u4E0D\u53EF\u7528\u3002" })
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { fontWeight: 600, marginBottom: 4 }, children: "语义检索（嵌入）" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", children: "存储处于降级状态，嵌入管理不可用。" })
 		    ] });
 		  }
 		  if (!st) {
 		    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-mem-rb-card", children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", children: err ? "\u5D4C\u5165\u72B6\u6001\u8BFB\u53D6\u5931\u8D25\uFF1A" + err : "\u5D4C\u5165\u72B6\u6001\u8BFB\u53D6\u4E2D\u2026" }),
-		      err ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NButton, { style: { marginTop: 8 }, onClick: load, children: "\u91CD\u8BD5" }) : null
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", children: err ? "嵌入状态读取失败：" + err : "嵌入状态读取中…" }),
+		      err ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NButton, { style: { marginTop: 8 }, onClick: load, children: "重试" }) : null
 		    ] });
 		  }
-		  const switchConfirm = "\u5207\u6362\u5D4C\u5165\u6E90\u540E\u5C06\u6309\u65B0\u6A21\u578B\u91CD\u5EFA\u5411\u91CF\u7D22\u5F15\uFF08\u671F\u95F4\u8BED\u4E49\u68C0\u7D22\u6682\u9000\u5316\u4E3A\u5173\u952E\u8BCD\u5339\u914D\uFF0C\u4E0D\u5F71\u54CD\u5BF9\u8BDD\uFF09\u3002\u786E\u5B9A\u5207\u6362\uFF1F";
+		  const switchConfirm = "切换嵌入源后将按新模型重建向量索引（期间语义检索暂退化为关键词匹配，不影响对话）。确定切换？";
 		  const onSource = (key) => {
 		    if (key === "local") {
 		      const ready = [];
 		      for (let i = 0; i < st.models.length; i++) if (st.models[i].state === "downloaded") ready.push(st.models[i].id);
 		      if (ready.length === 0) {
-		        setErr("\u8BF7\u5148\u5728\u4E0B\u65B9\u4E0B\u8F7D\u4E00\u4E2A\u672C\u5730\u5D4C\u5165\u6A21\u578B\uFF0C\u518D\u5207\u6362\u5230\u672C\u5730\u6863\u3002");
+		        setErr("请先在下方下载一个本地嵌入模型，再切换到本地档。");
 		        return;
 		      }
 		      const current = st.activeModel && ready.indexOf(st.activeModel) >= 0 ? st.activeModel : ready[0];
@@ -1278,26 +1278,26 @@ var __defProp = Object.defineProperty;
 		  if (rt.phase === "installing") {
 		    runtimeRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { marginTop: 8, fontSize: 12 }, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: S.flexRow, children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "\u5B89\u88C5\u63A8\u7406\u8FD0\u884C\u65F6\u4E2D\u2026 \u5DF2\u8017\u65F6 " + Math.round(rt.elapsedMs / 1e3) + "s\uFF08\u7EA6 100~200MB\uFF0C\u89C6\u7F51\u7EDC\uFF09" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: "安装推理运行时中… 已耗时 " + Math.round(rt.elapsedMs / 1e3) + "s（约 100~200MB，视网络）" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: S.grow }),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NButton, { onClick: () => call("dsh-memory/embedding-runtime-cancel", {}), children: "\u53D6\u6D88" })
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NButton, { onClick: () => call("dsh-memory/embedding-runtime-cancel", {}), children: "取消" })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("pre", { style: { ...S.pre, maxHeight: 68, marginTop: 6, fontSize: 11, opacity: 0.85 }, children: (rt.lastLines || []).join("\n") || "\u7B49\u5F85 npm \u8F93\u51FA\u2026" })
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("pre", { style: { ...S.pre, maxHeight: 68, marginTop: 6, fontSize: 11, opacity: 0.85 }, children: (rt.lastLines || []).join("\n") || "等待 npm 输出…" })
 		    ] });
 		  } else if (rt.phase === "error") {
-		    runtimeRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: "\u8FD0\u884C\u65F6\u5B89\u88C5\u5931\u8D25\uFF1A" + (rt.error || "\u672A\u77E5") + "\uFF08\u91CD\u65B0\u5207\u6362\u5D4C\u5165\u6E90\u53EF\u91CD\u8BD5\uFF09" });
+		    runtimeRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: "运行时安装失败：" + (rt.error || "未知") + "（重新切换嵌入源可重试）" });
 		  } else if (rt.phase === "ready") {
-		    runtimeRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: "\u63A8\u7406\u8FD0\u884C\u65F6\u5C31\u7EEA\uFF08transformers.js v" + rt.installedVersion + "\uFF09" });
+		    runtimeRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: "推理运行时就绪（transformers.js v" + rt.installedVersion + "）" });
 		  } else if (st.source === "local") {
-		    runtimeRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: "\u9996\u6B21\u542F\u7528\u672C\u5730\u5D4C\u5165\u65F6\u4F1A\u81EA\u52A8\u5B89\u88C5\u63A8\u7406\u8FD0\u884C\u65F6\uFF08\u7EA6 100~200MB\uFF09\u3002" });
+		    runtimeRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: "首次启用本地嵌入时会自动安装推理运行时（约 100~200MB）。" });
 		  }
 		  let applyRow = null;
 		  if (ap.phase === "warming") {
-		    applyRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: "\u52A0\u8F7D\u5D4C\u5165\u6A21\u578B\u4E2D\u2026\uFF08\u9996\u6B21\u9700\u6570\u79D2\uFF09" });
+		    applyRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: "加载嵌入模型中…（首次需数秒）" });
 		  } else if (ap.phase === "switching") {
-		    applyRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: "\u5207\u6362\u5D4C\u5165\u6E90\u4E2D\u2026" });
+		    applyRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: "切换嵌入源中…" });
 		  } else if (ap.phase === "error") {
-		    applyRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: "\u5207\u6362\u5931\u8D25\uFF1A" + ap.message + "\uFF08\u5DF2\u4FDD\u5B58\u7684\u5D4C\u5165\u6E90\u4E0D\u53D8\uFF0C\u91CD\u542F\u540E\u4ECD\u6309\u539F\u6E90\u8FD0\u884C\uFF09" });
+		    applyRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: "切换失败：" + ap.message + "（已保存的嵌入源不变，重启后仍按原源运行）" });
 		  } else if (st.reindex && st.reindex.running) {
 		    const rj = st.reindex;
 		    const rDone = rj.l1Done + rj.l0Done;
@@ -1305,9 +1305,9 @@ var __defProp = Object.defineProperty;
 		    const rPct = rTotal > 0 ? Math.round(rDone / rTotal * 100) : 0;
 		    applyRow = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { marginTop: 8 }, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: S.flexRow, children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-rb-muted", children: "\u91CD\u5D4C\u5165\u4E2D L1 " + rj.l1Done + "/" + rj.l1Total + " \xB7 L0 " + rj.l0Done + "/" + rj.l0Total + "\uFF08" + rPct + "%\uFF09" }),
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-rb-muted", children: "重嵌入中 L1 " + rj.l1Done + "/" + rj.l1Total + " · L0 " + rj.l0Done + "/" + rj.l0Total + "（" + rPct + "%）" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: S.grow }),
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NButton, { onClick: () => call("dsh-memory/embedding-reindex-cancel", {}), children: "\u53D6\u6D88" })
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NButton, { onClick: () => call("dsh-memory/embedding-reindex-cancel", {}), children: "取消" })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { ...S.flexRow, marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-bar", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-fill", style: { width: rPct + "%" } }) }) })
 		    ] });
@@ -1320,18 +1320,18 @@ var __defProp = Object.defineProperty;
 		    if (mDl) {
 		      action = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { flex: 1, minWidth: 200 }, children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: S.flexRow, children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-rb-muted", style: { whiteSpace: "nowrap" }, children: (dl.phase === "verifying" ? "\u6821\u9A8C\u4E2D " : "") + fmtMB(dl.overallReceived) + " / " + fmtMB(dl.overallTotal) + "\uFF08\u6587\u4EF6 " + dl.fileIndex + "/" + dl.fileCount + "\uFF0C" + pct + "%" + (dl.speedBps > 0 && dl.phase === "downloading" ? "\uFF0C" + fmtMB(dl.speedBps) + "/s" : "") + "\uFF09" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-rb-muted", style: { whiteSpace: "nowrap" }, children: (dl.phase === "verifying" ? "校验中 " : "") + fmtMB(dl.overallReceived) + " / " + fmtMB(dl.overallTotal) + "（文件 " + dl.fileIndex + "/" + dl.fileCount + "，" + pct + "%" + (dl.speedBps > 0 && dl.phase === "downloading" ? "，" + fmtMB(dl.speedBps) + "/s" : "") + "）" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: S.grow }),
-		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NButton, { onClick: () => call("dsh-memory/embedding-download-cancel", {}), children: "\u53D6\u6D88" })
+		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(NButton, { onClick: () => call("dsh-memory/embedding-download-cancel", {}), children: "取消" })
 		        ] }),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { ...S.flexRow, marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-bar", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-fill", style: { width: pct + "%" } }) }) })
 		      ] });
 		    } else if (isActive) {
 		      action = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: S.flexRow, children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-tag dsh-mem-tag-work-task", children: "\u4F7F\u7528\u4E2D" }),
-		        localInfo && localInfo.state === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-rb-muted", children: "\u6A21\u578B\u52A0\u8F7D\u4E2D\u2026" }) : null,
-		        localInfo && localInfo.state === "failed" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: { fontSize: 12, color: "var(--dsh-mem-danger)" }, children: "\u52A0\u8F7D\u5931\u8D25\uFF1A" + (localInfo.error || "") }) : null,
-		        localInfo && localInfo.state === "ready" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-rb-muted", children: "\u5DF2\u5C31\u7EEA" }) : null
+		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-tag dsh-mem-tag-work-task", children: "使用中" }),
+		        localInfo && localInfo.state === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-rb-muted", children: "模型加载中…" }) : null,
+		        localInfo && localInfo.state === "failed" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { style: { fontSize: 12, color: "var(--dsh-mem-danger)" }, children: "加载失败：" + (localInfo.error || "") }) : null,
+		        localInfo && localInfo.state === "ready" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dsh-mem-rb-muted", children: "已就绪" }) : null
 		      ] });
 		    } else if (m.state === "downloaded") {
 		      action = /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: S.flexRow, children: [
@@ -1340,15 +1340,15 @@ var __defProp = Object.defineProperty;
 		          {
 		            disabled: ap.busy,
 		            onClick: () => call("dsh-memory/embedding-source-set", { source: "local", activeModel: m.id }, switchConfirm),
-		            children: "\u542F\u7528"
+		            children: "启用"
 		          }
 		        ),
 		        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
 		          NButton,
 		          {
 		            disabled: dlActive,
-		            onClick: () => call("dsh-memory/embedding-model-delete", { modelId: m.id }, "\u5220\u9664\u5DF2\u4E0B\u8F7D\u7684 " + m.name + "\uFF08" + fmtMB(m.totalBytes) + "\uFF09\uFF1F"),
-		            children: "\u5220\u9664"
+		            onClick: () => call("dsh-memory/embedding-model-delete", { modelId: m.id }, "删除已下载的 " + m.name + "（" + fmtMB(m.totalBytes) + "）？"),
+		            children: "删除"
 		          }
 		        )
 		      ] });
@@ -1357,9 +1357,9 @@ var __defProp = Object.defineProperty;
 		        NButton,
 		        {
 		          disabled: dlActive || !st.ceilings.local,
-		          title: !st.ceilings.local ? "\u90E8\u7F72\u5DF2\u7981\u7528\u672C\u5730\u5D4C\u5165\u6A21\u578B" : "",
+		          title: !st.ceilings.local ? "部署已禁用本地嵌入模型" : "",
 		          onClick: () => call("dsh-memory/embedding-download-start", { modelId: m.id }),
-		          children: (m.state === "partial" ? "\u7EE7\u7EED\u4E0B\u8F7D " : "\u4E0B\u8F7D ") + fmtMB(m.totalBytes)
+		          children: (m.state === "partial" ? "继续下载 " : "下载 ") + fmtMB(m.totalBytes)
 		        }
 		      );
 		    }
@@ -1370,7 +1370,7 @@ var __defProp = Object.defineProperty;
 		        children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: { minWidth: 150 }, children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { fontWeight: 600 }, children: m.name }),
-		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", children: m.tags.join(" \xB7 ") + " \xB7 " + m.dims + " \u7EF4 \xB7 \u4E0A\u4E0B\u6587 " + m.contextTokens })
+		            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", children: m.tags.join(" · ") + " · " + m.dims + " 维 · 上下文 " + m.contextTokens })
 		          ] }),
 		          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { flex: 1, minWidth: 180, fontSize: 12, color: "var(--dsh-mem-text-2)" }, children: m.description }),
 		          action
@@ -1381,28 +1381,28 @@ var __defProp = Object.defineProperty;
 		  });
 		  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dsh-mem-rb-card", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { style: S.flexRow, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { fontWeight: 600, whiteSpace: "nowrap" }, children: "\u8BED\u4E49\u68C0\u7D22\uFF08\u5D4C\u5165\u6E90\uFF09" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { fontWeight: 600, whiteSpace: "nowrap" }, children: "语义检索（嵌入源）" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: S.grow }),
 		      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
 		        Segmented,
 		        {
 		          value: st.source,
 		          options: [
-		            { key: "off", label: "\u5173\u95ED" },
-		            { key: "local", label: "\u672C\u5730", disabled: !st.ceilings.local, disabledTitle: "\u90E8\u7F72\u5DF2\u7981\u7528\u672C\u5730\u5D4C\u5165\u6A21\u578B" },
-		            { key: "remote", label: "\u8FDC\u7A0B", disabled: !st.ceilings.remote, disabledTitle: "\u90E8\u7F72\u672A\u914D\u7F6E\u8FDC\u7A0B\u5D4C\u5165\uFF08baseUrl/apiKey/model/dimensions\uFF09" }
+		            { key: "off", label: "关闭" },
+		            { key: "local", label: "本地", disabled: !st.ceilings.local, disabledTitle: "部署已禁用本地嵌入模型" },
+		            { key: "remote", label: "远程", disabled: !st.ceilings.remote, disabledTitle: "部署未配置远程嵌入（baseUrl/apiKey/model/dimensions）" }
 		          ],
 		          onChange: onSource
 		        }
 		      )
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 4 }, children: st.source === "off" ? "\u5F53\u524D\uFF1A\u5173\u952E\u8BCD\uFF08BM25\uFF09\u68C0\u7D22\uFF0C\u4E0D\u505A\u5411\u91CF\u5D4C\u5165" : st.source === "remote" ? "\u5F53\u524D\uFF1A\u8FDC\u7A0B\u5D4C\u5165\uFF08" + (rt ? "" : "") + "\u6A21\u578B\u7531\u90E8\u7F72\u914D\u7F6E\u7ED9\u5B9A\uFF09" : "\u5F53\u524D\uFF1A\u672C\u5730\u5D4C\u5165" + (st.activeModel ? "\uFF08" + st.activeModel + "\uFF09" : "") }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 4 }, children: st.source === "off" ? "当前：关键词（BM25）检索，不做向量嵌入" : st.source === "remote" ? "当前：远程嵌入（" + (rt ? "" : "") + "模型由部署配置给定）" : "当前：本地嵌入" + (st.activeModel ? "（" + st.activeModel + "）" : "") }),
 		    st.activeNote ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 4, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: st.activeNote }) : null,
 		    err && err !== "__unsupported__" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 6, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: err }) : null,
-		    dl && dl.phase === "error" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 6, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: "\u4E0B\u8F7D\u5931\u8D25\uFF1A" + (dl.error || "") }) : null,
+		    dl && dl.phase === "error" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { marginTop: 6, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: "下载失败：" + (dl.error || "") }) : null,
 		    runtimeRow,
 		    applyRow,
-		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: S.panelLabel, children: "\u672C\u5730\u6A21\u578B\u76EE\u5F55\uFF08\u4E0B\u8F7D\u540E\u79BB\u7EBF\u53EF\u7528\uFF0C\u4E0D\u968F\u63D2\u4EF6\u5206\u53D1\uFF09" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: S.panelLabel, children: "本地模型目录（下载后离线可用，不随插件分发）" }),
 		    modelCards
 		  ] });
 		}
@@ -1411,9 +1411,9 @@ var __defProp = Object.defineProperty;
 		var import_react6 = require("react");
 		var import_jsx_runtime6 = require("react/jsx-runtime");
 		var RB_PHASE_LABEL = {
-		  preparing: "\u51C6\u5907\u4E2D\uFF08\u5F52\u6863\u65E7\u6570\u636E \xB7 \u6E05\u7A7A\u68C0\u7D22\u5E93\uFF09",
-		  distilling: "\u5206\u5757\u84B8\u998F\u4E2D",
-		  finalizing: "\u6536\u5C3E\uFF08\u5F3A\u5236 L2 \u573A\u666F + L3 \u753B\u50CF\uFF09"
+		  preparing: "准备中（归档旧数据 · 清空检索库）",
+		  distilling: "分块蒸馏中",
+		  finalizing: "收尾（强制 L2 场景 + L3 画像）"
 		};
 		function RebuildPanel(props) {
 		  const rpc = props.rpc;
@@ -1448,7 +1448,7 @@ var __defProp = Object.defineProperty;
 		        setConfirmOpen(false);
 		        setRb(r.value);
 		      } else {
-		        setRbError(r && r.error ? r.error.message : "\u542F\u52A8\u5931\u8D25");
+		        setRbError(r && r.error ? r.error.message : "启动失败");
 		      }
 		    }).catch((e) => {
 		      setBusy(false);
@@ -1468,32 +1468,32 @@ var __defProp = Object.defineProperty;
 		  const pct = rb.total > 0 ? Math.round(rb.done / rb.total * 100) : 0;
 		  let lastNote = null;
 		  if (!running && rb.phase === "done") {
-		    lastNote = "\u4E0A\u6B21\u91CD\u5EFA\uFF1A\u5B8C\u6210\uFF08" + rb.done + "/" + rb.total + " \u4F1A\u8BDD\uFF0C\u4EA7\u51FA " + rb.recordsBuilt + " \u6761\u8BB0\u5F55\uFF09" + (rb.finishedAt ? " \xB7 " + fmtTime(new Date(rb.finishedAt).toISOString()) : "");
+		    lastNote = "上次重建：完成（" + rb.done + "/" + rb.total + " 会话，产出 " + rb.recordsBuilt + " 条记录）" + (rb.finishedAt ? " · " + fmtTime(new Date(rb.finishedAt).toISOString()) : "");
 		  } else if (!running && rb.phase === "cancelled") {
-		    lastNote = "\u4E0A\u6B21\u91CD\u5EFA\uFF1A\u5DF2\u53D6\u6D88\uFF08\u5B8C\u6210 " + rb.done + "/" + rb.total + " \u4F1A\u8BDD\uFF0C\u5DF2\u91CD\u5EFA\u90E8\u5206\u4FDD\u7559\uFF09";
+		    lastNote = "上次重建：已取消（完成 " + rb.done + "/" + rb.total + " 会话，已重建部分保留）";
 		  } else if (!running && rb.phase === "failed") {
-		    lastNote = "\u4E0A\u6B21\u91CD\u5EFA\uFF1A\u5931\u8D25\uFF1A" + (rb.error || "\u672A\u77E5\u9519\u8BEF");
+		    lastNote = "上次重建：失败：" + (rb.error || "未知错误");
 		  }
 		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dsh-mem-rb-card", children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { fontWeight: 600, whiteSpace: "nowrap" }, children: "\u91CD\u5EFA\u8BB0\u5FC6" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-mem-rb-muted", style: { flex: 1, minWidth: 180 }, children: running ? (RB_PHASE_LABEL[rb.phase] || rb.phase) + " \xB7 " + rb.done + "/" + rb.total + " \u4F1A\u8BDD\uFF08" + pct + "%\uFF09" : "\u4ECE L0 \u539F\u59CB\u5BF9\u8BDD\u91CD\u65B0\u84B8\u998F L1/L2/L3\uFF1B\u65E7\u6570\u636E\u5148\u5F52\u6863\uFF08\u4E0D\u5220\u9664\uFF09" }),
-		      running ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { disabled: busy || rb.cancelRequested, onClick: cancel, children: rb.cancelRequested ? "\u53D6\u6D88\u4E2D\u2026" : "\u53D6\u6D88\u91CD\u5EFA" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { fontWeight: 600, whiteSpace: "nowrap" }, children: "重建记忆" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-mem-rb-muted", style: { flex: 1, minWidth: 180 }, children: running ? (RB_PHASE_LABEL[rb.phase] || rb.phase) + " · " + rb.done + "/" + rb.total + " 会话（" + pct + "%）" : "从 L0 原始对话重新蒸馏 L1/L2/L3；旧数据先归档（不删除）" }),
+		      running ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { disabled: busy || rb.cancelRequested, onClick: cancel, children: rb.cancelRequested ? "取消中…" : "取消重建" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
 		        NButton,
 		        {
 		          disabled: busy || empty,
-		          title: empty ? "L0 \u65E0\u6D88\u606F\uFF0C\u65E0\u53EF\u91CD\u5EFA\u5185\u5BB9" : "\u91CD\u65B0\u84B8\u998F\u5168\u90E8\u8BB0\u5FC6",
+		          title: empty ? "L0 无消息，无可重建内容" : "重新蒸馏全部记忆",
 		          style: { color: "var(--dsh-mem-danger)" },
 		          onClick: () => {
 		            setConfirmOpen(true);
 		          },
-		          children: busy ? "\u2026" : "\u5F00\u59CB\u91CD\u5EFA"
+		          children: busy ? "…" : "开始重建"
 		        }
 		      )
 		    ] }),
 		    running ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 10, marginTop: 10 }, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-mem-rb-bar", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-mem-rb-fill", style: { width: pct + "%" } }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-mem-rb-muted", style: { whiteSpace: "nowrap" }, children: "\u4EA7\u51FA " + rb.recordsBuilt + " \u6761" })
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dsh-mem-rb-muted", style: { whiteSpace: "nowrap" }, children: "产出 " + rb.recordsBuilt + " 条" })
 		    ] }) : null,
 		    lastNote ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dsh-mem-rb-muted", style: { marginTop: 8 }, children: lastNote }) : null,
 		    rbError ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsh-mem-danger)" }, children: rbError }) : null,
@@ -1504,7 +1504,7 @@ var __defProp = Object.defineProperty;
 		        onClose: () => {
 		          setConfirmOpen(false);
 		        },
-		        title: "\u786E\u8BA4\u91CD\u5EFA\u5168\u90E8\u8BB0\u5FC6\uFF1F",
+		        title: "确认重建全部记忆？",
 		        footer: [
 		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
 		            NButton,
@@ -1512,19 +1512,19 @@ var __defProp = Object.defineProperty;
 		              onClick: () => {
 		                setConfirmOpen(false);
 		              },
-		              children: "\u53D6\u6D88"
+		              children: "取消"
 		            },
 		            "cancel"
 		          ),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { variant: "primary", disabled: busy, onClick: start, children: busy ? "\u542F\u52A8\u4E2D\u2026" : "\u5F00\u59CB\u91CD\u5EFA" }, "confirm")
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { variant: "primary", disabled: busy, onClick: start, children: busy ? "启动中…" : "开始重建" }, "confirm")
 		        ],
 		        children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { children: [
-		            "\u5C06\u4EE5 L0 \u539F\u59CB\u5BF9\u8BDD\u4E3A\u4E8B\u5B9E\u6E90\u91CD\u65B0\u84B8\u998F\uFF1A",
-		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { children: rb.sessionCount + " \u4E2A\u4F1A\u8BDD \xB7 " + rb.messageCount + " \u6761\u6D88\u606F" }),
-		            "\uFF0C\u9884\u8BA1 \u2265" + rb.estCalls + " \u6B21\u84B8\u998F\u8C03\u7528\u3002"
+		            "将以 L0 原始对话为事实源重新蒸馏：",
+		            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { children: rb.sessionCount + " 个会话 · " + rb.messageCount + " 条消息" }),
+		            "，预计 ≥" + rb.estCalls + " 次蒸馏调用。"
 		          ] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 8 }, children: "\u73B0\u6709 L1 \u8BB0\u5FC6 / L2 \u573A\u666F / L3 \u753B\u50CF\u4F1A\u6574\u4F53\u5F52\u6863\uFF08*.bak.\u65F6\u95F4\u6233\uFF0C\u53EF\u624B\u5DE5\u627E\u56DE\uFF09\uFF0C\u968F\u540E\u6E05\u7A7A\u91CD\u5EFA\uFF1B\u91CD\u5EFA\u671F\u95F4\u53EF\u6B63\u5E38\u5BF9\u8BDD\uFF0C\u65B0\u5BF9\u8BDD\u7684\u84B8\u998F\u4F18\u5148\u8FDB\u884C\uFF1B\u4E2D\u9014\u53EF\u53D6\u6D88\uFF0C\u5DF2\u91CD\u5EFA\u90E8\u5206\u4FDD\u7559\u3002" })
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 8 }, children: "现有 L1 记忆 / L2 场景 / L3 画像会整体归档（*.bak.时间戳，可手工找回），随后清空重建；重建期间可正常对话，新对话的蒸馏优先进行；中途可取消，已重建部分保留。" })
 		        ]
 		      }
 		    ) : null
@@ -1639,12 +1639,12 @@ var __defProp = Object.defineProperty;
 		          }
 		        },
 		        children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-mem-select-label", children: selectedLabel || props.placeholder || "\uFF08\u8BF7\u9009\u62E9\uFF09" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-mem-select-label", children: selectedLabel || props.placeholder || "（请选择）" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-mem-sel-chev" + (open ? " dsh-mem-sel-chev-open" : ""), "aria-hidden": true })
 		        ]
 		      }
 		    ),
-		    open && !disabled ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-mem-pop", ref: listRef, role: "listbox", children: options.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-mem-pop-empty", children: "\u65E0\u9009\u9879" }) : options.map((o, i) => {
+		    open && !disabled ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-mem-pop", ref: listRef, role: "listbox", children: options.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dsh-mem-pop-empty", children: "无选项" }) : options.map((o, i) => {
 		      return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(
 		        "button",
 		        {
@@ -1664,7 +1664,7 @@ var __defProp = Object.defineProperty;
 		          },
 		          children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-mem-pop-opt-label", children: o.label }),
-		            o.id === value ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-mem-pop-check", children: "\u2713" }) : null
+		            o.id === value ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dsh-mem-pop-check", children: "✓" }) : null
 		          ]
 		        },
 		        o.id
@@ -1780,24 +1780,24 @@ var __defProp = Object.defineProperty;
 		    const errs = {};
 		    const seen = {};
 		    if (rows[0].provider && !rows[0].model || !rows[0].provider && rows[0].model) {
-		      errs[0] = "\u4E3B\u8DEF\u7531\u884C\u4F9B\u5E94\u5546\u4E0E\u6A21\u578B\u987B\u6210\u5BF9\uFF08\u53CC\u7A7A = \u8DDF\u968F\u9ED8\u8BA4\u6A21\u578B\uFF09";
+		      errs[0] = "主路由行供应商与模型须成对（双空 = 跟随默认模型）";
 		    }
 		    if (rows[0].provider && rows[0].model) seen[rows[0].provider + "::" + rows[0].model] = 0;
 		    for (let i = 1; i < rows.length; i++) {
 		      if (!rows[i].provider || !rows[i].model) {
-		        errs[i] = "\u56DE\u9000\u8DEF\u7531\u5FC5\u987B\u663E\u5F0F\u9009\u62E9\u4F9B\u5E94\u5546\u4E0E\u6A21\u578B";
+		        errs[i] = "回退路由必须显式选择供应商与模型";
 		        continue;
 		      }
 		      const key = rows[i].provider + "::" + rows[i].model;
 		      if (seen[key] !== void 0) {
-		        errs[i] = seen[key] === 0 ? "\u4E0E\u4E3B\u8DEF\u7531\u5B8C\u5168\u76F8\u540C\uFF08\u8FD0\u884C\u65F6\u4F1A\u8DF3\u8FC7\uFF0C\u8BF7\u53BB\u91CD\uFF09" : "\u4E0E\u7B2C " + (seen[key] + 1) + " \u884C\u91CD\u590D";
+		        errs[i] = seen[key] === 0 ? "与主路由完全相同（运行时会跳过，请去重）" : "与第 " + (seen[key] + 1) + " 行重复";
 		      } else {
 		        seen[key] = i;
 		      }
 		    }
 		    setRowErrs(errs);
 		    if (rows.length > 8) {
-		      setErr("\u8DEF\u7531\u94FE\u6700\u591A 8 \u884C\uFF08\u542B\u4E3B\u8DEF\u7531\u884C\uFF09\uFF0C\u8BF7\u5220\u9664\u591A\u4F59\u884C");
+		      setErr("路由链最多 8 行（含主路由行），请删除多余行");
 		      return;
 		    }
 		    if (Object.keys(errs).length) return;
@@ -1808,11 +1808,11 @@ var __defProp = Object.defineProperty;
 		    });
 		    rpc("dsh-memory/settings-set", { distillChain: rows }).then((r) => {
 		      pendingWrites.current -= 1;
-		      setErr(!r || r.ok ? null : "\u8DEF\u7531\u94FE\u4FDD\u5B58\u5931\u8D25\uFF1A" + (r && r.error && r.error.message || "\u672A\u77E5\u9519\u8BEF"));
+		      setErr(!r || r.ok ? null : "路由链保存失败：" + (r && r.error && r.error.message || "未知错误"));
 		      refreshInfo();
 		    }).catch((e) => {
 		      pendingWrites.current -= 1;
-		      setErr("\u8DEF\u7531\u94FE\u4FDD\u5B58\u5931\u8D25\uFF1A" + String(e && e.message || e));
+		      setErr("路由链保存失败：" + String(e && e.message || e));
 		      refreshInfo();
 		    });
 		  }
@@ -1822,11 +1822,11 @@ var __defProp = Object.defineProperty;
 		      pendingWrites.current -= 1;
 		      setRows(null);
 		      setRowErrs({});
-		      setErr(!r || r.ok ? null : "\u6E05\u7A7A\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5");
+		      setErr(!r || r.ok ? null : "清空失败，请重试");
 		      refreshInfo();
 		    }).catch((e) => {
 		      pendingWrites.current -= 1;
-		      setErr("\u6E05\u7A7A\u5931\u8D25\uFF1A" + String(e && e.message || e));
+		      setErr("清空失败：" + String(e && e.message || e));
 		      refreshInfo();
 		    });
 		  }
@@ -1838,24 +1838,24 @@ var __defProp = Object.defineProperty;
 		  });
 		  function roRow(e, i) {
 		    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: STY.roRow, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: STY.badge, children: i === 0 ? "\u4E3B" : String(i + 1) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: STY.badge, children: i === 0 ? "主" : String(i + 1) }),
 		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: STY.mono, children: e.provider + " / " + e.model }),
-		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { marginLeft: "auto", flexShrink: 0, fontSize: 11, color: "var(--dsh-mem-text-3)" }, children: e.effort ? "\u6863\u4F4D " + e.effort : "\u8DDF\u968F\u90E8\u7F72\u914D\u7F6E" })
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: { marginLeft: "auto", flexShrink: 0, fontSize: 11, color: "var(--dsh-mem-text-3)" }, children: e.effort ? "档位 " + e.effort : "跟随部署配置" })
 		    ] }, "ro" + i);
 		  }
 		  if (info.pinned) {
 		    const effPin = info.chain && info.chain.effectiveChain || [];
 		    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: STY.wrap, children: [
 		      effPin.map(roRow),
-		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.note, children: "\u90E8\u7F72\u5DF2\u9501\u5B9A\u8DEF\u7531\uFF08pin \u4F18\u5148\u4E8E\u8FD0\u884C\u65F6\u94FE\uFF09\uFF1B\u8C03\u6574\u8BF7\u4FEE\u6539 profile cordis.patch.yml \u4E2D llm \u7684\u914D\u7F6E\u3002" })
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.note, children: "部署已锁定路由（pin 优先于运行时链）；调整请修改 profile cordis.patch.yml 中 llm 的配置。" })
 		    ] });
 		  }
 		  if (rows === null) {
 		    const effFollow = info.chain && info.chain.effectiveChain || [];
 		    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: STY.wrap, children: [
-		      effFollow.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: S.switchDesc, children: "\u84B8\u998F\u8DDF\u968F\u9ED8\u8BA4\u6A21\u578B\uFF0C\u672A\u914D\u7F6E\u56DE\u9000\u94FE\u3002" }) : effFollow.map(roRow),
-		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NButton, { onClick: forkStatic, disabled, children: "\u7F16\u8F91\u4E3A\u8FD0\u884C\u65F6\u94FE" }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.note, children: "\u672A\u914D\u7F6E\u8FD0\u884C\u65F6\u94FE\u65F6\u8DDF\u968F\u90E8\u7F72\u914D\u7F6E\uFF1B\u300C\u7F16\u8F91\u4E3A\u8FD0\u884C\u65F6\u94FE\u300D\u4F1A\u62F7\u8D1D\u90E8\u7F72\u56DE\u9000\u94FE\u4E3A\u8349\u7A3F\uFF0C\u4FDD\u5B58\u8D77\u8FD0\u884C\u65F6\u94FE\u63A5\u7BA1\u3002" })
+		      effFollow.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: S.switchDesc, children: "蒸馏跟随默认模型，未配置回退链。" }) : effFollow.map(roRow),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NButton, { onClick: forkStatic, disabled, children: "编辑为运行时链" }) }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.note, children: "未配置运行时链时跟随部署配置；「编辑为运行时链」会拷贝部署回退链为草稿，保存起运行时链接管。" })
 		    ] });
 		  }
 		  const capped = rows.length >= 8;
@@ -1874,31 +1874,31 @@ var __defProp = Object.defineProperty;
 		      }
 		    }
 		    let providerOptions = providers.map((p) => {
-		      return { id: p.id, label: p.name !== p.id ? p.name + "\uFF08" + p.id + "\uFF09" : p.id };
+		      return { id: p.id, label: p.name !== p.id ? p.name + "（" + p.id + "）" : p.id };
 		    });
 		    if (isPrimary) {
 		      providerOptions = [
 		        {
 		          id: "",
-		          label: info.default ? "\u8DDF\u968F\u9ED8\u8BA4\u6A21\u578B\uFF08" + info.default.provider + " / " + info.default.model + "\uFF09" : "\u8DDF\u968F\u9ED8\u8BA4\u6A21\u578B"
+		          label: info.default ? "跟随默认模型（" + info.default.provider + " / " + info.default.model + "）" : "跟随默认模型"
 		        }
 		      ].concat(providerOptions);
 		    }
 		    if (row.provider && !providersById[row.provider]) {
-		      providerOptions.push({ id: row.provider, label: row.provider + "\uFF08\u5DF2\u4E0D\u5728\u5217\u8868\uFF09" });
+		      providerOptions.push({ id: row.provider, label: row.provider + "（已不在列表）" });
 		    }
 		    const modelOptions = modelList.map((m) => {
-		      return { id: m.id, label: m.name !== m.id ? m.name + "\uFF08" + m.id + "\uFF09" : m.id };
+		      return { id: m.id, label: m.name !== m.id ? m.name + "（" + m.id + "）" : m.id };
 		    });
 		    if (row.model && !modelList.some((m) => m.id === row.model)) {
-		      modelOptions.push({ id: row.model, label: row.model + "\uFF08\u5DF2\u4E0D\u5728\u5217\u8868\uFF09" });
+		      modelOptions.push({ id: row.model, label: row.model + "（已不在列表）" });
 		    }
-		    const effortOptions = [{ id: "", label: "\u8DDF\u968F\u90E8\u7F72\u914D\u7F6E" }].concat(
+		    const effortOptions = [{ id: "", label: "跟随部署配置" }].concat(
 		      curEfforts.filter((k) => EFFORT_VOCAB.indexOf(k) >= 0).map((k) => ({ id: k, label: k }))
 		    );
 		    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { ...STY.row, ...rowErrs[i] ? STY.rowErr : null }, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: STY.line, children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: STY.badge, children: isPrimary ? "\u4E3B" : String(i + 1) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { style: STY.badge, children: isPrimary ? "主" : String(i + 1) }),
 		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
 		          NSel,
 		          {
@@ -1906,7 +1906,7 @@ var __defProp = Object.defineProperty;
 		            options: providerOptions,
 		            value: row.provider,
 		            disabled,
-		            placeholder: isPrimary ? "\u8DDF\u968F\u9ED8\u8BA4\u6A21\u578B" : "\u4F9B\u5E94\u5546",
+		            placeholder: isPrimary ? "跟随默认模型" : "供应商",
 		            onChange: (v) => {
 		              updateRow(i, { provider: v, model: "", reasoningEffort: "" });
 		            }
@@ -1916,7 +1916,7 @@ var __defProp = Object.defineProperty;
 		          NInput,
 		          {
 		            style: { flex: 1, minWidth: 150 },
-		            placeholder: "\u6A21\u578B id\uFF08\u8BE5\u4F9B\u5E94\u5546\u672A\u63D0\u4F9B\u5217\u8868\uFF0C\u8F93\u5165\u540E\u56DE\u8F66\uFF09\u2026",
+		            placeholder: "模型 id（该供应商未提供列表，输入后回车）…",
 		            value: manual.idx === i ? manual.text : row.model,
 		            onChange: (e) => {
 		              setManual({ idx: i, text: e.target.value });
@@ -1938,7 +1938,7 @@ var __defProp = Object.defineProperty;
 		            options: modelOptions,
 		            value: row.model,
 		            disabled: disabled || !modelsLoaded,
-		            placeholder: modelsLoaded ? isPrimary ? "\uFF08\u9009\u62E9\u6A21\u578B\uFF0C\u53EF\u7559\u7A7A\u8DDF\u968F\u9ED8\u8BA4\uFF09" : "\uFF08\u9009\u62E9\u6A21\u578B\uFF09" : "\u52A0\u8F7D\u6A21\u578B\u5217\u8868\u2026",
+		            placeholder: modelsLoaded ? isPrimary ? "（选择模型，可留空跟随默认）" : "（选择模型）" : "加载模型列表…",
 		            onChange: (v) => {
 		              updateRow(i, { model: v });
 		            }
@@ -1951,7 +1951,7 @@ var __defProp = Object.defineProperty;
 		            options: effortOptions,
 		            value: row.reasoningEffort,
 		            disabled: disabled || !(row.provider && row.model),
-		            placeholder: "\u8DDF\u968F\u90E8\u7F72\u914D\u7F6E",
+		            placeholder: "跟随部署配置",
 		            onChange: (v) => {
 		              updateRow(i, { reasoningEffort: v });
 		            }
@@ -1964,11 +1964,11 @@ var __defProp = Object.defineProperty;
 		          {
 		            style: STY.ico,
 		            disabled: disabled || i === 0,
-		            title: i === 1 ? "\u4E0A\u79FB\uFF08\u4E0E\u4E3B\u8DEF\u7531\u4E92\u6362/\u9876\u66FF\u4E3A\u4E3B\u8DEF\u7531\uFF09" : "\u4E0A\u79FB",
+		            title: i === 1 ? "上移（与主路由互换/顶替为主路由）" : "上移",
 		            onClick: () => {
 		              moveRow(i, -1);
 		            },
-		            children: "\u2191"
+		            children: "↑"
 		          }
 		        ),
 		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
@@ -1976,11 +1976,11 @@ var __defProp = Object.defineProperty;
 		          {
 		            style: STY.ico,
 		            disabled: disabled || i === rows.length - 1 || i === 0 && !row.provider,
-		            title: "\u4E0B\u79FB",
+		            title: "下移",
 		            onClick: () => {
 		              moveRow(i, 1);
 		            },
-		            children: "\u2193"
+		            children: "↓"
 		          }
 		        ),
 		        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
@@ -1988,37 +1988,37 @@ var __defProp = Object.defineProperty;
 		          {
 		            style: STY.ico,
 		            disabled,
-		            title: isPrimary ? "\u91CD\u7F6E\u4E3A\u8DDF\u968F\u9ED8\u8BA4" : "\u5220\u9664",
+		            title: isPrimary ? "重置为跟随默认" : "删除",
 		            onClick: () => {
 		              removeRow(i);
 		            },
-		            children: "\u2715"
+		            children: "✕"
 		          }
 		        )
 		      ] }),
-		      isPrimary && !row.provider ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.note, children: "\u8DDF\u968F\u9ED8\u8BA4\u6A21\u578B" + (info.default ? "\uFF1A" + info.default.provider + " / " + info.default.model : "") + "\uFF08\u6863\u4F4D\u8DDF\u968F\u90E8\u7F72\u914D\u7F6E\uFF0C\u9009\u5B9A\u6A21\u578B\u540E\u53EF\u5355\u72EC\u8BBE\u7F6E\uFF09" }) : null,
-		      !known ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.warn, children: "\u26A0 \u4F9B\u5E94\u5546 " + row.provider + " \u5DF2\u4E0D\u5728\u5DF2\u6CE8\u518C\u8DEF\u7531\u4E2D\uFF1A\u8BE5\u8DEF\u7531\u8C03\u7528\u4F1A\u5931\u8D25\u5E76\u88AB\u94FE\u8DF3\u8FC7\uFF08\u4E0D\u963B\u6B62\u4FDD\u5B58\uFF09\u3002" }) : null,
-		      rowErrs[i] ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.warn, children: "\u2715 " + rowErrs[i] }) : null
+		      isPrimary && !row.provider ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.note, children: "跟随默认模型" + (info.default ? "：" + info.default.provider + " / " + info.default.model : "") + "（档位跟随部署配置，选定模型后可单独设置）" }) : null,
+		      !known ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.warn, children: "⚠ 供应商 " + row.provider + " 已不在已注册路由中：该路由调用会失败并被链跳过（不阻止保存）。" }) : null,
+		      rowErrs[i] ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.warn, children: "✕ " + rowErrs[i] }) : null
 		    ] }, "row" + i);
 		  });
 		  const effChain = info.chain && info.chain.effectiveChain || [];
 		  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: STY.wrap, children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { ...S.switchDesc, marginBottom: 8 }, children: "\u8DEF\u7531\u6309\u5E8F\u5C1D\u8BD5\uFF1A\u7B2C 1 \u884C\u662F\u4E3B\u8DEF\u7531\uFF0C\u5931\u8D25\uFF08\u62A5\u9519 / \u6390\u65AD / \u7F51\u7EDC\u5F02\u5E38 / \u7A7A\u8F93\u51FA\uFF09\u540E\u6309\u5E8F\u964D\u7EA7\uFF1B\u6BCF\u884C\u6863\u4F4D\u72EC\u7ACB\uFF0C\u7F3A\u7701\u8DDF\u968F\u90E8\u7F72\u914D\u7F6E\u3002" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { ...S.switchDesc, marginBottom: 8 }, children: "路由按序尝试：第 1 行是主路由，失败（报错 / 掐断 / 网络异常 / 空输出）后按序降级；每行档位独立，缺省跟随部署配置。" }),
 		    rowEls,
-		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NButton, { style: STY.add, disabled: disabled || capped, onClick: addRow, children: capped ? "\u5DF2\u8FBE\u4E0A\u9650\uFF088 \u6761\uFF09" : "+ \u6DFB\u52A0\u56DE\u9000\u8DEF\u7531" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NButton, { style: STY.add, disabled: disabled || capped, onClick: addRow, children: capped ? "已达上限（8 条）" : "+ 添加回退路由" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 10 }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NButton, { style: STY.ghost, disabled, onClick: clearToFollow, children: "\u6E05\u7A7A\u5E76\u8DDF\u968F\u90E8\u7F72\u914D\u7F6E" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NButton, { style: STY.ghost, disabled, onClick: clearToFollow, children: "清空并跟随部署配置" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: S.grow }),
-		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NButton, { variant: "primary", disabled, onClick: save, children: "\u4FDD\u5B58" })
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(NButton, { variant: "primary", disabled, onClick: save, children: "保存" })
 		    ] }),
-		    err ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { ...STY.warn, marginTop: 8 }, children: "\u2715 " + err }) : null,
+		    err ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { ...STY.warn, marginTop: 8 }, children: "✕ " + err }) : null,
 		    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { style: { marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--dsh-mem-border)" }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { fontSize: 11, color: "var(--dsh-mem-text-3)", marginBottom: 4 }, children: "\u5B9E\u9645\u94FE" + (dirty ? "\uFF08\u4FDD\u5B58\u540E\u66F4\u65B0\uFF1B\u5F53\u524D\u663E\u793A\u5DF2\u4FDD\u5B58\u503C\uFF09" : "") }),
+		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: { fontSize: 11, color: "var(--dsh-mem-text-3)", marginBottom: 4 }, children: "实际链" + (dirty ? "（保存后更新；当前显示已保存值）" : "") }),
 		      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
 		        "div",
 		        {
 		          style: { fontSize: 12, color: "var(--dsh-mem-text-2)", wordBreak: "break-all", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace" },
-		          children: effChain.map((e) => e.provider + "/" + e.model + (e.effort ? "\uFF08" + e.effort + "\uFF09" : "")).join(" \u2192 ") || "\uFF08\u6682\u65E0\u53EF\u7528\u8DEF\u7531\uFF09"
+		          children: effChain.map((e) => e.provider + "/" + e.model + (e.effort ? "（" + e.effort + "）" : "")).join(" → ") || "（暂无可用路由）"
 		        }
 		      )
 		    ] })
@@ -2060,52 +2060,52 @@ var __defProp = Object.defineProperty;
 		    rpc("dsh-memory/settings-set", patch).then((r) => {
 		      if (!r || !r.ok) {
 		        setSettingsData(prev);
-		        setError(r && r.error ? "\u5F00\u5173\u5199\u5165\u5931\u8D25\uFF1A" + r.error.message : "\u5F00\u5173\u5199\u5165\u5931\u8D25");
+		        setError(r && r.error ? "开关写入失败：" + r.error.message : "开关写入失败");
 		      } else {
 		        setError(null);
 		      }
 		    }).catch((e) => {
 		      setSettingsData(prev);
-		      setError("\u5F00\u5173\u5199\u5165\u5931\u8D25\uFF1A" + String(e && e.message || e));
+		      setError("开关写入失败：" + String(e && e.message || e));
 		    });
 		  };
 		  const tiles = [];
 		  const infos = [];
 		  if (stats) {
 		    const th = stats.thresholds || { l2MinNewMemories: 5, l3Interval: 20 };
-		    tiles.push({ num: String(stats.l0Today), label: "L0 \u4ECA\u65E5\u6D88\u606F" });
-		    tiles.push({ num: String(stats.l1Count), label: "L1 \u539F\u5B50\u8BB0\u5FC6" });
-		    tiles.push({ num: String(stats.sceneCount), label: "L2 \u573A\u666F\u5757" });
-		    tiles.push({ num: String(stats.pendingExtract), label: "\u5F85\u91CD\u8BD5\u6D88\u606F" });
-		    infos.push(["\u6570\u636E\u76EE\u5F55", stats.dataDir]);
-		    infos.push(["\u63D2\u4EF6\u7248\u672C", "v" + stats.version]);
-		    infos.push(["\u9ED8\u8BA4\u6863", modeLabel(stats.family)]);
-		    infos.push(["L1 \u7D2F\u8BA1\u62BD\u53D6", String(stats.l1TotalExtracted)]);
-		    infos.push(["L3 \u753B\u50CF", stats.personaChars > 0 ? stats.personaChars + " \u5B57\u7B26" : "\u672A\u751F\u6210"]);
-		    infos.push(["\u4E0A\u6B21 L1 \u62BD\u53D6", fmtTime(stats.lastExtractAt)]);
-		    infos.push(["\u4E0A\u6B21 L2 \u6574\u5408", fmtTime(stats.lastL2At)]);
-		    infos.push(["\u4E0A\u6B21 L3 \u84B8\u998F", fmtTime(stats.lastL3At)]);
-		    infos.push(["\u5F85 L2 \u65B0\u8BB0\u5FC6", stats.memoriesSinceL2 + " / " + (th.l2MinNewMemories != null ? th.l2MinNewMemories : 5)]);
-		    infos.push(["\u5F85 L3 \u65B0\u8BB0\u5FC6", stats.memoriesSinceL3 + " / " + (th.l3Interval != null ? th.l3Interval : 20)]);
+		    tiles.push({ num: String(stats.l0Today), label: "L0 今日消息" });
+		    tiles.push({ num: String(stats.l1Count), label: "L1 原子记忆" });
+		    tiles.push({ num: String(stats.sceneCount), label: "L2 场景块" });
+		    tiles.push({ num: String(stats.pendingExtract), label: "待重试消息" });
+		    infos.push(["数据目录", stats.dataDir]);
+		    infos.push(["插件版本", "v" + stats.version]);
+		    infos.push(["默认档", modeLabel(stats.family)]);
+		    infos.push(["L1 累计抽取", String(stats.l1TotalExtracted)]);
+		    infos.push(["L3 画像", stats.personaChars > 0 ? stats.personaChars + " 字符" : "未生成"]);
+		    infos.push(["上次 L1 抽取", fmtTime(stats.lastExtractAt)]);
+		    infos.push(["上次 L2 整合", fmtTime(stats.lastL2At)]);
+		    infos.push(["上次 L3 蒸馏", fmtTime(stats.lastL3At)]);
+		    infos.push(["待 L2 新记忆", stats.memoriesSinceL2 + " / " + (th.l2MinNewMemories != null ? th.l2MinNewMemories : 5)]);
+		    infos.push(["待 L3 新记忆", stats.memoriesSinceL3 + " / " + (th.l3Interval != null ? th.l3Interval : 20)]);
 		  }
 		  const degraded = stats && stats.message && stats.message !== "running";
 		  const master = settingsData && settingsData.settings ? settingsData.settings.enabled : true;
 		  let ceilingNote = "";
 		  if (settingsData && settingsData.ceilings) {
 		    const off = [];
-		    if (!settingsData.ceilings.capture) off.push("\u6355\u83B7");
-		    if (!settingsData.ceilings.distill) off.push("\u84B8\u998F");
-		    if (!settingsData.ceilings.recall) off.push("\u53EC\u56DE");
-		    if (off.length > 0) ceilingNote = "\u6CE8\u610F\uFF1A\u90E8\u7F72\u914D\u7F6E\u5DF2\u505C\u7528 " + off.join("\u3001") + "\uFF08\u8FD0\u884C\u65F6\u5F00\u5173\u65E0\u6CD5\u5F00\u542F\uFF09";
+		    if (!settingsData.ceilings.capture) off.push("捕获");
+		    if (!settingsData.ceilings.distill) off.push("蒸馏");
+		    if (!settingsData.ceilings.recall) off.push("召回");
+		    if (off.length > 0) ceilingNote = "注意：部署配置已停用 " + off.join("、") + "（运行时开关无法开启）";
 		  }
 		  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
-		    settingsData && settingsData.supported === false ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: S.hint, children: "settings \u670D\u52A1\u4E0D\u53EF\u7528\uFF0C\u8BB0\u5FC6\u6A21\u5F0F\u5F00\u5173\u672A\u542F\u7528\uFF08\u8BB0\u5FC6\u4FDD\u6301\u5168\u5F00\uFF09\u3002" }) : settingsData ? /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: S.switchPanel, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "\u8BB0\u5FC6\u6A21\u5F0F" }),
+		    settingsData && settingsData.supported === false ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: S.hint, children: "settings 服务不可用，记忆模式开关未启用（记忆保持全开）。" }) : settingsData ? /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: S.switchPanel, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "记忆模式" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
 		        SwitchRow,
 		        {
-		          label: "\u8BB0\u5FC6\u6A21\u5F0F",
-		          desc: master ? "\u5DF2\u5F00\u542F\uFF1A\u6355\u83B7\u5BF9\u8BDD\u5E76\u84B8\u998F\u8BB0\u5FC6" : "\u5DF2\u5173\u95ED\uFF1A\u4E0D\u6355\u83B7\u3001\u4E0D\u84B8\u998F\u3001\u4E0D\u6CE8\u5165\uFF08\u6570\u636E\u4FDD\u7559\uFF09",
+		          label: "记忆模式",
+		          desc: master ? "已开启：捕获对话并蒸馏记忆" : "已关闭：不捕获、不蒸馏、不注入（数据保留）",
 		          checked: master,
 		          onChange: (v) => {
 		            toggle("enabled", v);
@@ -2115,8 +2115,8 @@ var __defProp = Object.defineProperty;
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
 		        SwitchRow,
 		        {
-		          label: "\u6355\u83B7",
-		          desc: "L0\uFF1A\u8BB0\u5F55\u539F\u59CB\u5BF9\u8BDD\uFF08\u5173\u95ED\u540E\u84B8\u998F\u4E5F\u65E0\u8F93\u5165\uFF09",
+		          label: "捕获",
+		          desc: "L0：记录原始对话（关闭后蒸馏也无输入）",
 		          checked: settingsData.settings.capture,
 		          disabled: !master,
 		          onChange: (v) => {
@@ -2127,8 +2127,8 @@ var __defProp = Object.defineProperty;
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
 		        SwitchRow,
 		        {
-		          label: "\u84B8\u998F",
-		          desc: "L1 \u62BD\u53D6 + L2 \u573A\u666F + L3 \u753B\u50CF",
+		          label: "蒸馏",
+		          desc: "L1 抽取 + L2 场景 + L3 画像",
 		          checked: settingsData.settings.distill,
 		          disabled: !master,
 		          onChange: (v) => {
@@ -2139,8 +2139,8 @@ var __defProp = Object.defineProperty;
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
 		        SwitchRow,
 		        {
-		          label: "\u53EC\u56DE",
-		          desc: "\u5BF9\u8BDD\u65F6\u6CE8\u5165\u76F8\u5173\u8BB0\u5FC6\u4E0E\u753B\u50CF",
+		          label: "召回",
+		          desc: "对话时注入相关记忆与画像",
 		          checked: settingsData.settings.recall,
 		          disabled: !master,
 		          onChange: (v) => {
@@ -2148,23 +2148,23 @@ var __defProp = Object.defineProperty;
 		          }
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "\u84B8\u998F\u53C2\u6570" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "蒸馏参数" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(RouteChainEditor, { rpc, disabled: !master }),
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(BudgetInputs, { rpc, disabled: !master, data: settingsData, setData: setSettingsData, onError: setError }),
 		      ceilingNote ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: S.hint, children: ceilingNote }) : null
 		    ] }) : null,
 		    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(EmbeddingSection, { rpc }),
 		    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(RebuildPanel, { rpc }),
-		    degraded ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { ...S.error, marginBottom: 10 }, children: "\u26A0 " + stats.message + "\u3002\u4E0A\u65B9\u6570\u636E\u4E3A\u6700\u540E\u4E00\u6B21\u6210\u529F\u8BFB\u53D6\u7684\u503C\uFF0C\u8BB0\u5FC6\u529F\u80FD\u5F53\u524D\u672A\u5DE5\u4F5C\u3002" }) : null,
-		    error ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.error, children: "\u83B7\u53D6\u72B6\u6001\u5931\u8D25\uFF1A" + error }) : !stats ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: S.intro, children: "\u6B63\u5728\u8BFB\u53D6\u8BB0\u5FC6\u72B6\u6001\u2026" }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "\u8BB0\u5FC6\u6982\u51B5" }),
+		    degraded ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: { ...S.error, marginBottom: 10 }, children: "⚠ " + stats.message + "。上方数据为最后一次成功读取的值，记忆功能当前未工作。" }) : null,
+		    error ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.error, children: "获取状态失败：" + error }) : !stats ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: S.intro, children: "正在读取记忆状态…" }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "记忆概况" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.statGrid, children: tiles.map((t) => {
 		        return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "dsh-mem-card", style: S.statTile, children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.statNum, children: t.num }),
 		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.statLabel, children: t.label })
 		        ] }, t.label);
 		      }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "\u8FD0\u884C\u72B6\u6001" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "运行状态" }),
 		      infos.map((row) => {
 		        return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: S.infoRow, children: [
 		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: S.infoKey, children: row[0] }),
@@ -2172,7 +2172,7 @@ var __defProp = Object.defineProperty;
 		        ] }, row[0]);
 		      })
 		    ] }),
-		    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: S.hint, children: "\u6D4F\u89C8\u5404\u5C42\u8BB0\u5FC6\u5185\u5BB9\u8BF7\u5207\u6362\u4E0A\u65B9 Tab\uFF1B\u539F\u59CB\u5BF9\u8BDD\uFF08L0\uFF09\u4E0D\u5165\u6D4F\u89C8\u5668\uFF0C\u53EF\u7531\u6A21\u578B\u4FA7 conversation_search \u5DE5\u5177\u67E5\u8BE2\u3002" })
+		    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: S.hint, children: "浏览各层记忆内容请切换上方 Tab；原始对话（L0）不入浏览器，可由模型侧 conversation_search 工具查询。" })
 		  ] });
 		}
 		
@@ -2197,12 +2197,12 @@ var __defProp = Object.defineProperty;
 		  }, [load]);
 		  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { style: { ...S.flexRow, marginBottom: 10 }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { style: S.muted, children: error ? "\u52A0\u8F7D\u5931\u8D25" : content === null ? "\u52A0\u8F7D\u4E2D\u2026" : content ? content.length + " \u5B57\u7B26" : "\u672A\u751F\u6210\u753B\u50CF" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { style: S.muted, children: error ? "加载失败" : content === null ? "加载中…" : content ? content.length + " 字符" : "未生成画像" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: S.grow }),
-		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(NButton, { onClick: load, children: "\u5237\u65B0" })
+		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(NButton, { onClick: load, children: "刷新" })
 		    ] }),
-		    error ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { ...S.error, marginBottom: 10 }, children: "\u753B\u50CF\u8BFB\u53D6\u5931\u8D25\uFF1A" + error + "\uFF08\u70B9\u53F3\u4E0A\u201C\u5237\u65B0\u201D\u91CD\u8BD5\uFF09" }) : null,
-		    content ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("pre", { style: S.pre, children: content }) : content === null ? null : /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: S.intro, children: "\u753B\u50CF\u5C1A\u672A\u751F\u6210\uFF1B\u84B8\u998F\u82E5\u5E72\u8BB0\u5FC6\u540E L3 \u4F1A\u81EA\u52A8\u4EA7\u51FA\u3002" })
+		    error ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: { ...S.error, marginBottom: 10 }, children: "画像读取失败：" + error + "（点右上“刷新”重试）" }) : null,
+		    content ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("pre", { style: S.pre, children: content }) : content === null ? null : /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: S.intro, children: "画像尚未生成；蒸馏若干记忆后 L3 会自动产出。" })
 		  ] });
 		}
 		
@@ -2272,14 +2272,14 @@ var __defProp = Object.defineProperty;
 		  (0, import_react11.useEffect)(() => {
 		    fetchPage({ query: "", type: "", scene: "" }, 0, false);
 		  }, [fetchPage]);
-		  const countText = total !== null ? "\u5171 " + total + " \u6761" : items.length + " \u6761" + (hasMore ? "+" : "");
+		  const countText = total !== null ? "共 " + total + " 条" : items.length + " 条" + (hasMore ? "+" : "");
 		  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: S.toolbar, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
 		        NInput,
 		        {
 		          style: { flex: 1, minWidth: 160 },
-		          placeholder: "\u641C\u7D22\u8BB0\u5FC6\u5185\u5BB9\uFF08BM25 \u5173\u952E\u8BCD\uFF09\u2026",
+		          placeholder: "搜索记忆内容（BM25 关键词）…",
 		          value: query,
 		          onChange: (e) => {
 		            setQuery(e.target.value);
@@ -2293,7 +2293,7 @@ var __defProp = Object.defineProperty;
 		        NSel,
 		        {
 		          style: { maxWidth: 200 },
-		          options: [{ id: "", label: "\u5168\u90E8\u7C7B\u578B" }].concat(
+		          options: [{ id: "", label: "全部类型" }].concat(
 		            TYPE_CHOICES.map((t) => {
 		              return { id: t, label: TYPE_LABELS[t] || t };
 		            })
@@ -2306,19 +2306,19 @@ var __defProp = Object.defineProperty;
 		        NSel,
 		        {
 		          style: { maxWidth: 220 },
-		          options: [{ id: "", label: "\u5168\u90E8\u60C5\u5883" }].concat(
+		          options: [{ id: "", label: "全部情境" }].concat(
 		            sceneOptions.map((s) => {
-		              return { id: s, label: s.length > 24 ? s.slice(0, 24) + "\u2026" : s };
+		              return { id: s, label: s.length > 24 ? s.slice(0, 24) + "…" : s };
 		            })
 		          ),
 		          value: sceneFilter,
 		          onChange: setSceneFilter
 		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(NButton, { onClick: search, children: "\u641C\u7D22" })
+		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(NButton, { onClick: search, children: "搜索" })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: { ...S.flexRow, marginBottom: 10 }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: S.muted, children: loading ? "\u52A0\u8F7D\u4E2D\u2026" : countText }),
+		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: S.muted, children: loading ? "加载中…" : countText }),
 		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.grow }),
 		      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(
 		        NButton,
@@ -2326,13 +2326,13 @@ var __defProp = Object.defineProperty;
 		          onClick: () => {
 		            fetchPage(last, 0, false);
 		          },
-		          children: "\u5237\u65B0"
+		          children: "刷新"
 		        }
 		      )
 		    ] }),
 		    error ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.error, children: error }) : null,
-		    truncated ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.hint, children: "\u641C\u7D22\u5206\u9875\u5DF2\u8FBE\u68C0\u7D22\u4E0A\u9650\uFF08200 \u6761\uFF09\uFF0C\u66F4\u65E9\u7684\u7ED3\u679C\u672A\u663E\u793A\u3002\u8BF7\u7528\u66F4\u7CBE\u786E\u7684\u5173\u952E\u8BCD\u6216\u7C7B\u578B/\u60C5\u5883\u8FC7\u6EE4\u3002" }) : null,
-		    items.length === 0 && !loading && !error ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { style: S.intro, children: "\u6682\u65E0\u8BB0\u5FC6\u3002\u5BF9\u8BDD\u51E0\u8F6E\u540E\uFF0C\u84B8\u998F\u7BA1\u7EBF\u4F1A\u81EA\u52A8\u62BD\u53D6\u8BB0\u5FC6\u3002" }) : items.map((m) => {
+		    truncated ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.hint, children: "搜索分页已达检索上限（200 条），更早的结果未显示。请用更精确的关键词或类型/情境过滤。" }) : null,
+		    items.length === 0 && !loading && !error ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { style: S.intro, children: "暂无记忆。对话几轮后，蒸馏管线会自动抽取记忆。" }) : items.map((m) => {
 		      const open = expandedId === m.id;
 		      return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(
 		        "div",
@@ -2345,13 +2345,13 @@ var __defProp = Object.defineProperty;
 		          children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { style: S.cardHead, children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "dsh-mem-tag dsh-mem-tag-" + m.type, children: TYPE_LABELS[m.type] || m.type }),
-		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: S.muted, children: "\u4F18\u5148\u7EA7 " + m.priority }),
-		              m.score !== null && m.score !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: S.muted, children: "\u76F8\u5173\u5EA6 " + Number(m.score).toFixed(2) }) : null,
+		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: S.muted, children: "优先级 " + m.priority }),
+		              m.score !== null && m.score !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: S.muted, children: "相关度 " + Number(m.score).toFixed(2) }) : null,
 		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.grow }),
 		              /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { style: S.muted, children: fmtTime(m.updatedAt) })
 		            ] }),
 		            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.content, children: m.content }),
-		            open ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.detail, children: "id: " + m.id + "\n\u60C5\u5883: " + (m.scene || "-") + "\n\u7248\u672C: v" + m.version + "\uFF08\u53BB\u91CD\u5408\u5E76\u6B21\u6570 " + m.version + "\uFF09\n\u521B\u5EFA: " + fmtTime(m.createdAt) + "\n\u6D3B\u8DC3\u65F6\u95F4: " + (m.timestamps && m.timestamps.length > 0 ? m.timestamps.map(fmtTime).join(" \u2192 ") : "-") + "\n" + (m.sourceMessageIds && m.sourceMessageIds.length > 0 ? "\u6765\u6E90\u6D88\u606F: " + m.sourceMessageIds.join(", ") : "\u6765\u6E90\u6D88\u606F: -") }) : null
+		            open ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { style: S.detail, children: "id: " + m.id + "\n情境: " + (m.scene || "-") + "\n版本: v" + m.version + "（去重合并次数 " + m.version + "）\n创建: " + fmtTime(m.createdAt) + "\n活跃时间: " + (m.timestamps && m.timestamps.length > 0 ? m.timestamps.map(fmtTime).join(" → ") : "-") + "\n" + (m.sourceMessageIds && m.sourceMessageIds.length > 0 ? "来源消息: " + m.sourceMessageIds.join(", ") : "来源消息: -") }) : null
 		          ]
 		        },
 		        m.id
@@ -2366,7 +2366,7 @@ var __defProp = Object.defineProperty;
 		          onClick: () => {
 		            if (!loading) fetchPage(last, items.length, true);
 		          },
-		          children: loading ? "\u52A0\u8F7D\u4E2D\u2026" : "\u52A0\u8F7D\u66F4\u591A"
+		          children: loading ? "加载中…" : "加载更多"
 		        }
 		      )
 		    ] }) : null
@@ -2388,16 +2388,16 @@ var __defProp = Object.defineProperty;
 		          setOpen(!open);
 		        },
 		        children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "dsh-mem-scene-chev", style: { transform: open ? "rotate(90deg)" : "none" }, children: "\u25B8" }),
+		          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "dsh-mem-scene-chev", style: { transform: open ? "rotate(90deg)" : "none" }, children: "▸" }),
 		          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: S.sceneTitle, children: s.path }),
-		          s.heat ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: S.muted, children: "\u70ED\u5EA6 " + s.heat }) : null,
+		          s.heat ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: S.muted, children: "热度 " + s.heat }) : null,
 		          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: S.grow }),
-		          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: S.muted, children: "\u66F4\u65B0 " + fmtTime(s.updated) })
+		          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: S.muted, children: "更新 " + fmtTime(s.updated) })
 		        ]
 		      }
 		    ),
 		    s.summary ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { ...S.muted, marginBottom: 6 }, children: s.summary }) : null,
-		    open ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("pre", { style: S.pre, children: s.content || "(\u7A7A)" }) : null
+		    open ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("pre", { style: S.pre, children: s.content || "(空)" }) : null
 		  ] });
 		}
 		function ScenesTab(props) {
@@ -2419,12 +2419,12 @@ var __defProp = Object.defineProperty;
 		  }, [load]);
 		  return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { style: { ...S.flexRow, marginBottom: 10 }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: S.muted, children: items ? items.length + " \u4E2A\u573A\u666F\u5757" : "\u52A0\u8F7D\u4E2D\u2026" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { style: S.muted, children: items ? items.length + " 个场景块" : "加载中…" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: S.grow }),
-		      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(NButton, { onClick: load, children: "\u5237\u65B0" })
+		      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(NButton, { onClick: load, children: "刷新" })
 		    ] }),
 		    error ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: S.error, children: error }) : null,
-		    items && items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: S.intro, children: "\u6682\u65E0\u573A\u666F\u5757\u3002\u7D2F\u8BA1 5 \u6761\u65B0\u8BB0\u5FC6\u540E L2 \u4F1A\u81EA\u52A8\u6574\u5408\u51FA\u7B2C\u4E00\u4E2A\u573A\u666F\u3002" }) : null,
+		    items && items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { style: S.intro, children: "暂无场景块。累计 5 条新记忆后 L2 会自动整合出第一个场景。" }) : null,
 		    (items || []).map((s) => {
 		      return /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(SceneCard, { s }, s.path);
 		    })
@@ -2434,12 +2434,12 @@ var __defProp = Object.defineProperty;
 		// client/src/panel.tsx
 		var import_jsx_runtime13 = require("react/jsx-runtime");
 		var TABS = [
-		  ["overview", "\u6982\u89C8"],
-		  ["records", "\u8BB0\u5FC6"],
-		  ["scenes", "\u573A\u666F"],
-		  ["persona", "\u753B\u50CF"],
-		  ["cost", "\u6210\u672C"],
-		  ["log", "\u65E5\u5FD7"]
+		  ["overview", "概览"],
+		  ["records", "记忆"],
+		  ["scenes", "场景"],
+		  ["persona", "画像"],
+		  ["cost", "成本"],
+		  ["log", "日志"]
 		];
 		function MemoryPanel(props) {
 		  const rpc = props.rpc;
@@ -2456,8 +2456,8 @@ var __defProp = Object.defineProperty;
 		  else if (tab === "cost") body = /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(CostTab, { rpc });
 		  else body = /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(LogTab, { rpc });
 		  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "dsh-mem-root", style: S.section, children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h2", { style: S.heading, children: "\u8BB0\u5FC6 (Memory)" }),
-		    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: S.intro, children: "L0~L3 \u5206\u5C42\u84B8\u998F\u8BB0\u5FC6\uFF1A\u6D4F\u89C8\u88AB\u8BB0\u4F4F\u7684\u5185\u5BB9\uFF0C\u63A7\u5236\u8BB0\u5FC6\u6A21\u5F0F\u5F00\u5173\u3002" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h2", { style: S.heading, children: "记忆 (Memory)" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { style: S.intro, children: "L0~L3 分层蒸馏记忆：浏览被记住的内容，控制记忆模式开关。" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: S.tabbar, children: TABS.map((t) => {
 		      return /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
 		        "button",
@@ -2529,10 +2529,10 @@ var __defProp = Object.defineProperty;
 		  if (stats === null) return null;
 		  if (stats === void 0) {
 		    return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "dsh-mem-sinfo", children: /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "dsh-mem-sinfo-grid", children: [
-		      sinfoCell("\u2026", "\u53EC\u56DE\u547D\u4E2D"),
-		      sinfoCell("\u2026", "\u6512\u6279\u8FDB\u5EA6"),
-		      sinfoCell("\u2026", "\u672C\u4F1A\u8BDD\u8BB0\u5FC6"),
-		      sinfoCell("\u2026", "\u4F1A\u8BDD\u6D88\u606F")
+		      sinfoCell("…", "召回命中"),
+		      sinfoCell("…", "攒批进度"),
+		      sinfoCell("…", "本会话记忆"),
+		      sinfoCell("…", "会话消息")
 		    ] }) });
 		  }
 		  const rc = stats.recall || {};
@@ -2543,32 +2543,32 @@ var __defProp = Object.defineProperty;
 		  let rcLabel;
 		  let rcTitle;
 		  if (rc.enabled === false) {
-		    rcVal = "\u505C\u7528";
-		    rcLabel = "\u53EC\u56DE\u547D\u4E2D";
-		    rcTitle = "\u53EC\u56DE\u5DF2\u505C\u7528\uFF08\u5F00\u5173\u5173\u95ED / \u6863\u4F4D\u5173\u95ED / \u90E8\u7F72\u672A\u542F\u7528\uFF09";
+		    rcVal = "停用";
+		    rcLabel = "召回命中";
+		    rcTitle = "召回已停用（开关关闭 / 档位关闭 / 部署未启用）";
 		  } else {
 		    rcVal = (rc.hitTurns || 0) + "/" + (rc.injectedTurns || 0);
-		    rcLabel = "\u53EC\u56DE\u547D\u4E2D \xB7 " + (rc.totalHits || 0) + " \u6761";
-		    rcTitle = "\u6700\u8FD1\u4E00\u8F6E\u547D\u4E2D " + (rc.lastHits || 0) + " \u6761\uFF0C\u8017\u65F6 " + (rc.lastDurationMs || 0) + "ms" + ((rc.timeouts || 0) > 0 ? "\uFF0C\u8D85\u65F6\u8DF3\u8FC7 " + rc.timeouts + " \u6B21" : "");
+		    rcLabel = "召回命中 · " + (rc.totalHits || 0) + " 条";
+		    rcTitle = "最近一轮命中 " + (rc.lastHits || 0) + " 条，耗时 " + (rc.lastDurationMs || 0) + "ms" + ((rc.timeouts || 0) > 0 ? "，超时跳过 " + rc.timeouts + " 次" : "");
 		  }
 		  let dVal;
 		  let dLabel;
 		  let dTitle;
 		  if (isOff) {
 		    dVal = String(di.parkedSlices || 0);
-		    dLabel = "\u6302\u8D77\u5207\u7247";
-		    dTitle = "\u6863\u4F4D\u5173\u95ED\uFF1A\u672A\u84B8\u998F\u5207\u7247\u6302\u8D77\uFF0C\u5207\u56DE\u6863\u4F4D\u540E\u7EE7\u7EED";
+		    dLabel = "挂起切片";
+		    dTitle = "档位关闭：未蒸馏切片挂起，切回档位后继续";
 		  } else {
 		    dVal = (di.pendingSlice || 0) + "/" + (di.threshold != null ? di.threshold : "-");
-		    dLabel = (di.parkedSlices || 0) > 0 ? "\u6512\u6279 \xB7 \u6302\u8D77 " + di.parkedSlices : "\u6512\u6279\u8FDB\u5EA6";
-		    dTitle = "\u8FBE\u5230\u9608\u503C\u540E\u81EA\u52A8\u84B8\u998F\uFF08\u9608\u503C\u968F\u4F7F\u7528\u6E10\u8FDB\u722C\u5761\u5230\u7A33\u6001\uFF09";
+		    dLabel = (di.parkedSlices || 0) > 0 ? "攒批 · 挂起 " + di.parkedSlices : "攒批进度";
+		    dTitle = "达到阈值后自动蒸馏（阈值随使用渐进爬坡到稳态）";
 		  }
-		  const pTitle = di.lastDistillAt ? "\u6700\u8FD1\u84B8\u998F " + fmtTime(di.lastDistillAt) : "\u672C\u4F1A\u8BDD\u5C1A\u672A\u84B8\u998F";
-		  const warn = gl.degraded ? "\u26A0 \u5B58\u50A8\u4E0D\u53EF\u7528\uFF0C\u8BB0\u5FC6\u529F\u80FD\u5DF2\u505C\u7528" : null;
+		  const pTitle = di.lastDistillAt ? "最近蒸馏 " + fmtTime(di.lastDistillAt) : "本会话尚未蒸馏";
+		  const warn = gl.degraded ? "⚠ 存储不可用，记忆功能已停用" : null;
 		  let note = null;
 		  if (!gl.degraded) {
-		    if (stats.retrieval === "keyword" && !isOff) note = "\u68C0\u7D22\u964D\u7EA7\uFF1A\u7EAF\u5173\u952E\u8BCD\uFF08\u5411\u91CF\u4E0D\u53EF\u7528\uFF09";
-		    else if (stats.retrieval === "none") note = "\u68C0\u7D22\u4E0D\u53EF\u7528\uFF08FTS \u4E0E\u5411\u91CF\u5747\u5931\u6548\uFF09";
+		    if (stats.retrieval === "keyword" && !isOff) note = "检索降级：纯关键词（向量不可用）";
+		    else if (stats.retrieval === "none") note = "检索不可用（FTS 与向量均失效）";
 		  }
 		  const ago = fmtAgo(gl.lastExtractAt);
 		  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "dsh-mem-sinfo", children: [
@@ -2576,11 +2576,11 @@ var __defProp = Object.defineProperty;
 		    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "dsh-mem-sinfo-grid", children: [
 		      sinfoCell(rcVal, rcLabel, rcTitle),
 		      sinfoCell(dVal, dLabel, dTitle),
-		      sinfoCell(String(di.producedRecords || 0), "\u672C\u4F1A\u8BDD\u8BB0\u5FC6", pTitle),
-		      sinfoCell(stats.l0Count != null ? String(stats.l0Count) : "\u2026", "\u4F1A\u8BDD\u6D88\u606F")
+		      sinfoCell(String(di.producedRecords || 0), "本会话记忆", pTitle),
+		      sinfoCell(stats.l0Count != null ? String(stats.l0Count) : "…", "会话消息")
 		    ] }),
 		    note ? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "dsh-mem-sinfo-note", children: note }) : null,
-		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "dsh-mem-sinfo-sum", children: "\u5F85\u84B8\u998F " + (gl.pendingTotal || 0) + " \xB7 \u4E0A\u6B21\u84B8\u998F " + (ago || "\u5C1A\u672A\u84B8\u998F") })
+		    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("div", { className: "dsh-mem-sinfo-sum", children: "待蒸馏 " + (gl.pendingTotal || 0) + " · 上次蒸馏 " + (ago || "尚未蒸馏") })
 		  ] });
 		}
 		
@@ -2922,11 +2922,11 @@ var __defProp = Object.defineProperty;
 		    rpc("dsh-memory/session-mode-set", { sessionId, mode: next }).then((r) => {
 		      if (!r || !r.ok) {
 		        setMode(prev);
-		        setError(r && r.error ? "\u6863\u4F4D\u5199\u5165\u5931\u8D25\uFF1A" + r.error.message : "\u6863\u4F4D\u5199\u5165\u5931\u8D25");
+		        setError(r && r.error ? "档位写入失败：" + r.error.message : "档位写入失败");
 		      }
 		    }).catch((e) => {
 		      setMode(prev);
-		      setError("\u6863\u4F4D\u5199\u5165\u5931\u8D25\uFF1A" + String(e && e.message || e));
+		      setError("档位写入失败：" + String(e && e.message || e));
 		    });
 		  };
 		  if (!sessionId || !rpc) return null;
@@ -2959,7 +2959,7 @@ var __defProp = Object.defineProperty;
 		      "button",
 		      {
 		        type: "button",
-		        title: error ? "\u6863\u4F4D\u8BFB\u53D6\u5931\u8D25\uFF1A" + error + "\uFF08\u70B9\u51FB\u91CD\u8BD5\uFF09" : "\u672C\u4F1A\u8BDD\u8BB0\u5FC6\u6863\u4F4D\uFF08\u70B9\u51FB\u5207\u6362\uFF09",
+		        title: error ? "档位读取失败：" + error + "（点击重试）" : "本会话记忆档位（点击切换）",
 		        onClick: () => {
 		          if (error) load();
 		          setOpen(!open);
@@ -2967,8 +2967,8 @@ var __defProp = Object.defineProperty;
 		        className: isFlow ? "dsh-mem-flow" : "dsh-mem-pill-off",
 		        style: pillStyle,
 		        children: [
-		          "\u8BB0\u5FC6 \xB7 ",
-		          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: loaded ? info.label : error ? "\u26A0" : "\u2026" })
+		          "记忆 · ",
+		          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: loaded ? info.label : error ? "⚠" : "…" })
 		        ]
 		      }
 		    ),
@@ -2986,7 +2986,7 @@ var __defProp = Object.defineProperty;
 		        name: "settings.section",
 		        id: "dsh-memory",
 		        order: 200,
-		        label: "\u8BB0\u5FC6",
+		        label: "记忆",
 		        inject: () => ({ rpc })
 		      },
 		      MemoryPanel
