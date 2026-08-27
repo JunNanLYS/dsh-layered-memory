@@ -20,8 +20,22 @@ import {
 /** 占用快照（每会话一份内存缓存；字段与 session-stats 响应对齐）。 */
 interface OccupancySnapshot {
   stockTokens: number | null;
+  /** 分通道存量（面板分项行展示）。 */
+  recallTokens: number | null;
+  profileTokens: number | null;
   contextWindowTokens: number | null;
+  /** 会话档位（OFF 态注记行依据）。 */
+  mode: string | null;
   updatedAt: number;
+}
+
+/** 面板小节消费的只读视图（避免反向依赖缓存内部结构）。 */
+export interface MeterSnapshotView {
+  stockTokens: number | null;
+  recallTokens: number | null;
+  profileTokens: number | null;
+  contextWindowTokens: number | null;
+  mode: string | null;
 }
 
 type StatsCall = (endpoint: string, payload?: unknown) => Promise<unknown>;
@@ -58,6 +72,19 @@ export function onMeterPanelOpen(listener: PanelOpenListener): () => void {
   return () => panelListeners.delete(listener);
 }
 
+/** 当前会话占用只读视图（无活跃会话或无缓存时为 null；面板挂载时机消费）。 */
+export function currentMeterSnapshot(): MeterSnapshotView | null {
+  const snap = activeSessionId !== null ? snapshotBySession.get(activeSessionId) : undefined;
+  if (!snap) return null;
+  return {
+    stockTokens: snap.stockTokens,
+    recallTokens: snap.recallTokens,
+    profileTokens: snap.profileTokens,
+    contextWindowTokens: snap.contextWindowTokens,
+    mode: snap.mode,
+  };
+}
+
 /* ── 数据获取 ── */
 
 const FETCH_MIN_INTERVAL_MS = 2_000;
@@ -77,13 +104,21 @@ async function fetchSnapshot(force = false): Promise<void> {
   try {
     const res = (await statsCall('dsh-memory/session-stats', { sessionId: sid })) as {
       ok?: boolean;
-      value?: { supported?: boolean; memoryOccupancy?: { stockTokens: number } | null; contextWindowTokens?: number | null };
+      value?: {
+        supported?: boolean;
+        memoryOccupancy?: { stockTokens: number; recallTokens: number; profileTokens: number } | null;
+        contextWindowTokens?: number | null;
+        mode?: string;
+      };
     };
     const v = res && res.ok ? res.value : undefined;
     if (sid !== activeSessionId) return; // 快速切会话：过期响应丢弃
     snapshotBySession.set(sid, {
       stockTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.stockTokens : null,
+      recallTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.recallTokens : null,
+      profileTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.profileTokens : null,
       contextWindowTokens: v?.supported ? (v.contextWindowTokens ?? null) : null,
+      mode: v?.supported ? (v.mode ?? null) : null,
       updatedAt: Date.now(),
     });
     scheduleReconcile();
@@ -178,7 +213,7 @@ function reconcile(): void {
   if (open !== panelWasOpen) {
     panelWasOpen = open;
     for (const l of panelListeners) l(open);
-    if (open) void fetchSnapshot(); // 用户动作时刻：打开面板即取最新权威账
+    if (open) void fetchSnapshot(true); // 用户动作时刻：强制取最新权威账（绕过节流）
   }
 
   applyHalo();
