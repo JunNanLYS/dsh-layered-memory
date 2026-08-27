@@ -159,8 +159,11 @@ off = `--dsh-mem-track`；旋钮 `left .15s` inline 过渡（reduced-motion 压�
 
 ### 蒸馏预算（BudgetInputs，蒸馏参数组）
 
-两行：**输出预算**（四个数字输入，宽 92px：抽取 / 去重 / L2 场景 / L3 画像，单位
-token）与**输入预算**（单个输入，宽 120px，单位字符 ≈token）。数据源
+节标题上置 + 逐预算独占一行（#34 验收五轮改版，替代旧"输入框横排左 / 粗标签
+右"的 switchRow 形制——多框并排过挤）：**输出预算**节下每行 = 行标签（12px
+text-2，宽 68px：抽取输出 / 去重输出 / L2 输出 / L3 输出——L1 面板两行分别点明
+调用点）+ 数字输入（宽 110px）+ 单位 token（11px text-3）；**输入预算**节同构
+（行标签「单次输入」，单位 字符）。行间 6px、节间 marginTop 12。数据源
 `settings-get` 的 `budgets`（`current` 运行时覆盖，0 = 跟随默认；`defaults`
 内置默认 16k/8k/32k/16k，作 placeholder；`effective` 实际生效，描述行展示）与
 `inputBudget`（`current` 0 = 跟随配置；`fallback` 静态配置 `llm.maxInputChars`；

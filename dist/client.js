@@ -1149,50 +1149,52 @@ var __defProp = Object.defineProperty;
 		  const showOutputs = scope !== "input";
 		  const showInput = scope === "all" || scope === "input";
 		  const effNote = layers.map((l) => eff[l[0]] || "?").join(" / ");
+		  const rowLabel = (key) => key === "extract" ? "抽取输出" : key === "dedup" ? "去重输出" : key === "l2" ? "L2 输出" : "L3 输出";
+		  const rowStyle = { display: "flex", alignItems: "center", gap: 8 };
 		  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
-		    showOutputs ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: S.switchRow, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { ...S.flexRow, gap: 6 }, children: layers.map((l) => {
-		        return inputBox(
+		    showOutputs ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { marginTop: 12 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+		        "div",
+		        {
+		          style: S.switchLabel,
+		          title: (scope === "l1" ? "L1 的抽取与去重是两次独立调用，输出限额各自设置（路由共用同一条链）。" : "") + "留空或 0 = 跟随默认（当前生效 " + effNote + "）；思考档 high/xhigh/max 时实际限额自动 ×4",
+		          children: "输出预算"
+		        }
+		      ),
+		      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }, children: layers.map((l) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: rowStyle, children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { width: 68, flexShrink: 0, fontSize: 12, color: "var(--dsh-mem-text-2)" }, children: rowLabel(l[0]) }),
+		        inputBox(
 		          l[0],
 		          l[1],
 		          l[1] + " 输出预算（token，留空 = 默认 " + (def[l[0]] || "?") + "）",
-		          92,
+		          110,
 		          def[l[0]],
 		          commitOutputs
-		        );
-		      }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-		          "div",
-		          {
-		            style: S.switchLabel,
-		            title: (scope === "l1" ? "L1 的抽取与去重是两次独立调用，输出限额各自设置（路由共用同一条链）。" : "") + "留空或 0 = 跟随默认（当前生效 " + effNote + "）；思考档 high/xhigh/max 时实际限额自动 ×4",
-		            children: "输出预算"
-		          }
 		        ),
-		        scope === "all" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchDesc, children: "各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 " + effNote + "）；思考档 high/xhigh/max 时实际限额自动 ×4" }) : null
-		      ] })
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { fontSize: 11, color: "var(--dsh-mem-text-3)" }, children: "token" })
+		      ] }, l[0])) })
 		    ] }) : null,
-		    showInput ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: S.switchRow, children: [
-		      inputBox(
-		        "input",
-		        "输入",
-		        "单次蒸馏输入字符上限（≈token，中文 1 字≈1 token；留空 = 跟随配置 " + (ib.fallback || "?") + "）",
-		        120,
-		        ib.fallback,
-		        commitInput
+		    showInput ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { marginTop: 12 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+		        "div",
+		        {
+		          style: S.switchLabel,
+		          title: "单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；留空或 0 = 跟随配置（当前生效 " + (effIn || "?") + "，来自 llm.maxInputChars）",
+		          children: "输入预算"
+		        }
 		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-		          "div",
-		          {
-		            style: S.switchLabel,
-		            title: "单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；留空或 0 = 跟随配置（当前生效 " + (effIn || "?") + "，来自 llm.maxInputChars）",
-		            children: "输入预算"
-		          }
+		      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: rowStyle, children: [
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { width: 68, flexShrink: 0, fontSize: 12, color: "var(--dsh-mem-text-2)" }, children: "单次输入" }),
+		        inputBox(
+		          "input",
+		          "输入",
+		          "单次蒸馏输入字符上限（≈token，中文 1 字≈1 token；留空 = 跟随配置 " + (ib.fallback || "?") + "）",
+		          110,
+		          ib.fallback,
+		          commitInput
 		        ),
-		        scope === "all" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchDesc, children: "单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；留空或 0 = 跟随配置（当前生效 " + (effIn || "?") + "，来自 llm.maxInputChars）" }) : null
-		      ] })
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { fontSize: 11, color: "var(--dsh-mem-text-3)" }, children: "字符" })
+		      ] }) })
 		    ] }) : null
 		  ] });
 		}
