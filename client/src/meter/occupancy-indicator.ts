@@ -24,6 +24,9 @@ interface OccupancySnapshot {
   recallTokens: number | null;
   profileTokens: number | null;
   contextWindowTokens: number | null;
+  /** 旧会话回填（票08）：host 侧估出的双通道份额（会话 surface 现扫 + 当前组词）。 */
+  backfillRecallTokens: number | null;
+  backfillProfileTokens: number | null;
   /** 会话档位（OFF 态注记行依据）。 */
   mode: string | null;
   updatedAt: number;
@@ -81,15 +84,32 @@ export function onMeterSnapshotUpdate(listener: () => void): () => void {
   return () => snapshotListeners.delete(listener);
 }
 
+/**
+ * 有效占用（票08 host 回填合并）：召回 = max(host surface 扫描, 账本)——surface 扫描
+ * 是"窗口内全部注入"的最好估计（官方环同数、压缩折叠自动出局）；账本补 live 会话
+ * 不在 store 的场景。稳定区 = 账本非零优先（实测值），否则按当前组词估算。
+ */
+function effectiveView(
+  snap: OccupancySnapshot | undefined,
+): { stock: number; recall: number; profile: number; window: number | null } {
+  const recall = Math.max(snap?.backfillRecallTokens ?? 0, snap?.recallTokens ?? 0);
+  const ledgerProfile = snap?.profileTokens ?? 0;
+  const profile = ledgerProfile > 0 ? ledgerProfile : snap?.backfillProfileTokens ?? 0;
+  return { stock: recall + profile, recall, profile, window: snap?.contextWindowTokens ?? null };
+}
+
 /** 当前会话占用只读视图（无活跃会话或无缓存时为 null；面板挂载时机消费）。 */
 export function currentMeterSnapshot(): MeterSnapshotView | null {
-  const snap = activeSessionId !== null ? snapshotBySession.get(activeSessionId) : undefined;
+  const sid = activeSessionId;
+  if (sid === null) return null;
+  const snap = snapshotBySession.get(sid);
   if (!snap) return null;
+  const v = effectiveView(snap);
   return {
-    stockTokens: snap.stockTokens,
-    recallTokens: snap.recallTokens,
-    profileTokens: snap.profileTokens,
-    contextWindowTokens: snap.contextWindowTokens,
+    stockTokens: v.stock,
+    recallTokens: v.recall,
+    profileTokens: v.profile,
+    contextWindowTokens: v.window,
     mode: snap.mode,
   };
 }
@@ -124,6 +144,7 @@ async function fetchSnapshot(force = false): Promise<void> {
       value?: {
         supported?: boolean;
         memoryOccupancy?: { stockTokens: number; recallTokens: number; profileTokens: number } | null;
+        occupancyBackfill?: { recallTokens: number | null; profileTokens: number } | null;
         contextWindowTokens?: number | null;
         mode?: string;
       };
@@ -142,6 +163,8 @@ async function fetchSnapshot(force = false): Promise<void> {
       stockTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.stockTokens : null,
       recallTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.recallTokens : null,
       profileTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.profileTokens : null,
+      backfillRecallTokens: v?.supported ? v.occupancyBackfill?.recallTokens ?? null : null,
+      backfillProfileTokens: v?.supported ? v.occupancyBackfill?.profileTokens ?? null : null,
       contextWindowTokens: v?.supported ? (v.contextWindowTokens ?? null) : null,
       mode: v?.supported ? (v.mode ?? null) : null,
       updatedAt: Date.now(),
@@ -254,9 +277,9 @@ function applyHalo(): void {
   if (!svg) return;
   const snap = activeSessionId !== null ? snapshotBySession.get(activeSessionId) : undefined;
   const failing = fetchFailureStreak >= FETCH_FAILURE_REMOVE_AFTER;
-  const stock = !failing ? snap?.stockTokens ?? null : null; // 连败 ⇒ 数据不可信 ⇒ 无有效占比路径退场
-  const win = snap?.contextWindowTokens ?? null;
-  const ratio = stock !== null && win !== null && win > 0 ? Math.min(1, Math.max(0, stock / win)) : null;
+  const view = failing ? { stock: 0, recall: 0, profile: 0, window: null } : effectiveView(snap);
+  const win = view.window;
+  const ratio = win !== null && win > 0 ? Math.min(1, Math.max(0, view.stock / win)) : null;
 
   const existing = svg.querySelector(`circle.${PARASITE_CLASS}`);
   if (ratio === null || ratio <= 0) {

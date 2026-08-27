@@ -23,10 +23,16 @@ let mounted: HTMLElement | null = null;
 /** 面板当前是否处于打开期（快照更新补挂只在打开期生效）。 */
 let panelOpen = false;
 
-/** 官方 formatTokens 风格的数量级压缩（K/M 一位小数内）。 */
+/** 官方 formatTokens 同款数量级压缩（517 / 12.2K / 517K / 1.2M——整数位不足三位带一位小数）。 */
 function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(n < 10_000 ? 1 : 0)}K`;
+  if (n >= 1_000_000) {
+    const v = n / 1_000_000;
+    return `${v < 100 ? v.toFixed(1) : Math.round(v)}M`;
+  }
+  if (n >= 1_000) {
+    const v = n / 1_000;
+    return `${v < 100 ? v.toFixed(1) : Math.round(v)}K`;
+  }
   return String(Math.round(n));
 }
 
@@ -89,7 +95,7 @@ function row(dotColor: string, label: string, tokens: number): HTMLDivElement {
   dot.style.cssText = `width:7px;height:7px;border-radius:50%;background:${dotColor};display:inline-block;`;
   left.append(dot, document.createTextNode(label));
   const right = document.createElement('span');
-  right.textContent = `${fmtTokens(tokens)} tok`;
+  right.textContent = `~${fmtTokens(tokens)}`; // 官方面板 definition 同款：~15.7K，无单位后缀
   right.style.cssText = 'font-variant-numeric:tabular-nums;color:var(--dsh-mem-text-2);';
   div.append(left, right);
   return div;
