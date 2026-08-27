@@ -3,9 +3,25 @@
 本文件记录 dsh-layered-memory（0.5.0 前名为 dsh-memory-plugin）的显著变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+> **UI 截图约定**：带界面变化的条目在 `assets/changelog/<版本号>/<两位编号>-<简述>.png`
+> 存真机截图，并在条目内以相对路径引用，读者可在更新日志里直接看到新版本 UI 的样子。
+
 ## [Unreleased]
 
 ### 新增
+
+- **上下文占用指示器（官方环外圈记忆光晕弧 + 明细面板分项）**：插件注入的记忆
+  内容此前混在官方上下文环的大类里不可见，现在——输入栏官方环外侧多一条品牌蓝
+  **发光细弧**（长度 = 记忆占窗口比，与官方环同帧）；点开官方面板，底部多一节
+  「记忆占用」，列**召回片段 / 记忆稳定区**两行分项（官方同款 `~5.5K` 格式与
+  亮色数值）。数字与官方 token-meter 同一固定密度启发式（`ceil(chars/4)+开销`，
+  UTF-16 制式），分母为主对话模型的官方声明窗口；旧会话照常支持（live 会话
+  surface 现扫 + 持久化服务读存储前缀回填），重启不丢（occupancy.json 写穿），
+  OFF 后既定事实继续可见、随压缩自然衰减。纯附加实现：移除全部新增节点后界面
+  逐比特还原原生形态。
+
+  ![明细面板记忆占用分项](assets/changelog/0.8.8/01-panel.png)
+  ![官方环外圈记忆光晕弧](assets/changelog/0.8.8/02-halo.png)
 
 - **RPC 契约单一事实源 `src/contract.ts`**：23 个 `dsh-memory/*` 端点的请求/响应
   类型集中为 types-only 模块（零运行时代码），host 侧（stats.ts 的 case 表）与
