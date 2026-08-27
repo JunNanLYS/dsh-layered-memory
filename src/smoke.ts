@@ -670,6 +670,7 @@ async function main(): Promise<void> {
         defaultMode: string;
         recall: { enabled: boolean; injectedTurns: number; hitTurns: number; totalHits: number; timeouts: number; lastHits: number };
         memoryOccupancy: { stockTokens: number; recallTokens: number; profileTokens: number; lastInjectTokens: number; updatedAt: number } | null;
+        contextWindowTokens: number | null;
         distill: { pendingSlice: number; parkedSlices: number; threshold: number; producedRecords: number; lastDistillAt: string };
         l0Count: number;
         retrieval: string;
@@ -687,6 +688,7 @@ async function main(): Promise<void> {
         && sst.memoryOccupancy.lastInjectTokens === 108,
         'session-stats：记忆占用账本直通（host 权威账只此一份，client 只消费）',
       );
+      assert(sst.contextWindowTokens === null, 'session-stats：无模型服务环境分母优雅降级为 null');
       assert(sst.retrieval === 'keyword', 'session-stats：向量不可用降级标 keyword');
       const sstOff = await call('dsh-memory/session-stats', { sessionId: 'sess-y' }) as never as {
         recall: { enabled: boolean; injectedTurns: number };

@@ -19,7 +19,7 @@ import type {} from '@deepseek-ai/dsh-agent-default-model';
 import { EFFORT_CHOICES, resolveDataDir, type MemoryConfig } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { emptyRecallStats, type RecallSessionStats } from './hooks/recall.js';
-import { buildRouteChain, decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
+import { buildRouteChain, decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelContextWindow, resolveModelEfforts, resolveModelRoute } from './llm.js';
 import type { RebuildController } from './pipeline/rebuild.js';
 import { projectDistillChain, validateDistillChain, type DistillChainEntry, type LiveSettingsHandle } from './settings.js';
 import type { L0Store } from './store/l0.js';
@@ -327,6 +327,17 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       const chat = stores.state.forFamily('chat');
       const work = stores.state.forFamily('work');
       const lastAt = Math.max(chat.lastExtractAt, work.lastExtractAt);
+      // 主对话模型的官方声明窗口（占用指示器分母；advisory 查询读本地快照且有缓存，
+      // 轮询热路径下稳态为 Map 命中——遵守本端点"只许内存注册表读取"的硬规则口径）
+      let contextWindowTokens: number | null = null;
+      try {
+        const sel = deps.ctx.get('agentDefaultModel')?.currentSelection?.();
+        if (sel?.provider && sel?.model) {
+          contextWindowTokens = await resolveModelContextWindow(deps.ctx, sel.provider, sel.model);
+        }
+      } catch {
+        /* 可选服务缺失/解析失败 = 分母未知，UI 降级 */
+      }
       const v: SessionStatsResponse = {
         supported: true,
         sessionId,
@@ -334,6 +345,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         defaultMode: modes?.default ?? cfg.family,
         recall: { enabled: recallOn, ...(sessionInfo.recallStats(sessionId) ?? emptyRecallStats()) },
         memoryOccupancy: sessionInfo.memoryOccupancy(sessionId),
+        contextWindowTokens,
         distill: distillView,
         l0Count,
         retrieval: caps.vectorSearch ? (caps.ftsSearch ? 'hybrid' : 'vector') : caps.ftsSearch ? 'keyword' : 'none',
