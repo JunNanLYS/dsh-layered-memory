@@ -313,33 +313,36 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean; scope?
     );
   }
 
-  // 跟随态：未配置运行时链 → 只读展示实际链 +「编辑为运行时链」/「自定义链」
+  // 跟随态：未配置运行时链 → 只读展示实际链 +「编辑为运行时链」/「自定义本层链」
   if (rows === null) {
     if (isLayer) {
       const lv = layerView;
       const src = lv?.source ?? 'global';
-      const roList =
-        src === 'static' && lv
-          ? lv.static.map((e, i) => roRow({ provider: e.provider, model: e.model, effort: e.reasoningEffort || '' }, i))
-          : (lv?.effectiveChain ?? []).map(roRow);
+      if (src === 'static' && lv) {
+        return (
+          <div style={STY.wrap}>
+            <div style={{ ...STY.note, marginBottom: 6 }}>当前生效 = 部署 YAML 层链（只读，下方行不可直接编辑）</div>
+            {lv.static.map((e, i) => roRow({ provider: e.provider, model: e.model, effort: e.reasoningEffort || '' }, i))}
+            <div style={{ marginTop: 6 }}>
+              <NButton onClick={forkStatic} disabled={disabled}>
+                自定义本层链
+              </NButton>
+            </div>
+            <div style={STY.note}>部署 YAML 层链生效；「自定义本层链」保存后，运行时层链将覆盖静态层链。</div>
+          </div>
+        );
+      }
+      const previewRows = lv?.effectiveChain ?? [];
       return (
         <div style={STY.wrap}>
-          {src === 'static' ? (
-            <>
-              {roList}
-              <div style={STY.note}>部署 YAML 层链生效（UI 只读）；「自定义链」可用运行时层链覆盖。</div>
-            </>
-          ) : (
-            <>
-              {roList.length === 0 ? <div style={S.switchDesc}>本层跟随全局链，暂无可用路由。</div> : roList}
-              <div style={STY.note}>本层跟随全局默认链（上方全局范围的链）；「自定义链」可为本层单独配路由。</div>
-            </>
-          )}
+          <div style={{ ...STY.note, marginBottom: 6 }}>当前生效 = 全局默认链（只读预览，下方行不可直接编辑）</div>
+          {previewRows.length === 0 ? <div style={S.switchDesc}>本层跟随全局链，暂无可用路由。</div> : previewRows.map(roRow)}
           <div style={{ marginTop: 6 }}>
             <NButton onClick={forkStatic} disabled={disabled}>
-              自定义链
+              自定义本层链
             </NButton>
           </div>
+          <div style={STY.note}>本层未单独配置，走「全局默认」范围的链；要调整本层请点上方按钮，要调整所有跟随层请去「全局默认」。</div>
         </div>
       );
     }
@@ -528,7 +531,7 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean; scope?
       </NButton>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
         <NButton style={STY.ghost} disabled={disabled} onClick={clearToFollow}>
-          清空并跟随部署配置
+          {isLayer ? '清除自定义 · 跟随全局' : '清空并跟随部署配置'}
         </NButton>
         <div style={S.grow} />
         <NButton variant="primary" disabled={disabled} onClick={save}>

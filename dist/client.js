@@ -1550,16 +1550,20 @@ var __defProp = Object.defineProperty;
 		    if (isLayer) {
 		      const lv = layerView;
 		      const src = lv?.source ?? "global";
-		      const roList = src === "static" && lv ? lv.static.map((e, i) => roRow({ provider: e.provider, model: e.model, effort: e.reasoningEffort || "" }, i)) : (lv?.effectiveChain ?? []).map(roRow);
+		      if (src === "static" && lv) {
+		        return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: STY.wrap, children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { ...STY.note, marginBottom: 6 }, children: "当前生效 = 部署 YAML 层链（只读，下方行不可直接编辑）" }),
+		          lv.static.map((e, i) => roRow({ provider: e.provider, model: e.model, effort: e.reasoningEffort || "" }, i)),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { onClick: forkStatic, disabled, children: "自定义本层链" }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: STY.note, children: "部署 YAML 层链生效；「自定义本层链」保存后，运行时层链将覆盖静态层链。" })
+		        ] });
+		      }
+		      const previewRows = lv?.effectiveChain ?? [];
 		      return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: STY.wrap, children: [
-		        src === "static" ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
-		          roList,
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: STY.note, children: "部署 YAML 层链生效（UI 只读）；「自定义链」可用运行时层链覆盖。" })
-		        ] }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
-		          roList.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: S.switchDesc, children: "本层跟随全局链，暂无可用路由。" }) : roList,
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: STY.note, children: "本层跟随全局默认链（上方全局范围的链）；「自定义链」可为本层单独配路由。" })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { onClick: forkStatic, disabled, children: "自定义链" }) })
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { ...STY.note, marginBottom: 6 }, children: "当前生效 = 全局默认链（只读预览，下方行不可直接编辑）" }),
+		        previewRows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: S.switchDesc, children: "本层跟随全局链，暂无可用路由。" }) : previewRows.map(roRow),
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { onClick: forkStatic, disabled, children: "自定义本层链" }) }),
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: STY.note, children: "本层未单独配置，走「全局默认」范围的链；要调整本层请点上方按钮，要调整所有跟随层请去「全局默认」。" })
 		      ] });
 		    }
 		    const effFollow = info.chain && info.chain.effectiveChain || [];
@@ -1718,7 +1722,7 @@ var __defProp = Object.defineProperty;
 		    rowEls,
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { style: STY.add, disabled: disabled || capped, onClick: addRow, children: capped ? "已达上限（8 条）" : "+ 添加回退路由" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 10 }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { style: STY.ghost, disabled, onClick: clearToFollow, children: "清空并跟随部署配置" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { style: STY.ghost, disabled, onClick: clearToFollow, children: isLayer ? "清除自定义 · 跟随全局" : "清空并跟随部署配置" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: S.grow }),
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { variant: "primary", disabled, onClick: save, children: "保存" })
 		    ] }),
