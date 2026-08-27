@@ -2771,7 +2771,7 @@ var __defProp = Object.defineProperty;
 		    "line-height:1.5"
 		  ].join(";");
 		  const title = document.createElement("div");
-		  title.textContent = "记忆 · 本插件占用";
+		  title.textContent = "记忆占用";
 		  title.style.cssText = "color:var(--dsh-mem-text-2);font-weight:600;margin-bottom:4px;";
 		  section.append(title);
 		  if (view.recallTokens !== null && view.recallTokens > 0) {
@@ -2780,23 +2780,12 @@ var __defProp = Object.defineProperty;
 		  if (view.profileTokens !== null && view.profileTokens > 0) {
 		    section.append(row("var(--dsh-mem-accent)", "记忆稳定区", view.profileTokens));
 		  }
-		  if (view.contextWindowTokens !== null && view.contextWindowTokens > 0) {
-		    const pct = Math.min(100, Math.max(0, (view.stockTokens ?? 0) / view.contextWindowTokens * 100));
-		    const share = document.createElement("div");
-		    share.style.cssText = "color:var(--dsh-mem-text-3);padding-top:2px;";
-		    share.textContent = `合计约占当前上下文 ${pct < 0.1 ? "<0.1" : pct.toFixed(1)}%`;
-		    section.append(share);
-		  }
 		  if (view.mode === "off") {
 		    const offNote = document.createElement("div");
 		    offNote.textContent = "已停用 · 显示现存残留";
 		    offNote.style.cssText = "color:var(--dsh-mem-text-3);padding-top:2px;";
 		    section.append(offNote);
 		  }
-		  const note = document.createElement("div");
-		  note.textContent = "近似估算 · 与官方同一算法";
-		  note.style.cssText = "color:var(--dsh-mem-text-3);opacity:.75;padding-top:2px;font-size:11px;";
-		  section.append(note);
 		  return section;
 		}
 		
