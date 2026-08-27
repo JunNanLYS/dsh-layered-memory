@@ -218,7 +218,10 @@ export function BudgetInputs(props: {
           <div>
             <div
               style={S.switchLabel}
-              title={'留空或 0 = 跟随默认（当前生效 ' + effNote + '）；思考档 high/xhigh/max 时实际限额自动 ×4'}
+              title={
+                (scope === 'l1' ? 'L1 的抽取与去重是两次独立调用，输出限额各自设置（路由共用同一条链）。' : '') +
+                '留空或 0 = 跟随默认（当前生效 ' + effNote + '）；思考档 high/xhigh/max 时实际限额自动 ×4'
+              }
             >
               输出预算
             </div>
