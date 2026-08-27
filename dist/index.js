@@ -308,6 +308,8 @@ export async function apply(ctx, config) {
     {
         recallStats: (sid) => recall.stats(sid),
         memoryOccupancy: (sid) => recall.occupancy(sid),
+        profileEstimate: (sid) => recall.estimateProfileTokens(sid),
+        recallEstimate: (sid) => recall.estimateRecallTokens(sid),
         runnerView: (sid, mode) => runner.sessionView(sid, mode),
         l0Count: (sid) => stores.l0.countBySession(sid),
         capabilities: () => db.getCapabilities(),

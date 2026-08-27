@@ -1542,6 +1542,36 @@ async function main(): Promise<void> {
         | undefined;
       let sessionStart: ((payload: { agent: { id: string }; source?: string }) => void) | undefined;
       let disposed: ((payload: { agent: { id: string } }) => void) | undefined;
+      // fake sessions 服务（票08 召回回填：surface ∩ 全 log 现扫本插件注入）
+      const fakeSurface = { nodes: [0, 1, 2] as number[] };
+      const fakeSessionSvc = {
+        get: (id: string) =>
+          id === 'agent-t5'
+            ? {
+                surface: fakeSurface,
+                events: [
+                  { type: 'user/message', seq: 0, data: { source: { kind: 'plugin', plugin: 'memory', form: 'recall' }, content: [{ type: 'text', text: 'x'.repeat(400) }] } },
+                  { type: 'user/message', seq: 1, data: { source: { kind: 'plugin', plugin: 'skill-catalog' }, content: [{ type: 'text', text: 'y'.repeat(9999) }] } },
+                  { type: 'user/message', seq: 2, data: { source: { kind: 'plugin', plugin: 'memory', form: 'recall' }, content: [{ type: 'text', text: 'z'.repeat(40) }] } },
+                ],
+              }
+            : undefined,
+      };
+      // fake 持久化服务（票08 召回回填兜底：loadStored 返回存储前缀事件）
+      const mkStoreEv = (type: string, seq: number, data: unknown) => ({ type, seq, time: seq, data });
+      const fakePersistence = {
+        loadStored: async (id: string) =>
+          id === 'agent-stored'
+            ? {
+                events: [
+                  mkStoreEv('user/message', 0, { source: { kind: 'plugin', plugin: 'memory', form: 'recall' }, content: [{ type: 'text', text: 'x'.repeat(400) }] }),
+                  mkStoreEv('user/message', 1, { source: { kind: 'plugin', plugin: 'skill-catalog' }, content: [{ type: 'text', text: 'y'.repeat(9999) }] }),
+                  mkStoreEv('compaction/replace', 2, {}),
+                  mkStoreEv('user/message', 3, { source: { kind: 'plugin', plugin: 'memory', form: 'recall' }, content: [{ type: 'text', text: 'z'.repeat(40) }] }),
+                ],
+              }
+            : undefined,
+      };
       const ctxT5 = {
         on: (ev: string, h: (payload?: unknown, next?: unknown) => unknown, _opts?: unknown) => {
           if (ev === 'agent/pre-step') preStep = h as typeof preStep;
@@ -1550,7 +1580,15 @@ async function main(): Promise<void> {
           return () => {};
         },
         effect: (f: () => (() => void)) => f(),
-        get: (name: string) => (name === 'agents' ? { list: () => [fakeAgent] } : undefined),
+        get: (name: string) =>
+          name === 'agents'
+            ? { list: () => [fakeAgent] }
+            : name === 'sessions'
+              ? fakeSessionSvc
+              : name === 'sessionPersistence'
+                ? fakePersistence
+                : undefined,
+        sessions: fakeSessionSvc,
       } as never;
       let searchCalls = 0;
       let hitContent = '命中记忆内容';
@@ -1702,6 +1740,35 @@ async function main(): Promise<void> {
       sessionStart?.({ agent: { id: 'agent-t5' }, source: 'resume' });
       assert(occReborn!.stockTokens === snapResume.stock && occReborn!.profileTokens === snapResume.profile, 'resume/startup 不复位账本（历史仍在，已注入内容模型仍持有）');
 
+      // ⑥d 稳定区估算（票08 旧会话回填）：纯读不记账；指南门控生效；off 为 0
+      // （dispose 已清召回统计 → 先补一次真实注入恢复 lastHits，指南门控才有输入）
+      hitId = 'h3';
+      const d9 = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
+        () => Promise.resolve(enter([userMsg])),
+      );
+      assert(d9.kind === 'enter' && d9.messages.length === 2, '⑥d 前置：新 id 注入成功（恢复 lastHits）');
+      const estProfileBefore = occReborn!.profileTokens;
+      const est = recallT5.estimateProfileTokens('agent-t5');
+      assert(est > 0, '稳定区估算：画像空但有召回命中 → 工具指南计入（>0）');
+      assert(occReborn!.profileTokens === estProfileBefore, '估算纯读：账本零扰动');
+      modesT5.set('agent-t5', 'off');
+      assert(recallT5.estimateProfileTokens('agent-t5') === 0, 'off 档估算为 0（物理离场）');
+      modesT5.set('agent-t5', 'auto');
+
+      // ⑥e 召回回填（票08）：surface∩全 log 现扫 / 排除他源注入 / 压缩折叠出局 / 非 live 会话走磁盘兜底
+      const estRecall = await recallT5.estimateRecallTokens('agent-t5');
+      assert(estRecall === Math.ceil(400 / 4) + 8 + Math.ceil(40 / 4) + 8, `召回回填：双条 memory 注入求和、skill-catalog 排除（${estRecall}）`);
+      fakeSurface.nodes = [1]; // 模拟 compaction：两条 memory 注入被折叠出局
+      assert((await recallT5.estimateRecallTokens('agent-t5')) === 0, '压缩折叠：surface 收缩后回填归零');
+      fakeSurface.nodes = [0, 1, 2];
+      assert((await recallT5.estimateRecallTokens('agent-not-live')) === null, '非 live 且无存储前缀：回填 null');
+
+      // ⑥f 持久化服务兜底（票08）：loadStored 前缀判别 / compaction 清空近似 / 无日志会话
+      const dEst = await recallT5.estimateRecallTokens('agent-stored');
+      assert(dEst === Math.ceil(40 / 4) + 8, `存储兜底：skill-catalog 排除 + compaction 清空 + 后续注入保留（${dEst}）`);
+      assert((await recallT5.estimateRecallTokens('agent-unknown')) === null, '存储兜底：无存储前缀的会话 null');
+
       // ⑧ 召回超时（fake pre-step 缝）：慢检索在总预算内未返回 → 跳过本轮注入（决策原样返回）
       const origSearch = (storesT5 as { l1: { search: () => Promise<unknown> } }).l1.search;
       (storesT5 as { l1: { search: () => Promise<unknown> } }).l1.search = () =>
@@ -1712,13 +1779,18 @@ async function main(): Promise<void> {
       );
       assert(d8.kind === 'enter' && d8.messages.length === 1, '召回超时：决策原样透传（不注入不阻塞）');
       (storesT5 as { l1: { search: () => Promise<unknown> } }).l1.search = origSearch;
-      // 超时跳过轮账目零扰动（票01 验收）：无注入 ⇒ 无入账（compact 复位后仅剩稳定区份额）
+      // 超时跳过轮账目零扰动（票01 验收）：与超时前逐字段相等（无注入 ⇒ 无入账）
+      const occBeforeTimeout = { ...recallT5.occupancy('agent-t5')! };
+      const d8t = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
+        () => Promise.resolve(enter([userMsg])),
+      );
+      assert(d8t.kind === 'enter' && d8t.messages.length === 1, '超时后再次透传（复原搜索后可再检索）');
       const occAfterTimeout = recallT5.occupancy('agent-t5');
       assert(
         occAfterTimeout !== null
-        && occAfterTimeout.lastInjectTokens === 0
-        && occAfterTimeout.recallTokens === 0
-        && occAfterTimeout.stockTokens === occAfterTimeout.profileTokens,
+        && occAfterTimeout.stockTokens === occBeforeTimeout.stockTokens
+        && occAfterTimeout.lastInjectTokens === occBeforeTimeout.lastInjectTokens,
         '召回超时跳过轮：账目零扰动',
       );
 

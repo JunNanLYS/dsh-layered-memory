@@ -55,6 +55,10 @@ export interface SessionInfoSource {
   recallStats(sessionId: string): RecallSessionStats | undefined;
   /** 记忆上下文占用账本（context-occupancy 唯一权威实例；未注入过的会话返回 null）。 */
   memoryOccupancy(sessionId: string): MemoryOccupancy | null;
+  /** 稳定区份额估算（旧会话回填用；缺省 = 装配未提供，回填隐藏）。 */
+  profileEstimate?(sessionId: string): number;
+  /** 召回份额回填（live surface 现扫，miss 读盘上日志；缺省 = null）。 */
+  recallEstimate?(sessionId: string): Promise<number | null> | number | null;
   /** 蒸馏管线会话视图（runner：攒批进度/挂起切片/会话产出）。 */
   runnerView(
     sessionId: string,
@@ -349,6 +353,12 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         defaultMode: modes?.default ?? cfg.family,
         recall: { enabled: recallOn, ...(sessionInfo.recallStats(sessionId) ?? emptyRecallStats()) },
         memoryOccupancy: sessionInfo.memoryOccupancy(sessionId),
+        occupancyBackfill: sessionInfo.profileEstimate
+          ? {
+              recallTokens: sessionInfo.recallEstimate ? await sessionInfo.recallEstimate(sessionId) : null,
+              profileTokens: sessionInfo.profileEstimate(sessionId),
+            }
+          : null,
         contextWindowTokens,
         distill: distillView,
         l0Count,

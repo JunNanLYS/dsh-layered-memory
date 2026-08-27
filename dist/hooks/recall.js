@@ -2,10 +2,11 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { RecallDedupeStore } from '../store/recall-dedupe.js';
 import { OccupancyStore } from '../store/occupancy.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_EMBED_CAP_MS } from '../util/recall-budget.js';
-import { clearProfileShare, emptyOccupancyLedger, recordProfileShare, recordRecallInjection, resetForCompaction, } from '../util/context-occupancy.js';
+import { clearProfileShare, emptyOccupancyLedger, estimateInjectedMessageTokens, estimateStableSectionTokens, recordProfileShare, recordRecallInjection, resetForCompaction, } from '../util/context-occupancy.js';
 import { errDetail } from '../util/filelog.js';
 import { blocksToText } from '../util/text.js';
 const PROFILE_TTL = 60_000;
+const storedEstimateCache = new Map();
 /** 召回查询只取会话末尾 N 条消息（长会话每步把全史拼进 FTS MATCH 会让检索成本线性上涨）。 */
 const RECALL_QUERY_TAIL_MESSAGES = 8;
 /** 召回查询总字符上限（保留末尾——最新语境权重最高）。 */
@@ -216,6 +217,101 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
     // ── 2. agent 作用域上下文 provider（系统提示稳定区：画像 + 导航 + 门控指南） ──
     // 插件可能在默认 agent 创建之后才加载（组合顺序由依赖决定），
     // 因此除了监听 agent/created，还要给已存在的 agent 补注册。
+    /**
+     * 稳定区当前组词（纯读，不记账）：text() 的取词部分单独成函数，
+     * 供旧会话回填估算（RecallHooks.estimateProfileTokens）复用同一口径。
+     */ const composeStableText = (agentId) => {
+        const s = live.get();
+        if (!s.enabled || !s.recall)
+            return '';
+        const mode = modes.get(agentId);
+        if (mode === 'off')
+            return '';
+        // auto 档：两族按类别归组（画像/导航各一个标签，域内 <domain> 分块）；纯档：单族原格式
+        const body = mode === 'auto'
+            ? formatProfileAuto(profileCache.chat, profileCache.work)
+            : formatProfileSingle(profileCache[mode]);
+        const hasRecallHit = (recallStats.get(agentId)?.lastHits ?? 0) > 0;
+        // 指南三条件门控：工具已注册（cfg.tools）&&（稳定内容 ∥ 本轮召回命中）——
+        // 空库用户与关闭工具的用户不付这份固定 token（原版 auto-recall 同款语义）
+        if (!cfg.tools)
+            return body;
+        if (!body && !hasRecallHit)
+            return '';
+        return body ? `${body}\n\n${MEMORY_TOOLS_GUIDE}` : MEMORY_TOOLS_GUIDE;
+    };
+    async function estimateRecallFromStorage(sessionId) {
+        if (storedEstimateCache.has(sessionId))
+            return storedEstimateCache.get(sessionId) ?? null;
+        let tokens = null;
+        try {
+            // 可选服务（JSONL 后端注册名）；缺失/其它实现 → 回填隐藏
+            const persistence = (await ctx.get?.('sessionPersistence'));
+            const stored = typeof persistence?.loadStored === 'function' ? await persistence.loadStored(sessionId) : undefined;
+            if (stored?.events) {
+                tokens = 0;
+                for (const ev of stored.events) {
+                    if (typeof ev.type === 'string' && ev.type.startsWith('compaction'))
+                        tokens = 0;
+                    if (ev.type !== 'user/message')
+                        continue;
+                    const src = ev.data?.source;
+                    if (!src || src.kind !== 'plugin' || src.plugin !== 'memory' || src.form !== 'recall')
+                        continue;
+                    let chars = 0;
+                    for (const b of ev.data?.content ?? []) {
+                        if (b?.type === 'text' && typeof b.text === 'string')
+                            chars += b.text.length;
+                    }
+                    if (chars > 0)
+                        tokens += estimateInjectedMessageTokens(chars);
+                }
+            }
+        }
+        catch {
+            tokens = null;
+        }
+        storedEstimateCache.set(sessionId, tokens);
+        return tokens;
+    }
+    /**
+     * 召回份额回填（票08 旧会话）：live 会话的 surface（模型可见序号集）∩ 全事件日志
+     * 里本插件的 recall 注入，官方同式折算。窗口语义天然正确——被压缩折叠的注入不在
+     * surface.nodes 上，自动出局。会话不在 live store（未打开）返回 null。
+     */
+    const estimateRecallTokens = async (sessionId) => {
+        try {
+            // cordis 属性访问（ctx.sessions）对未 inject 的服务抛 "without inject"（实测）；
+            // 可选服务一律走 ctx.get() 的宽容路径
+            const sessions = ctx.get?.('sessions');
+            const session = typeof sessions?.get === 'function' ? sessions.get(sessionId) : undefined;
+            if (session) {
+                const visible = new Set(session.surface.nodes);
+                let total = 0;
+                for (const ev of session.events) {
+                    if (ev.type !== 'user/message' || !visible.has(ev.seq))
+                        continue;
+                    const msg = ev.data;
+                    const src = msg?.source;
+                    if (!src || src.kind !== 'plugin' || src.plugin !== 'memory' || src.form !== 'recall')
+                        continue;
+                    let chars = 0;
+                    for (const b of msg.content ?? []) {
+                        if (b?.type === 'text' && typeof b.text === 'string')
+                            chars += b.text.length;
+                    }
+                    if (chars > 0)
+                        total += estimateInjectedMessageTokens(chars);
+                }
+                return total;
+            }
+            // 仅查看的旧会话不在 live store：官方持久化服务读存储前缀兜底（见函数头）
+            return estimateRecallFromStorage(sessionId);
+        }
+        catch {
+            return null; // 服务缺失/形状异常：回填隐藏，不扰动主流程
+        }
+    };
     const registered = new WeakSet();
     // context() 的 disposer 必须挂到插件自身生命周期：agent.ctx 比插件实例活得久，
     // 不主动清理会导致热重载后旧注册泄漏、新实例撞名（"already registered"）
@@ -229,36 +325,13 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
                 name: 'memory:profile',
                 order: 510,
                 text: () => {
-                    const s = live.get();
+                    const final = composeStableText(agent.id);
                     const ledger = ledgerFor(agent.id);
-                    if (!s.enabled || !s.recall) {
+                    // 空串即物理离场（停用/OFF/门控全空）：份额同边界清零；否则按实际长度入账
+                    if (final === '')
                         clearProfileShare(ledger);
-                        occupancyStore.save(agent.id, ledger);
-                        return '';
-                    }
-                    const mode = modes.get(agent.id);
-                    if (mode === 'off') {
-                        // OFF 边界：本次起稳定区不再组进系统提示，份额同步清零（物理离场同边界）
-                        clearProfileShare(ledger);
-                        occupancyStore.save(agent.id, ledger);
-                        return '';
-                    }
-                    // auto 档：两族按类别归组（画像/导航各一个标签，域内 <domain> 分块）；纯档：单族原格式
-                    const body = mode === 'auto'
-                        ? formatProfileAuto(profileCache.chat, profileCache.work)
-                        : formatProfileSingle(profileCache[mode]);
-                    const hasRecallHit = (recallStats.get(agent.id)?.lastHits ?? 0) > 0;
-                    // 指南三条件门控：工具已注册（cfg.tools）&&（稳定内容 ∥ 本轮召回命中）——
-                    // 空库用户与关闭工具的用户不付这份固定 token（原版 auto-recall 同款语义）
-                    const final = !cfg.tools
-                        ? body
-                        : !body && !hasRecallHit
-                            ? ''
-                            : body
-                                ? `${body}\n\n${MEMORY_TOOLS_GUIDE}`
-                                : MEMORY_TOOLS_GUIDE;
-                    // 实际组进系统提示的串长度入账（子片不加结构开销；增量式重复调用不双算）
-                    recordProfileShare(ledger, final.length);
+                    else
+                        recordProfileShare(ledger, final.length);
                     occupancyStore.save(agent.id, ledger);
                     return final;
                 },
@@ -296,6 +369,8 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
                 occupancyByAgent.set(id, led);
             return led ?? null;
         },
+        estimateProfileTokens: (id) => estimateStableSectionTokens(composeStableText(id).length),
+        estimateRecallTokens,
     };
 }
 /** auto 档 <user-persona> 内的域说明：让模型理解分块结构与两域的独立性。 */

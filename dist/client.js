@@ -2520,14 +2520,23 @@ var __defProp = Object.defineProperty;
 		  snapshotListeners.add(listener);
 		  return () => snapshotListeners.delete(listener);
 		}
+		function effectiveView(snap) {
+		  const recall = Math.max(snap?.backfillRecallTokens ?? 0, snap?.recallTokens ?? 0);
+		  const ledgerProfile = snap?.profileTokens ?? 0;
+		  const profile = ledgerProfile > 0 ? ledgerProfile : snap?.backfillProfileTokens ?? 0;
+		  return { stock: recall + profile, recall, profile, window: snap?.contextWindowTokens ?? null };
+		}
 		function currentMeterSnapshot() {
-		  const snap = activeSessionId !== null ? snapshotBySession.get(activeSessionId) : void 0;
+		  const sid = activeSessionId;
+		  if (sid === null) return null;
+		  const snap = snapshotBySession.get(sid);
 		  if (!snap) return null;
+		  const v = effectiveView(snap);
 		  return {
-		    stockTokens: snap.stockTokens,
-		    recallTokens: snap.recallTokens,
-		    profileTokens: snap.profileTokens,
-		    contextWindowTokens: snap.contextWindowTokens,
+		    stockTokens: v.stock,
+		    recallTokens: v.recall,
+		    profileTokens: v.profile,
+		    contextWindowTokens: v.window,
 		    mode: snap.mode
 		  };
 		}
@@ -2558,6 +2567,8 @@ var __defProp = Object.defineProperty;
 		      stockTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.stockTokens : null,
 		      recallTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.recallTokens : null,
 		      profileTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.profileTokens : null,
+		      backfillRecallTokens: v?.supported ? v.occupancyBackfill?.recallTokens ?? null : null,
+		      backfillProfileTokens: v?.supported ? v.occupancyBackfill?.profileTokens ?? null : null,
 		      contextWindowTokens: v?.supported ? v.contextWindowTokens ?? null : null,
 		      mode: v?.supported ? v.mode ?? null : null,
 		      updatedAt: Date.now()
@@ -2647,9 +2658,9 @@ var __defProp = Object.defineProperty;
 		  if (!svg) return;
 		  const snap = activeSessionId !== null ? snapshotBySession.get(activeSessionId) : void 0;
 		  const failing = fetchFailureStreak >= FETCH_FAILURE_REMOVE_AFTER;
-		  const stock = !failing ? snap?.stockTokens ?? null : null;
-		  const win = snap?.contextWindowTokens ?? null;
-		  const ratio = stock !== null && win !== null && win > 0 ? Math.min(1, Math.max(0, stock / win)) : null;
+		  const view = failing ? { stock: 0, recall: 0, profile: 0, window: null } : effectiveView(snap);
+		  const win = view.window;
+		  const ratio = win !== null && win > 0 ? Math.min(1, Math.max(0, view.stock / win)) : null;
 		  const existing = svg.querySelector(`circle.${PARASITE_CLASS}`);
 		  if (ratio === null || ratio <= 0) {
 		    existing?.remove();
@@ -2686,8 +2697,14 @@ var __defProp = Object.defineProperty;
 		var mounted = null;
 		var panelOpen = false;
 		function fmtTokens(n) {
-		  if (n >= 1e6) return `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)}M`;
-		  if (n >= 1e3) return `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}K`;
+		  if (n >= 1e6) {
+		    const v = n / 1e6;
+		    return `${v < 100 ? v.toFixed(1) : Math.round(v)}M`;
+		  }
+		  if (n >= 1e3) {
+		    const v = n / 1e3;
+		    return `${v < 100 ? v.toFixed(1) : Math.round(v)}K`;
+		  }
 		  return String(Math.round(n));
 		}
 		function initPanelSection(read) {
@@ -2738,7 +2755,7 @@ var __defProp = Object.defineProperty;
 		  dot.style.cssText = `width:7px;height:7px;border-radius:50%;background:${dotColor};display:inline-block;`;
 		  left.append(dot, document.createTextNode(label));
 		  const right = document.createElement("span");
-		  right.textContent = `${fmtTokens(tokens)} tok`;
+		  right.textContent = `~${fmtTokens(tokens)}`;
 		  right.style.cssText = "font-variant-numeric:tabular-nums;color:var(--dsh-mem-text-2);";
 		  div.append(left, right);
 		  return div;

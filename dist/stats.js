@@ -222,6 +222,12 @@ async function handleEndpoint(endpoint, payload, deps) {
                 defaultMode: modes?.default ?? cfg.family,
                 recall: { enabled: recallOn, ...(sessionInfo.recallStats(sessionId) ?? emptyRecallStats()) },
                 memoryOccupancy: sessionInfo.memoryOccupancy(sessionId),
+                occupancyBackfill: sessionInfo.profileEstimate
+                    ? {
+                        recallTokens: sessionInfo.recallEstimate ? await sessionInfo.recallEstimate(sessionId) : null,
+                        profileTokens: sessionInfo.profileEstimate(sessionId),
+                    }
+                    : null,
                 contextWindowTokens,
                 distill: distillView,
                 l0Count,

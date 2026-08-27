@@ -45,8 +45,16 @@ export interface RecallHooks {
     invalidateProfile(): void;
     /** 会话召回统计只读视图（未发生过检索的会话返回 undefined）。 */
     stats(sessionId: string): RecallSessionStats | undefined;
-    /** 记忆占用账本只读出口（未发生过注入的会话返回 null）。 */
+    /** 记忆占用账本只读出口：内存优先，miss 时从流水复生（重启后历史会话）；从未注入返回 null。 */
     occupancy(sessionId: string): OccupancyLedger | null;
+    /**
+     * 稳定区份额估算（票08 旧会话回填）：按当前画像/导航/指南组词折算 token，
+     * 纯读不记账——旧会话系统提示里"现在大约坐着多少稳定区"的最佳可得估计。
+     */
+    estimateProfileTokens(agentId: string): number;
+    /** 召回份额回填（票08）：live 会话 surface 现扫本插件注入，miss 时读盘上日志兜底；
+     *  均不可得返回 null。 */
+    estimateRecallTokens(sessionId: string): Promise<number | null>;
 }
 export declare function registerRecall(ctx: Context, cfg: MemoryConfig, stores: {
     l1: L1Store;

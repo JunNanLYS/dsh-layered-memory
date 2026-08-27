@@ -389,6 +389,9 @@ export type SessionStatsResponse =
       recall: { enabled: boolean } & RecallSessionStats;
       /** 记忆上下文占用账本（未注入过的会话为 null）。 */
       memoryOccupancy: MemoryOccupancy | null;
+      /** 旧会话回填（票08）：host 侧估出的双通道份额——召回按 live 会话 surface 现扫
+       *  （null = 会话不在 store），稳定区按当前组词折算。账本存在时客户端取两者较大值。 */
+      occupancyBackfill: { recallTokens: number | null; profileTokens: number } | null;
       /** 主对话模型的官方声明上下文窗口（占用占比分母；null = 未声明/解析失败，UI 降级隐藏占比）。 */
       contextWindowTokens: number | null;
       distill: SessionDistillView;
