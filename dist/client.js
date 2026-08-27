@@ -1852,16 +1852,16 @@ var __defProp = Object.defineProperty;
 		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: { ...STY2.inUse, marginLeft: "auto" }, children: users.length ? "在用：" + users.map((k) => LAYER_META[k].seg).join("、") : "当前无层使用" })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: STY2.panelDesc, children: "未单独配置的层走这条链（当前：" + (users.length ? users.map((k) => LAYER_META[k].seg).join("、") : "无") + "）；配齐所有层后它自然闲置。" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(RouteChainEditor, { rpc, disabled }),
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(BudgetInputs, { rpc, disabled, data: props.data, setData: props.setData, onError: props.onError, scope: "input" })
+		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(RouteChainEditor, { rpc, disabled }, "g"),
+		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(BudgetInputs, { rpc, disabled, data: props.data, setData: props.setData, onError: props.onError, scope: "input" }, "g-budget")
 		    ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: STY2.panelHead, children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: STY2.panelTitle, children: LAYER_META[tab].title }),
 		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: { ...STY2.chip, ...dotOf(tab) === "runtime" ? STY2.chipAccent : STY2.chipMuted }, children: dotOf(tab) === "runtime" ? "运行时自定义" : dotOf(tab) === "static" ? "静态 · YAML" : "跟随全局" })
 		      ] }),
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: STY2.panelDesc, children: LAYER_META[tab].desc }),
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(RouteChainEditor, { rpc, disabled, scope: tab }),
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(BudgetInputs, { rpc, disabled, data: props.data, setData: props.setData, onError: props.onError, scope: tab })
+		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(RouteChainEditor, { rpc, disabled, scope: tab }, tab),
+		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(BudgetInputs, { rpc, disabled, data: props.data, setData: props.setData, onError: props.onError, scope: tab }, tab + "-budget")
 		    ] })
 		  ] });
 		}

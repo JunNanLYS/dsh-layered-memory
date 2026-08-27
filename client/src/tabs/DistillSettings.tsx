@@ -127,8 +127,11 @@ export function DistillSettings(props: {
           <div style={STY.panelDesc}>
             {'未单独配置的层走这条链（当前：' + (users.length ? users.map((k) => LAYER_META[k].seg).join('、') : '无') + '）；配齐所有层后它自然闲置。'}
           </div>
-          <RouteChainEditor rpc={rpc} disabled={disabled} />
-          <BudgetInputs rpc={rpc} disabled={disabled} data={props.data} setData={props.setData} onError={props.onError} scope="input" />
+          {/* key=tab：切范围强制重挂载——RouteChainEditor/BudgetInputs 的编辑草稿是
+              组件内部态，不重挂会把上一范围的草稿带进下一范围（L3 草稿漏进 L1/全局，
+              保存还会写错层），这是 #34 验收发现的实例复用 bug 的修复 */}
+          <RouteChainEditor key={'g'} rpc={rpc} disabled={disabled} />
+          <BudgetInputs key={'g-budget'} rpc={rpc} disabled={disabled} data={props.data} setData={props.setData} onError={props.onError} scope="input" />
         </div>
       ) : (
         <div>
@@ -139,8 +142,8 @@ export function DistillSettings(props: {
             </span>
           </div>
           <div style={STY.panelDesc}>{LAYER_META[tab].desc}</div>
-          <RouteChainEditor rpc={rpc} disabled={disabled} scope={tab} />
-          <BudgetInputs rpc={rpc} disabled={disabled} data={props.data} setData={props.setData} onError={props.onError} scope={tab} />
+          <RouteChainEditor key={tab} rpc={rpc} disabled={disabled} scope={tab} />
+          <BudgetInputs key={tab + '-budget'} rpc={rpc} disabled={disabled} data={props.data} setData={props.setData} onError={props.onError} scope={tab} />
         </div>
       )}
     </div>
