@@ -89,6 +89,7 @@ const effortCache = new Map();
 /** 清空能力缓存（llm/adapters-updated 时调用：供应商增删/改配置后重新探询）。 */
 export function invalidateEffortCache() {
     effortCache.clear();
+    contextWindowCache.clear();
     effortWarned.clear();
     routeDeadWarned.clear();
 }
@@ -114,6 +115,30 @@ export async function resolveModelEfforts(ctx, provider, model) {
     }
     catch {
         return null; // 不缓存失败：路由尚未注册等瞬时态，下次调用重试
+    }
+}
+/** (provider, model) → 上下文窗口 token 数；advisory，未声明/失败为 null。 */
+const contextWindowCache = new Map();
+/**
+ * 探询某模型的上下文窗口容量（adapter 声明的 provider-owned capacity）。
+ * 与 effortCache 同源同失效策略（invalidateEffortCache 一并清空）；
+ * 仅用于占用指示器的分母展示——分母必须与官方环同源（模型声明值），禁止 client 自估。
+ */
+export async function resolveModelContextWindow(ctx, provider, model) {
+    const key = `${provider}::${model}`;
+    if (contextWindowCache.has(key))
+        return contextWindowCache.get(key) ?? null;
+    try {
+        if (typeof ctx.llm?.resolveModelInfo !== 'function')
+            return null;
+        const info = await ctx.llm.resolveModelInfo(provider, model);
+        const win = info.context?.contextWindow;
+        const val = typeof win === 'number' && Number.isFinite(win) && win > 0 ? Math.floor(win) : null;
+        contextWindowCache.set(key, val);
+        return val;
+    }
+    catch {
+        return null; // 不缓存失败：下次调用重试
     }
 }
 /** 纯决策：配置档位 + 模型能力 → 实际发送值（callLLM 与 settings-get 共用）。 */

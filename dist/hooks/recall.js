@@ -1,6 +1,7 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { RecallDedupeStore } from '../store/recall-dedupe.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_EMBED_CAP_MS } from '../util/recall-budget.js';
+import { clearProfileShare, emptyOccupancyLedger, recordProfileShare, recordRecallInjection, resetForCompaction, } from '../util/context-occupancy.js';
 import { errDetail } from '../util/filelog.js';
 import { blocksToText } from '../util/text.js';
 const PROFILE_TTL = 60_000;
@@ -62,6 +63,16 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
         }
         return s;
     };
+    /** 每 agent 记忆占用账本（权威账本的唯一宿主实例；占用指示器与悬浮卡同源消费）。 */
+    const occupancyByAgent = new Map();
+    const ledgerFor = (id) => {
+        let led = occupancyByAgent.get(id);
+        if (!led) {
+            led = emptyOccupancyLedger();
+            occupancyByAgent.set(id, led);
+        }
+        return led;
+    };
     // 画像/场景导航按族缓存（分族隔离：注入时按会话档位选族）
     const profileCache = {
         chat: { persona: '', nav: '' },
@@ -92,13 +103,16 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
     // agent 销毁时清掉召回统计槽（去重记录不随 agent 清——持久化语义：会话恢复后继续压制）
     ctx.on('agent/disposed', (payload) => {
         recallStats.delete(payload.agent.id);
+        occupancyByAgent.delete(payload.agent.id);
     });
     // 上下文压缩/清空 → 已注入内容从模型上下文丢失，重置该会话的去重压制
     // （resume/startup 不重置：历史仍在，已注入的记忆模型还持有）。
+    // 占用账本同步全量归零（宁低勿高；v1 轮级粒度近似，事件级 shadow price 对齐留待后续）。
     ctx.on('agent/session-start', (payload) => {
         if (payload.source === 'compact' || payload.source === 'clear') {
             dedupe.reset(payload.agent.id);
-            logger.info(`[memory] 召回去重重置（agent=${payload.agent.id}，source=${payload.source}）`);
+            resetForCompaction(ledgerFor(payload.agent.id));
+            logger.info(`[memory] 召回去重与占用账本重置（agent=${payload.agent.id}，source=${payload.source}）`);
         }
     });
     // ── 1. pre-step 消息侧注入：记忆先行于每一条新的用户输入（ADR-0001） ──
@@ -180,6 +194,8 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
                     // "上下文注入"（专用"跨会话召回"标题仅留给 session-reference 来源）
                     source: { kind: 'plugin', plugin: 'memory', form: 'recall' },
                 });
+                // 入账在成功构造注入消息之后、返回 enter 之前——任何前置抛错路径账目零扰动
+                recordRecallInjection(ledgerFor(payload.agent.id), text.length);
                 // 注入消息排在用户新消息之前（原版 prepend 语义：先线索后问题）
                 return { kind: 'enter', messages: [injection, ...decision.messages] };
             }
@@ -206,11 +222,17 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
                 order: 510,
                 text: () => {
                     const s = live.get();
-                    if (!s.enabled || !s.recall)
+                    const ledger = ledgerFor(agent.id);
+                    if (!s.enabled || !s.recall) {
+                        clearProfileShare(ledger);
                         return '';
+                    }
                     const mode = modes.get(agent.id);
-                    if (mode === 'off')
+                    if (mode === 'off') {
+                        // OFF 边界：本次起稳定区不再组进系统提示，份额同步清零（物理离场同边界）
+                        clearProfileShare(ledger);
                         return '';
+                    }
                     // auto 档：两族按类别归组（画像/导航各一个标签，域内 <domain> 分块）；纯档：单族原格式
                     const body = mode === 'auto'
                         ? formatProfileAuto(profileCache.chat, profileCache.work)
@@ -218,11 +240,16 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
                     const hasRecallHit = (recallStats.get(agent.id)?.lastHits ?? 0) > 0;
                     // 指南三条件门控：工具已注册（cfg.tools）&&（稳定内容 ∥ 本轮召回命中）——
                     // 空库用户与关闭工具的用户不付这份固定 token（原版 auto-recall 同款语义）
-                    if (!cfg.tools)
-                        return body;
-                    if (!body && !hasRecallHit)
-                        return '';
-                    return body ? `${body}\n\n${MEMORY_TOOLS_GUIDE}` : MEMORY_TOOLS_GUIDE;
+                    const final = !cfg.tools
+                        ? body
+                        : !body && !hasRecallHit
+                            ? ''
+                            : body
+                                ? `${body}\n\n${MEMORY_TOOLS_GUIDE}`
+                                : MEMORY_TOOLS_GUIDE;
+                    // 实际组进系统提示的串长度入账（子片不加结构开销；增量式重复调用不双算）
+                    recordProfileShare(ledger, final.length);
+                    return final;
                 },
             }));
         }
@@ -248,7 +275,12 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
             }
         }
     });
-    return { invalidateProfile, stats: (id) => recallStats.get(id) };
+    return {
+        invalidateProfile,
+        stats: (id) => recallStats.get(id),
+        /** 占用账本只读出口（未发生过注入的会话为 null，调用方不得经此写回）。 */
+        occupancy: (id) => occupancyByAgent.get(id) ?? null,
+    };
 }
 /** auto 档 <user-persona> 内的域说明：让模型理解分块结构与两域的独立性。 */
 const DOMAIN_HINT = '以下内容按记忆域分块：chat=用户个人画像（User Narrative Profile），work=团队工作准则（Team Operating Doctrine）。' +

@@ -1863,15 +1863,15 @@ var __defProp = Object.defineProperty;
 		  }
 		  const capped = rows.length >= 8;
 		  const dirty = JSON.stringify(rows) !== JSON.stringify(info.chain && info.chain.current || []);
-		  const rowEls = rows.map((row, i) => {
+		  const rowEls = rows.map((row2, i) => {
 		    const isPrimary = i === 0;
-		    const known = !row.provider || !!providersById[row.provider];
-		    const modelsLoaded = row.provider ? Object.prototype.hasOwnProperty.call(modelsCache, row.provider) : false;
-		    const modelList = modelsLoaded ? modelsCache[row.provider] : [];
+		    const known = !row2.provider || !!providersById[row2.provider];
+		    const modelsLoaded = row2.provider ? Object.prototype.hasOwnProperty.call(modelsCache, row2.provider) : false;
+		    const modelList = modelsLoaded ? modelsCache[row2.provider] : [];
 		    const manualInput = modelsLoaded && modelList.length === 0;
 		    let curEfforts = [];
 		    for (let mi = 0; mi < modelList.length; mi++) {
-		      if (modelList[mi].id === row.model) {
+		      if (modelList[mi].id === row2.model) {
 		        curEfforts = modelList[mi].efforts || [];
 		        break;
 		      }
@@ -1887,14 +1887,14 @@ var __defProp = Object.defineProperty;
 		        }
 		      ].concat(providerOptions);
 		    }
-		    if (row.provider && !providersById[row.provider]) {
-		      providerOptions.push({ id: row.provider, label: row.provider + "（已不在列表）" });
+		    if (row2.provider && !providersById[row2.provider]) {
+		      providerOptions.push({ id: row2.provider, label: row2.provider + "（已不在列表）" });
 		    }
 		    const modelOptions = modelList.map((m) => {
 		      return { id: m.id, label: m.name !== m.id ? m.name + "（" + m.id + "）" : m.id };
 		    });
-		    if (row.model && !modelList.some((m) => m.id === row.model)) {
-		      modelOptions.push({ id: row.model, label: row.model + "（已不在列表）" });
+		    if (row2.model && !modelList.some((m) => m.id === row2.model)) {
+		      modelOptions.push({ id: row2.model, label: row2.model + "（已不在列表）" });
 		    }
 		    const effortOptions = [{ id: "", label: "跟随部署配置" }].concat(
 		      curEfforts.filter((k) => EFFORT_VOCAB.indexOf(k) >= 0).map((k) => ({ id: k, label: k }))
@@ -1907,7 +1907,7 @@ var __defProp = Object.defineProperty;
 		          {
 		            style: { flex: 1, minWidth: 150 },
 		            options: providerOptions,
-		            value: row.provider,
+		            value: row2.provider,
 		            disabled,
 		            placeholder: isPrimary ? "跟随默认模型" : "供应商",
 		            onChange: (v) => {
@@ -1915,12 +1915,12 @@ var __defProp = Object.defineProperty;
 		            }
 		          }
 		        ),
-		        !row.provider ? null : manualInput ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+		        !row2.provider ? null : manualInput ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
 		          NInput,
 		          {
 		            style: { flex: 1, minWidth: 150 },
 		            placeholder: "模型 id（该供应商未提供列表，输入后回车）…",
-		            value: manual.idx === i ? manual.text : row.model,
+		            value: manual.idx === i ? manual.text : row2.model,
 		            onChange: (e) => {
 		              setManual({ idx: i, text: e.target.value });
 		            },
@@ -1939,7 +1939,7 @@ var __defProp = Object.defineProperty;
 		          {
 		            style: { flex: 1, minWidth: 150 },
 		            options: modelOptions,
-		            value: row.model,
+		            value: row2.model,
 		            disabled: disabled || !modelsLoaded,
 		            placeholder: modelsLoaded ? isPrimary ? "（选择模型，可留空跟随默认）" : "（选择模型）" : "加载模型列表…",
 		            onChange: (v) => {
@@ -1952,8 +1952,8 @@ var __defProp = Object.defineProperty;
 		          {
 		            style: { flexShrink: 0, width: 118 },
 		            options: effortOptions,
-		            value: row.reasoningEffort,
-		            disabled: disabled || !(row.provider && row.model),
+		            value: row2.reasoningEffort,
+		            disabled: disabled || !(row2.provider && row2.model),
 		            placeholder: "跟随部署配置",
 		            onChange: (v) => {
 		              updateRow(i, { reasoningEffort: v });
@@ -1978,7 +1978,7 @@ var __defProp = Object.defineProperty;
 		          NButton,
 		          {
 		            style: STY.ico,
-		            disabled: disabled || i === rows.length - 1 || i === 0 && !row.provider,
+		            disabled: disabled || i === rows.length - 1 || i === 0 && !row2.provider,
 		            title: "下移",
 		            onClick: () => {
 		              moveRow(i, 1);
@@ -1999,8 +1999,8 @@ var __defProp = Object.defineProperty;
 		          }
 		        )
 		      ] }),
-		      isPrimary && !row.provider ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.note, children: "跟随默认模型" + (info.default ? "：" + info.default.provider + " / " + info.default.model : "") + "（档位跟随部署配置，选定模型后可单独设置）" }) : null,
-		      !known ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.warn, children: "⚠ 供应商 " + row.provider + " 已不在已注册路由中：该路由调用会失败并被链跳过（不阻止保存）。" }) : null,
+		      isPrimary && !row2.provider ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.note, children: "跟随默认模型" + (info.default ? "：" + info.default.provider + " / " + info.default.model : "") + "（档位跟随部署配置，选定模型后可单独设置）" }) : null,
+		      !known ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.warn, children: "⚠ 供应商 " + row2.provider + " 已不在已注册路由中：该路由调用会失败并被链跳过（不阻止保存）。" }) : null,
 		      rowErrs[i] ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { style: STY.warn, children: "✕ " + rowErrs[i] }) : null
 		    ] }, "row" + i);
 		  });
@@ -2168,11 +2168,11 @@ var __defProp = Object.defineProperty;
 		        ] }, t.label);
 		      }) }),
 		      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { style: S.panelLabel, children: "运行状态" }),
-		      infos.map((row) => {
+		      infos.map((row2) => {
 		        return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { style: S.infoRow, children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: S.infoKey, children: row[0] }),
-		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: S.infoVal, children: row[1] })
-		        ] }, row[0]);
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: S.infoKey, children: row2[0] }),
+		          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { style: S.infoVal, children: row2[1] })
+		        ] }, row2[0]);
 		      })
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { style: S.hint, children: "浏览各层记忆内容请切换上方 Tab；原始对话（L0）不入浏览器，可由模型侧 conversation_search 工具查询。" })
@@ -2481,6 +2481,277 @@ var __defProp = Object.defineProperty;
 		// client/src/pill/MemoryModePill.tsx
 		var import_react16 = require("react");
 		
+		// src/util/context-occupancy.ts
+		var CONTEXT_METER_CIRCUMFERENCE = 34.55751918948772;
+		function haloDashArray(occupancyRatio, circumference = CONTEXT_METER_CIRCUMFERENCE) {
+		  const clamped = Number.isFinite(occupancyRatio) ? Math.min(1, Math.max(0, occupancyRatio)) : 0;
+		  return `${clamped * circumference} ${circumference}`;
+		}
+		var RADIUS_EPSILON = 1e-6;
+		function isContextMeterAnchor(sig) {
+		  if (sig.ariaHasPopup !== "dialog") return false;
+		  if (sig.viewBox !== "0 0 14 14") return false;
+		  const radii = sig.circleRadii;
+		  if (!Array.isArray(radii) || radii.length !== 2) return false;
+		  return radii.every((r) => Math.abs(r - 5.5) < RADIUS_EPSILON);
+		}
+		
+		// client/src/meter/occupancy-indicator.ts
+		var statsCall = null;
+		var snapshotBySession = /* @__PURE__ */ new Map();
+		var activeSessionId = null;
+		var panelListeners = /* @__PURE__ */ new Set();
+		var panelWasOpen = false;
+		function initOccupancyIndicator(call) {
+		  statsCall = call;
+		}
+		function noteOccupancySession(sessionId) {
+		  if (sessionId === activeSessionId) return;
+		  activeSessionId = sessionId;
+		  panelWasOpen = false;
+		  if (sessionId !== null && !snapshotBySession.has(sessionId)) void fetchSnapshot();
+		}
+		function onMeterPanelOpen(listener) {
+		  panelListeners.add(listener);
+		  return () => panelListeners.delete(listener);
+		}
+		function currentMeterSnapshot() {
+		  const snap = activeSessionId !== null ? snapshotBySession.get(activeSessionId) : void 0;
+		  if (!snap) return null;
+		  return {
+		    stockTokens: snap.stockTokens,
+		    recallTokens: snap.recallTokens,
+		    profileTokens: snap.profileTokens,
+		    contextWindowTokens: snap.contextWindowTokens,
+		    mode: snap.mode
+		  };
+		}
+		var FETCH_MIN_INTERVAL_MS = 2e3;
+		var lastFetchStartedAt = 0;
+		var fetchInFlight = false;
+		async function fetchSnapshot(force = false) {
+		  const sid = activeSessionId;
+		  if (!statsCall || !sid || fetchInFlight) return;
+		  if (!force && Date.now() - lastFetchStartedAt < FETCH_MIN_INTERVAL_MS) return;
+		  fetchInFlight = true;
+		  lastFetchStartedAt = Date.now();
+		  try {
+		    const res = await statsCall("dsh-memory/session-stats", { sessionId: sid });
+		    const v = res && res.ok ? res.value : void 0;
+		    if (sid !== activeSessionId) return;
+		    snapshotBySession.set(sid, {
+		      stockTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.stockTokens : null,
+		      recallTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.recallTokens : null,
+		      profileTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.profileTokens : null,
+		      contextWindowTokens: v?.supported ? v.contextWindowTokens ?? null : null,
+		      mode: v?.supported ? v.mode ?? null : null,
+		      updatedAt: Date.now()
+		    });
+		    scheduleReconcile();
+		  } catch {
+		  } finally {
+		    fetchInFlight = false;
+		  }
+		}
+		var PARASITE_CLASS = "dsh-mem-parasite";
+		var observer = null;
+		var reconcileScheduled = false;
+		var anchorCache = null;
+		function watchContextMeter() {
+		  if (observer !== null || typeof document === "undefined" || !document.body) return;
+		  observer = new MutationObserver(onMutations);
+		  observer.observe(document.body, {
+		    childList: true,
+		    subtree: true,
+		    attributes: true,
+		    attributeFilter: ["stroke-dasharray", "aria-expanded", "aria-label"]
+		  });
+		  scheduleReconcile();
+		}
+		function onMutations(mutations) {
+		  for (const m of mutations) {
+		    const target = m.target;
+		    if (target && typeof target.classList?.contains === "function" && target.classList.contains(PARASITE_CLASS)) {
+		      continue;
+		    }
+		    scheduleReconcile();
+		    return;
+		  }
+		}
+		function scheduleReconcile() {
+		  if (reconcileScheduled) return;
+		  reconcileScheduled = true;
+		  queueMicrotask(() => {
+		    reconcileScheduled = false;
+		    reconcile();
+		  });
+		}
+		function findAnchor() {
+		  const candidates = document.querySelectorAll('button[aria-haspopup="dialog"]');
+		  for (let i = 0; i < candidates.length; i++) {
+		    const button = candidates[i];
+		    if (!button) continue;
+		    const svg = button.querySelector("svg");
+		    if (!svg) continue;
+		    const circles = svg.querySelectorAll("circle");
+		    const radii = [];
+		    for (let c = 0; c < circles.length; c++) {
+		      const r = parseFloat(circles[c]?.getAttribute("r") ?? "");
+		      if (Number.isFinite(r)) radii.push(r);
+		    }
+		    if (isContextMeterAnchor({
+		      ariaHasPopup: button.getAttribute("aria-haspopup"),
+		      viewBox: svg.getAttribute("viewBox"),
+		      circleRadii: radii
+		    })) {
+		      return { button, svg };
+		    }
+		  }
+		  return null;
+		}
+		function reconcile() {
+		  if (!anchorCache || !anchorCache.button.isConnected || !anchorCache.svg.isConnected) {
+		    const found = document.body ? findAnchor() : null;
+		    anchorCache = found ? found : null;
+		  }
+		  if (!anchorCache) return;
+		  const open = anchorCache.button.getAttribute("aria-expanded") === "true";
+		  if (open !== panelWasOpen) {
+		    panelWasOpen = open;
+		    for (const l of panelListeners) l(open);
+		    if (open) void fetchSnapshot(true);
+		  }
+		  applyHalo();
+		}
+		function applyHalo() {
+		  const svg = anchorCache?.svg;
+		  if (!svg) return;
+		  const snap = activeSessionId !== null ? snapshotBySession.get(activeSessionId) : void 0;
+		  const stock = snap?.stockTokens ?? null;
+		  const win = snap?.contextWindowTokens ?? null;
+		  const ratio = stock !== null && win !== null && win > 0 ? Math.min(1, Math.max(0, stock / win)) : null;
+		  const existing = svg.querySelector(`circle.${PARASITE_CLASS}`);
+		  if (ratio === null || ratio <= 0) {
+		    existing?.remove();
+		    return;
+		  }
+		  let halo = existing;
+		  if (!halo) {
+		    halo = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+		    halo.setAttribute("class", PARASITE_CLASS);
+		    halo.setAttribute("cx", "7");
+		    halo.setAttribute("cy", "7");
+		    halo.setAttribute("r", "6.4");
+		    halo.setAttribute("fill", "none");
+		    halo.setAttribute("stroke", "var(--dsh-mem-accent)");
+		    halo.setAttribute("stroke-width", "0.85");
+		    halo.setAttribute("transform", "rotate(-90 7 7)");
+		    halo.style.filter = "drop-shadow(0 0 3px var(--dsh-mem-accent))";
+		    halo.setAttribute("aria-hidden", "true");
+		    halo.style.pointerEvents = "none";
+		    svg.appendChild(halo);
+		  }
+		  halo.setAttribute("stroke-dasharray", haloDashArray(ratio, CONTEXT_METER_CIRCUMFERENCE));
+		  const fill = svg.querySelector("circle:nth-of-type(2)");
+		  const offKey = fill?.getAttribute("stroke-dasharray") ?? "";
+		  if (svg.dataset.offKey !== void 0 && svg.dataset.offKey !== offKey) {
+		    void fetchSnapshot();
+		  }
+		  svg.dataset.offKey = offKey;
+		}
+		
+		// client/src/meter/panel-section.ts
+		var SECTION_TAG = "dsh-mem-panel";
+		var inited = false;
+		var mounted = null;
+		function fmtTokens(n) {
+		  if (n >= 1e6) return `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)}M`;
+		  if (n >= 1e3) return `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}K`;
+		  return String(Math.round(n));
+		}
+		function initPanelSection(read) {
+		  if (inited) return;
+		  inited = true;
+		  onMeterPanelOpen((open) => {
+		    if (!open) {
+		      mounted?.remove();
+		      mounted = null;
+		      return;
+		    }
+		    const view = read();
+		    if (!view) return;
+		    const target = findDialogRoot();
+		    if (!target) return;
+		    target.appendChild(renderSection(view));
+		  });
+		}
+		function findDialogRoot() {
+		  const dialogs = document.querySelectorAll('[role="dialog"]');
+		  for (let i = dialogs.length - 1; i >= 0; i--) {
+		    const el = dialogs[i];
+		    if (!el || !el.isConnected) continue;
+		    if (el.querySelector(`[data-${SECTION_TAG}]`) || el.hasAttribute(`data-${SECTION_TAG}`)) continue;
+		    const style = window.getComputedStyle(el);
+		    if (style.display === "none" || style.visibility === "hidden") continue;
+		    return el;
+		  }
+		  return null;
+		}
+		function row(dotColor, label, tokens) {
+		  const div = document.createElement("div");
+		  div.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:12px;";
+		  const left = document.createElement("span");
+		  left.style.cssText = `display:inline-flex;align-items:center;gap:6px;color:var(--dsh-mem-text-2);`;
+		  const dot = document.createElement("i");
+		  dot.style.cssText = `width:7px;height:7px;border-radius:50%;background:${dotColor};display:inline-block;`;
+		  left.append(dot, document.createTextNode(label));
+		  const right = document.createElement("span");
+		  right.textContent = `${fmtTokens(tokens)} tok`;
+		  right.style.cssText = "font-variant-numeric:tabular-nums;color:var(--dsh-mem-text-2);";
+		  div.append(left, right);
+		  return div;
+		}
+		function renderSection(view) {
+		  mounted?.remove();
+		  const section = document.createElement("section");
+		  section.setAttribute(`data-${SECTION_TAG}`, "");
+		  section.style.cssText = [
+		    "border-top:1px solid var(--dsh-mem-border)",
+		    "margin-top:6px",
+		    "padding-top:8px",
+		    "font-size:12px",
+		    "line-height:1.5"
+		  ].join(";");
+		  const title = document.createElement("div");
+		  title.textContent = "记忆 · 本插件占用";
+		  title.style.cssText = "color:var(--dsh-mem-text-2);font-weight:600;margin-bottom:4px;";
+		  section.append(title);
+		  if (view.recallTokens !== null && view.recallTokens > 0) {
+		    section.append(row("var(--dsh-mem-accent)", "召回片段", view.recallTokens));
+		  }
+		  if (view.profileTokens !== null && view.profileTokens > 0) {
+		    section.append(row("var(--dsh-mem-accent)", "记忆稳定区", view.profileTokens));
+		  }
+		  if (view.stockTokens !== null && view.contextWindowTokens !== null && view.contextWindowTokens > 0) {
+		    const pct = Math.min(100, Math.max(0, view.stockTokens / view.contextWindowTokens * 100));
+		    const share = document.createElement("div");
+		    share.style.cssText = "color:var(--dsh-mem-text-3);padding-top:2px;";
+		    share.textContent = `合计约占当前上下文 ${pct < 0.1 ? "<0.1" : pct.toFixed(1)}%`;
+		    section.append(share);
+		  }
+		  if (view.mode === "off") {
+		    const offNote = document.createElement("div");
+		    offNote.textContent = "已停用 · 显示现存残留";
+		    offNote.style.cssText = "color:var(--dsh-mem-text-3);padding-top:2px;";
+		    section.append(offNote);
+		  }
+		  const note = document.createElement("div");
+		  note.textContent = "近似估算 · 与官方同一算法";
+		  note.style.cssText = "color:var(--dsh-mem-text-3);opacity:.75;padding-top:2px;font-size:11px;";
+		  section.append(note);
+		  return section;
+		}
+		
 		// client/src/pill/ModeSlider.tsx
 		var import_react15 = require("react");
 		
@@ -2667,14 +2938,14 @@ var __defProp = Object.defineProperty;
 		      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 		      cell = width < 280 ? 5 : 6;
 		      grid = [];
-		      for (let row = 0; row * cell < height; row++) {
+		      for (let row2 = 0; row2 * cell < height; row2++) {
 		        for (let column = 0; column * cell < width; column++) {
 		          grid.push({
 		            x: column * cell,
-		            y: row * cell,
-		            base: Math.abs(Math.sin(column * 12.9898 + row * 78.233) * 43758.5453) % 1,
-		            tempo: Math.abs(Math.sin(column * 7.13 + row * 19.41) * 19341.731) % 1,
-		            phase: Math.abs(Math.sin(column * 31.17 + row * 11.93) * 28437.123) % 1
+		            y: row2 * cell,
+		            base: Math.abs(Math.sin(column * 12.9898 + row2 * 78.233) * 43758.5453) % 1,
+		            tempo: Math.abs(Math.sin(column * 7.13 + row2 * 19.41) * 19341.731) % 1,
+		            phase: Math.abs(Math.sin(column * 31.17 + row2 * 11.93) * 28437.123) % 1
 		          });
 		        }
 		      }
@@ -2902,6 +3173,14 @@ var __defProp = Object.defineProperty;
 		  (0, import_react16.useEffect)(() => {
 		    watchSidebarIcon();
 		  }, []);
+		  (0, import_react16.useEffect)(() => {
+		    initOccupancyIndicator(
+		      (endpoint, payload) => rpc(endpoint, payload)
+		    );
+		    initPanelSection(currentMeterSnapshot);
+		    watchContextMeter();
+		    noteOccupancySession(sessionId ?? null);
+		  }, [sessionId, rpc]);
 		  (0, import_react16.useEffect)(() => {
 		    if (!open) return;
 		    const onDown = (e) => {

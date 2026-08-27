@@ -89,6 +89,12 @@ export interface ModelEffortInfo {
 export declare function invalidateEffortCache(): void;
 /** 探询某模型的思考档位能力；失败返回 null（调用方保持旧发送行为，不改判）。 */
 export declare function resolveModelEfforts(ctx: Context, provider: string, model: string): Promise<ModelEffortInfo | null>;
+/**
+ * 探询某模型的上下文窗口容量（adapter 声明的 provider-owned capacity）。
+ * 与 effortCache 同源同失效策略（invalidateEffortCache 一并清空）；
+ * 仅用于占用指示器的分母展示——分母必须与官方环同源（模型声明值），禁止 client 自估。
+ */
+export declare function resolveModelContextWindow(ctx: Context, provider: string, model: string): Promise<number | null>;
 export type EffortDecisionReason = 'supported' | 'auto-default' | 'auto-high' | 'alias-none' | 'unsupported' | 'no-efforts' | 'no-capability';
 export interface EffortDecision {
     /** 实际发送的档位；'' = 不发送（跟随模型默认） */

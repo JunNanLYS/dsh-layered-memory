@@ -11,6 +11,7 @@ spec 是**已落地实现的事实记录**，不是愿望文档：与代码冲�
 - `settings-spec.md` — 设置页记忆浏览器（多 Tab）。
 - `pill-spec.md` — 输入栏记忆 pill + 侧边栏 icon 补丁。
 - `slider-spec.md` — 悬浮板滑动选择器 + 粒子层。
+- `memory-meter-spec.md` — 上下文占用指示器（官方环外圈记忆光晕弧 + 明细面板分项小节）。
 
 ## spec 循环（改 client/src 的 UI 时执行）
 

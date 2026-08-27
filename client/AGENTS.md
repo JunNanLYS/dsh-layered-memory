@@ -3,7 +3,7 @@
 改 client/src 任何文件前先读本文件。UI 视觉改动另须走 `design/` 的 spec 循环
 （规则见 `design/AGENTS.md`）；构建管线细节见 `scripts/AGENTS.md`。
 
-## 结构（client/src，26 个模块）
+## 结构（client/src，28 个模块）
 
 - `entry.tsx` — 入口：导出 `inject = ['slots', 'connection']` + apply，两处 slot 注册：
   设置页（`settings.section`，id `dsh-memory`，order 200）与输入栏 pill
@@ -16,6 +16,11 @@
   令牌表逐字对应。
 - `format.ts` — 格式化工具；`sidebar-icon.ts` — 侧边栏 icon 补丁（宿主 navIcon 白名单
   之外的自绘 icon，含定时器管理）。
+- `meter/` — 上下文占用指示器（官方环外圈记忆光晕弧 + 面板分项小节；
+  行为契约见 design/memory-meter-spec.md）：`occupancy-indicator.ts`
+  （body 级观察器单例 + 会话缓存 + T2 时钟；共享算术从 `src/util/context-occupancy.ts`
+  经 esbuild 内联——占用数字的唯一来源在宿主侧，client 禁止另写算法）
+  与 `panel-section.ts`（dialog 底部寄生 section）。
 - `ui/primitives.tsx` — 宿主 UI 原语的 guarded require（`P = hostRequire('@deepseek-ai/dsh-client-ui-primitives')`，
   未注册时 try/catch 回退）；`ui/controls.tsx`（Switch/SwitchRow/Segmented）；`ui/NSel.tsx`（下拉）。
 - `pill/` — 输入栏会话档位 pill：`modes.ts`（档位常量）+ `ModeSlider.tsx`（macOS 风格滑动

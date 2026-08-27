@@ -307,6 +307,7 @@ export async function apply(ctx, config) {
     // 悬浮卡信息区数据源（session-stats 热路径端点；全部内存读 + 索引 COUNT，零文件 I/O）
     {
         recallStats: (sid) => recall.stats(sid),
+        memoryOccupancy: (sid) => recall.occupancy(sid),
         runnerView: (sid, mode) => runner.sessionView(sid, mode),
         l0Count: (sid) => stores.l0.countBySession(sid),
         capabilities: () => db.getCapabilities(),

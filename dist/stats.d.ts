@@ -28,6 +28,8 @@ export interface MemoryStatusSource {
 export interface SessionInfoSource {
     /** 召回统计（recall.ts 注册表；未发生检索的会话返回 undefined）。 */
     recallStats(sessionId: string): RecallSessionStats | undefined;
+    /** 记忆上下文占用账本（context-occupancy 唯一权威实例；未注入过的会话返回 null）。 */
+    memoryOccupancy(sessionId: string): MemoryOccupancy | null;
     /** 蒸馏管线会话视图（runner：攒批进度/挂起切片/会话产出）。 */
     runnerView(sessionId: string, mode: string): {
         pendingSlice: number;
@@ -44,6 +46,7 @@ export interface SessionInfoSource {
         vectorSearch: boolean;
     };
 }
+import type { MemoryOccupancy } from './contract.js';
 export type { MemoryStats } from './contract.js';
 /** 注册状态 RPC（web 侧 connection 服务可选，缺失时跳过，不影响插件主体）。 */
 export declare function registerMemoryRpc(ctx: Context, cfg: MemoryConfig, stores: {
