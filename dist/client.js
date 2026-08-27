@@ -2756,7 +2756,7 @@ var __defProp = Object.defineProperty;
 		  left.append(dot, document.createTextNode(label));
 		  const right = document.createElement("span");
 		  right.textContent = `~${fmtTokens(tokens)}`;
-		  right.style.cssText = "font-variant-numeric:tabular-nums;color:var(--dsh-mem-text-2);";
+		  right.style.cssText = "font-variant-numeric:tabular-nums;color:var(--dsh-mem-text-1);";
 		  div.append(left, right);
 		  return div;
 		}

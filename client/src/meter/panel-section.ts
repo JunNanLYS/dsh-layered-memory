@@ -96,7 +96,8 @@ function row(dotColor: string, label: string, tokens: number): HTMLDivElement {
   left.append(dot, document.createTextNode(label));
   const right = document.createElement('span');
   right.textContent = `~${fmtTokens(tokens)}`; // 官方面板 definition 同款：~15.7K，无单位后缀
-  right.style.cssText = 'font-variant-numeric:tabular-nums;color:var(--dsh-mem-text-2);';
+  // 数值与官方 dd 同观感：主文字亮色（官方 #F9FAFB ≈ text-1），不加粗
+  right.style.cssText = 'font-variant-numeric:tabular-nums;color:var(--dsh-mem-text-1);';
   div.append(left, right);
   return div;
 }
