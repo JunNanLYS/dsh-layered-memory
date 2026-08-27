@@ -2548,6 +2548,11 @@ var __defProp = Object.defineProperty;
 		  try {
 		    const res = await statsCall("dsh-memory/session-stats", { sessionId: sid });
 		    const v = res && res.ok ? res.value : void 0;
+		    if (!res || !res.ok) {
+		      fetchFailureStreak++;
+		      scheduleReconcile();
+		      return;
+		    }
 		    if (sid !== activeSessionId) return;
 		    snapshotBySession.set(sid, {
 		      stockTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.stockTokens : null,

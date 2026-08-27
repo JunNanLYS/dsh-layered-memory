@@ -129,6 +129,14 @@ async function fetchSnapshot(force = false): Promise<void> {
       };
     };
     const v = res && res.ok ? res.value : undefined;
+    if (!res || !res.ok) {
+      // RPC 错误信封走与传输层 throw 同途（信封是 resolve 非 reject，pill 的 load()
+      // 先例证明宿主侧瞬时错误以 ok:false 抵达）：保留旧缓存、计入连败，
+      // 达阈值由 applyHalo 走退场路径——spec「偶发失败保留旧缓存」的完整语义。
+      fetchFailureStreak++;
+      scheduleReconcile();
+      return;
+    }
     if (sid !== activeSessionId) return; // 快速切会话：过期响应丢弃
     snapshotBySession.set(sid, {
       stockTokens: v?.supported && v.memoryOccupancy ? v.memoryOccupancy.stockTokens : null,

@@ -11,7 +11,6 @@
  */
 import {
   currentAnchor,
-  currentMeterSnapshot,
   onMeterPanelOpen,
   onMeterSnapshotUpdate,
   type MeterSnapshotView,
