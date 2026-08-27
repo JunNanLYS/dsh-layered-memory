@@ -1722,7 +1722,15 @@ var __defProp = Object.defineProperty;
 		    rowEls,
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { style: STY.add, disabled: disabled || capped, onClick: addRow, children: capped ? "已达上限（8 条）" : "+ 添加回退路由" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 10 }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { style: STY.ghost, disabled, onClick: clearToFollow, children: isLayer ? "清除自定义 · 跟随全局" : "清空并跟随部署配置" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		        NButton,
+		        {
+		          style: isLayer ? { ...STY.ghost, color: "var(--dsh-mem-danger)", border: "1px solid var(--dsh-mem-danger)" } : STY.ghost,
+		          disabled,
+		          onClick: clearToFollow,
+		          children: isLayer ? "清除自定义 · 跟随全局" : "清空并跟随部署配置"
+		        }
+		      ),
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: S.grow }),
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { variant: "primary", disabled, onClick: save, children: "保存" })
 		    ] }),

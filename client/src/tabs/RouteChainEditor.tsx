@@ -530,7 +530,13 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean; scope?
         {capped ? '已达上限（8 条）' : '+ 添加回退路由'}
       </NButton>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-        <NButton style={STY.ghost} disabled={disabled} onClick={clearToFollow}>
+        {/* 层范围的清除是破坏性动作（丢弃已保存的自定义链）：danger 描边形态（全局
+            范围的「清空并跟随部署配置」是低频回退动作，维持原 ghost） */}
+        <NButton
+          style={isLayer ? { ...STY.ghost, color: 'var(--dsh-mem-danger)', border: '1px solid var(--dsh-mem-danger)' } : STY.ghost}
+          disabled={disabled}
+          onClick={clearToFollow}
+        >
           {isLayer ? '清除自定义 · 跟随全局' : '清空并跟随部署配置'}
         </NButton>
         <div style={S.grow} />
