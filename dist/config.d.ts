@@ -4,7 +4,7 @@
  * 默认数据目录：$DSH_HOME/memory（用官方 dshHomePath 解析，DSH_HOME 缺省 ~/.dsh）。
  */
 import Schema from '@deepseek-ai/schemastery';
-import type { StaticFallbackEntry } from './contract.js';
+import type { LayerRouteKey, StaticFallbackEntry } from './contract.js';
 import type { ExtractMode } from './types.js';
 /**
  * 蒸馏思考档位全词汇表（唯一事实源）：'' = 自动（模型默认档 → high），
@@ -103,6 +103,14 @@ export interface MemoryConfig {
          *  旧档位键 reasoningEffort 的整体接管——含给条目盖章——仍对存量值生效）；
          *  空数组（缺省）= 单路由行为不变。 */
         fallbacks?: StaticFallbackEntry[];
+        /** 按层静态路由链（#34）：层键 l1/l2/l3 各一条完整链（条目形状同 fallbacks；
+         *  头行必须 provider+model 双显式）。非空即完整替换该层解析（该层主路由与回退都
+         *  归层链管，全局链对该层不参与）；空/缺省 = 该层跟随全局解析。被运行时层链
+         *  （设置页 distillLayerChains）压过；pin 不废静态层链（同为部署配置，同回退链先例）。 */
+        layerRoutes?: Partial<Record<LayerRouteKey, StaticFallbackEntry[]>>;
+        /** 运行时层链（effectiveCfg 从设置页 distillLayerChains 注入，层内第一优先级）；
+         *  非静态 schema——与 primaryEffort/budgets 同类：运行时偏好，无部署上限语义。 */
+        layerChainsRuntime?: Partial<Record<LayerRouteKey, StaticFallbackEntry[]>>;
         /** 单次蒸馏调用的输出 token 上限（推理模型的 reasoning 与正文共享该预算）。 */
         maxTokens: number;
         /** 蒸馏调用的思考档位；空串不传（跟随模型默认）。 */
@@ -235,6 +243,63 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
             model: Schema<string, string>;
             reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         }>[]>;
+        layerRoutes: Schema<Schemastery.ObjectS<{
+            l1: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>, Schemastery.ObjectT<{
+            l1: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>>;
         maxTokens: Schema<number, number>;
         reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: Schema<number, number>;
@@ -252,6 +317,63 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
             model: Schema<string, string>;
             reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         }>[]>;
+        layerRoutes: Schema<Schemastery.ObjectS<{
+            l1: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>, Schemastery.ObjectT<{
+            l1: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>>;
         maxTokens: Schema<number, number>;
         reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: Schema<number, number>;
@@ -366,6 +488,63 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
             model: Schema<string, string>;
             reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         }>[]>;
+        layerRoutes: Schema<Schemastery.ObjectS<{
+            l1: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>, Schemastery.ObjectT<{
+            l1: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>>;
         maxTokens: Schema<number, number>;
         reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: Schema<number, number>;
@@ -383,6 +562,63 @@ export declare const memorySchema: Schema<Schemastery.ObjectS<{
             model: Schema<string, string>;
             reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         }>[]>;
+        layerRoutes: Schema<Schemastery.ObjectS<{
+            l1: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>, Schemastery.ObjectT<{
+            l1: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: Schema<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: Schema<string, string>;
+                model: Schema<string, string>;
+                reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>>;
         maxTokens: Schema<number, number>;
         reasoningEffort: Schema<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: Schema<number, number>;

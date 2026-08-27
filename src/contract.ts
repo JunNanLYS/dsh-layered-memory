@@ -49,6 +49,10 @@ export interface StaticFallbackEntry {
   reasoningEffort?: string;
 }
 
+/** 按层路由的层键（#34）：l1 同管 l1-extract + l1-dedup 两个调用点（与成本看板
+ *  按层级归并口径同源）；预算键（DistillBudgetLayer）是另一套四键词表，不混用。 */
+export type LayerRouteKey = 'l1' | 'l2' | 'l3';
+
 /** 记忆模式运行时开关（settings-get/set 的 settings 载荷）。 */
 export interface MemoryLiveSettings {
   /** 总开关：关 = 捕获/蒸馏/召回注入全停（数据保留） */
@@ -76,6 +80,10 @@ export interface MemoryLiveSettings {
   /** 输入预算运行时覆盖（字符，≈token）：单次蒸馏调用的输入上限，L1 按此分块、
    *  超限截断；0 = 跟随静态配置 llm.maxInputChars。 */
   distillMaxInputChars: number;
+  /** 运行时按层路由链（#34）：层键 l1/l2/l3 各一条完整链（条目同 DistillChainEntry）；
+   *  非空即完整接管该层解析（压过静态 layerRoutes，层内第一优先级）；空数组 = 该层
+   *  跟随（静态层链 → 全局解析逐级兜底）。写入经 settings-set 逐层校验（头行必须显式）。 */
+  distillLayerChains: Record<LayerRouteKey, DistillChainEntry[]>;
 }
 
 /** 单会话召回统计（悬浮卡信息区数据源；口径见 recall.ts 注释）。 */
@@ -97,6 +105,13 @@ export interface RecallSessionStats {
   /** 最近一次记账时间（LRU 清理依据）。 */
   updatedAt: number;
 }
+
+/**
+ * 单会话记忆上下文占用（session-stats.memoryOccupancy；悬浮卡与输入栏占用指示器共用）。
+ * 形状与算术的唯一来源是 util/context-occupancy 的 OccupancyLedger——官方 token-meter
+ * 同式启发式，禁止任何一侧另写换算。null = 本会话从未注入过。
+ */
+export type MemoryOccupancy = import('./util/context-occupancy.js').OccupancyLedger;
 
 /** 重建阶段。 */
 export type RebuildPhase = 'idle' | 'preparing' | 'distilling' | 'finalizing' | 'done' | 'cancelled' | 'failed';
@@ -372,6 +387,13 @@ export type SessionStatsResponse =
       mode: MemoryMode;
       defaultMode: MemoryMode;
       recall: { enabled: boolean } & RecallSessionStats;
+      /** 记忆上下文占用账本（未注入过的会话为 null）。 */
+      memoryOccupancy: MemoryOccupancy | null;
+      /** 旧会话回填（票08）：host 侧估出的双通道份额——召回按 live 会话 surface 现扫
+       *  （null = 会话不在 store），稳定区按当前组词折算。账本存在时客户端取两者较大值。 */
+      occupancyBackfill: { recallTokens: number | null; profileTokens: number } | null;
+      /** 主对话模型的官方声明上下文窗口（占用占比分母；null = 未声明/解析失败，UI 降级隐藏占比）。 */
+      contextWindowTokens: number | null;
       distill: SessionDistillView;
       l0Count: number;
       retrieval: 'hybrid' | 'vector' | 'keyword' | 'none';
@@ -402,6 +424,8 @@ export interface SettingsSetRequest {
   distill?: boolean;
   recall?: boolean;
   distillChain?: DistillChainEntry[];
+  /** 运行时按层路由链（#34）：逐层 patch（只带要改的层；空数组 = 该层回到跟随）。 */
+  distillLayerChains?: Partial<Record<LayerRouteKey, DistillChainEntry[]>>;
   reasoningEffort?: EffortChoice;
   distillProvider?: string;
   distillModel?: string;
@@ -486,6 +510,16 @@ export interface EffectiveChainRoute {
   model: string;
   effort: string;
 }
+/** 按层层链视图（#34 B 分段 UI 数据源）：runtime = 设置页运行时层链（pinned 下不生效，
+ *  视图照实返回存量）；static = 部署 YAML layerRoutes；effectiveChain = 该层实际链
+ *  （层链完整替换，或跟随全局时与全局链同值）；source 三态：runtime 接管 / static
+ *  生效 / global 跟随全局解析。 */
+export interface LayerChainView {
+  runtime: DistillChainEntry[];
+  static: StaticFallbackEntry[];
+  effectiveChain: EffectiveChainRoute[];
+  source: 'runtime' | 'static' | 'global';
+}
 export interface LlmProvidersResponse {
   supported: true;
   providers: Array<{ id: string; name: string }>;
@@ -502,6 +536,8 @@ export interface LlmProvidersResponse {
     effectiveChain: EffectiveChainRoute[];
     source: 'runtime' | 'static';
   };
+  /** 按层层链（l1/l2/l3；l1 同管抽取+去重两个调用点）。 */
+  layerChains: Record<LayerRouteKey, LayerChainView>;
 }
 
 /** dsh-memory/llm-models */

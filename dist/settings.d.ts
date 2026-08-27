@@ -22,8 +22,15 @@ export declare const DISTILL_CHAIN_MAX = 8;
  * distillChain、不走本投影——旧键路径在未配链时按旧语义原样生效。
  */
 export declare function projectDistillChain(s: Partial<MemoryLiveSettings> | undefined): DistillChainEntry[];
-/** settings-set 写入门校验：返回错误文案（null = 通过）。 */
-export declare function validateDistillChain(chain: unknown): string | null;
+/**
+ * settings-set 写入门校验：返回错误文案（null = 通过）。
+ * opts.requireExplicitHead（#34 层链用）：头行必须 provider+model 双显式——层键出现
+ * 即意图覆盖；"双空 = 跟随默认模型"是全局链独有语义（"默认模型 + 自定义回退"的
+ * 诉求由全局 llm.fallbacks 承担），层链禁掉双空头，消除"层链头跟随哪套全局解析"的歧义。
+ */
+export declare function validateDistillChain(chain: unknown, opts?: {
+    requireExplicitHead?: boolean;
+}): string | null;
 export interface LiveSettingsHandle {
     /** settings 服务是否可用（不可用时 UI 侧隐藏开关面板） */
     supported: boolean;

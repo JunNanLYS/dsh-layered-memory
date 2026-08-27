@@ -159,8 +159,11 @@ off = `--dsh-mem-track`；旋钮 `left .15s` inline 过渡（reduced-motion 压�
 
 ### 蒸馏预算（BudgetInputs，蒸馏参数组）
 
-两行：**输出预算**（四个数字输入，宽 92px：抽取 / 去重 / L2 场景 / L3 画像，单位
-token）与**输入预算**（单个输入，宽 120px，单位字符 ≈token）。数据源
+节标题上置 + 逐预算独占一行（#34 验收五轮改版，替代旧"输入框横排左 / 粗标签
+右"的 switchRow 形制——多框并排过挤）：**输出预算**节下每行 = 行标签（12px
+text-2，宽 68px：抽取输出 / 去重输出 / L2 输出 / L3 输出——L1 面板两行分别点明
+调用点）+ 数字输入（宽 110px）+ 单位 token（11px text-3）；**输入预算**节同构
+（行标签「单次输入」，单位 字符）。行间 6px、节间 marginTop 12。数据源
 `settings-get` 的 `budgets`（`current` 运行时覆盖，0 = 跟随默认；`defaults`
 内置默认 16k/8k/32k/16k，作 placeholder；`effective` 实际生效，描述行展示）与
 `inputBudget`（`current` 0 = 跟随配置；`fallback` 静态配置 `llm.maxInputChars`；
@@ -169,6 +172,47 @@ token）与**输入预算**（单个输入，宽 120px，单位字符 ≈token�
 下限）。击键只入本地草稿，blur/回车才提交（焦点切换先 blur 旧框，逐框触发各自
 提交）；乐观更新同步 `settings.*` 与对应视图字段，失败回滚。输出预算描述行注明
 思考档 high/xhigh/max 的 ×4 放大只作用于输出预算。
+
+`scope` 参数（#34，缺省 `'all'` 原样）：`'input'`（仅输入行，全局面板用）|
+`'l1' | 'l2' | 'l3'`（仅该层输出——l1 = 抽取+去重两行；层面板用）。提交仍整组
+四键（未编辑键带当前值回写，面板间互不清零）。scoped 模式无描述句——生效值与
+放大规则挂标签 title tooltip（'all' 保留原描述行）。
+
+### 蒸馏设置区分段壳（DistillSettings，#34 B 形态）
+
+概览 Tab「蒸馏参数」组的新外壳，把路由链与预算按**范围**组织（原型
+`.scratch/layer-routes/proto-layer-settings.html` 三轮肉眼检查定稿的 B 案）：
+
+- **一行提示兼图例**（11px text-3，无底色条）：`● 自定义 · ◌ 部署 YAML · ○ 跟随
+  全局（层链优先于全局）`——优先级全句挂该括号的 title tooltip（文案极简约定：
+  解释进 tooltip，不占版面）；
+- **范围分段**（controls.Segmented，SegOption 增 title）：[全局默认 | L1 | L2 |
+  L3]，每层分段带状态点——蓝实心 = 运行时自定义 / 空心（text-3 描边）= 静态
+  YAML / 灰（track）= 跟随全局；分段 title 与面板头部徽章 title 承载状态语义
+  （如"部署 YAML 层链（UI 只读，自定义可覆盖）"）。状态点数据源
+  `llm-providers` 的 `layerChains.<层>.source`（host 侧与解析真值同径，5s 轮询）；
+- **全局默认面板**：头部「在用：哪些层」标注（source 为 global 的层；配齐则
+  「当前无层使用」）+ RouteChainEditor（scope global）+ BudgetInputs（scope
+  input）；无说明段落；
+- **层面板**：标题（L1 · 抽取 / 去重 等）+ 三态徽章（title 承载状态语义）+
+  RouteChainEditor（scope 层键）+ BudgetInputs（scope 同层键）；无说明段落
+  （#34 文案极简：状态交给徽章/圆点、归属交给只读行降灰、动作交给按钮自命名、
+  解释进 tooltip）。
+
+RouteChainEditor 的 `scope` 参数化（缺省 global 原样）：层范围读写
+`settings-set` 的 `distillLayerChains.<层>`（空数组 = 该层回到跟随，无旧键要连带
+清）；**头行必须显式供应商+模型**（无「跟随默认模型」选项，主路由行删除改为
+顶替/无操作）；跟随态三态展示——只读行列表（roRow 降灰 text-2 = 非本面板可编辑的视觉自释）
++ **「自定义本层链」按钮紧跟列表**（fork 静态链为草稿 / 无静态则空草稿），无
+说明行；编辑态描述行短语化（「主路由失败，按序降级」/「主路由失败，只降级到
+本层回退」，全句挂 title）；pinned 提示单行化；编辑态清除按钮文案
+层范围为「清除自定义 · 跟随全局」且用 danger 描边形态（红字红边 ghost——破坏性动作，
+danger 令牌"危险动作"语义；全局范围保持「清空并跟随部署配置」原 ghost）；
+pinned 时按层只读（静态层链照常生效提示）。**切范围 = key 重挂载**（编辑草稿
+是组件内部态，不重挂会把上一范围草稿带进下一范围——验收实例复用 bug 的修复；
+切范围丢弃未保存草稿）。服务端写入门
+`validateDistillChain(entries, {requireExplicitHead:true})` 同规则拒收
+（「层路由 l1：<错误>」信封）。
 
 ## 场景 Tab（ScenesTab）
 

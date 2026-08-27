@@ -38,6 +38,8 @@ export function apply(ctx: MemoryClientCtx) {
   });
 
   // 输入栏（模式选择器右侧）：会话记忆档位 pill + 滑动选择器
+  // （inject owner 实测为裸 sessionId 字符串——rc.8 的命名座位不随快照 props；
+  //  旧会话占用回填因此在 host 侧完成，见 recall.ts estimateRecallTokens）
   ctx.slots.inject('conversation.input.left', () => {
     return ctx.slots.register(
       {

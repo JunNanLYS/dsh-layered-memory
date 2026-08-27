@@ -1,5 +1,7 @@
 /** 输入栏 pill：点击展开滑动选择器；props 来自 conversation.input.left 的 zone 注入。 */
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { currentMeterSnapshot, initOccupancyIndicator, noteOccupancySession, watchContextMeter } from '../meter/occupancy-indicator.js';
+import { initPanelSection } from '../meter/panel-section.js';
 import type { RpcFn } from '../rpc.js';
 import { watchSidebarIcon } from '../sidebar-icon.js';
 import { ensureThemeStyle } from '../theme.js';
@@ -45,6 +47,17 @@ export function MemoryModePill(props: {
   useEffect(() => {
     watchSidebarIcon();
   }, []);
+
+  // 占用指示器（外圈记忆光晕弧）同款驱动：观察器单例常驻，数据通道与会话在此接线。
+  //sessionId 变化即冷启动检查（无缓存才发首次拉取）；rpc 端点为 session-stats。
+  useEffect(() => {
+    initOccupancyIndicator((endpoint, payload) =>
+      rpc(endpoint as Parameters<RpcFn>[0], payload as Parameters<RpcFn>[1]),
+    );
+    initPanelSection(currentMeterSnapshot);
+    watchContextMeter();
+    noteOccupancySession(sessionId ?? null);
+  }, [sessionId, rpc]);
 
   useEffect(() => {
     if (!open) return;

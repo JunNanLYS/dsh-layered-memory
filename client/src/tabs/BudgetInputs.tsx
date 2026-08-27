@@ -5,6 +5,10 @@
  * fallback 静态配置值 / effective）。输出四键经 settings-set 的
  * distillBudgets 成对提交；输入走 distillMaxInputChars 单键提交。
  * 思考档 high/xhigh/max 的 ×4 放大只作用于输出预算（提示文案注明）。
+ *
+ * scope（#34 B 分段 UI）：'all'（缺省，四输出 + 输入整组）| 'input'（仅输入，全局
+ * 面板用）| 'l1' | 'l2' | 'l3'（仅该层输出——l1 = 抽取 + 去重两行；层面板用）。
+ * 提交仍整组四键（未编辑键带当前值回写，不会互相清零）。
  */
 import { useState } from 'react';
 import type { SettingsGetResponse, SettingsSetRequest } from '../../../src/contract.js';
@@ -19,19 +23,28 @@ const LAYERS: Array<[string, string]> = [
   ['l3', 'L3 画像'],
 ];
 
+/** 层范围 → 该面板要渲染的输出键（l1 同管抽取+去重）。 */
+const SCOPE_KEYS: Record<'l1' | 'l2' | 'l3', string[]> = {
+  l1: ['extract', 'dedup'],
+  l2: ['l2'],
+  l3: ['l3'],
+};
+
 export function BudgetInputs(props: {
   rpc: RpcFn;
   disabled?: boolean;
   data: SettingsGetResponse | null;
   setData(d: SettingsGetResponse): void;
   onError(msg: string | null): void;
+  scope?: 'all' | 'input' | 'l1' | 'l2' | 'l3';
 }) {
   const rpc = props.rpc;
   const disabled = !!props.disabled;
   const data = props.data;
   const setData = props.setData;
   const onError = props.onError;
-  const layers = LAYERS;
+  const scope = props.scope ?? 'all';
+  const layers = scope === 'all' || scope === 'input' ? LAYERS : LAYERS.filter((l) => SCOPE_KEYS[scope].includes(l[0]));
   // 输入草稿（string|null）：击键只改本地，blur/回车才提交（input 键 = 输入预算）
   const [draft, setDraft] = useState<Record<string, string> | null>(null);
 
@@ -183,49 +196,68 @@ export function BudgetInputs(props: {
     );
   };
 
+  const showOutputs = scope !== 'input';
+  const showInput = scope === 'all' || scope === 'input';
+  const effNote = layers.map((l) => eff[l[0]!] || '?').join(' / ');
+  /** 行标签：写明"哪个调用点的输出预算"（L1 面板两行分别点明抽取/去重）。 */
+  const rowLabel = (key: string): string =>
+    key === 'extract' ? '抽取输出' : key === 'dedup' ? '去重输出' : key === 'l2' ? 'L2 输出' : 'L3 输出';
+  const rowStyle = { display: 'flex', alignItems: 'center', gap: 8 } as const;
   return (
     <div>
-      <div style={S.switchRow}>
-        <div style={{ ...S.flexRow, gap: 6 }}>
-          {layers.map((l) => {
-            return inputBox(
-              l[0]!,
-              l[1]!,
-              l[1]! + ' 输出预算（token，留空 = 默认 ' + (def[l[0]!] || '?') + '）',
-              92,
-              def[l[0]!],
-              commitOutputs,
-            );
-          })}
-        </div>
-        <div>
-          <div style={S.switchLabel}>输出预算</div>
-          <div style={S.switchDesc}>
-            {'各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 ' +
-              layers.map((l) => eff[l[0]!] || '?').join(' / ') +
-              '）；思考档 high/xhigh/max 时实际限额自动 ×4'}
+      {showOutputs ? (
+        <div style={{ marginTop: 12 }}>
+          <div
+            style={S.switchLabel}
+            title={
+              (scope === 'l1' ? 'L1 的抽取与去重是两次独立调用，输出限额各自设置（路由共用同一条链）。' : '') +
+              '留空或 0 = 跟随默认（当前生效 ' + effNote + '）；思考档 high/xhigh/max 时实际限额自动 ×4'
+            }
+          >
+            输出预算
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+            {layers.map((l) => (
+              <div key={l[0]} style={rowStyle}>
+                <span style={{ width: 68, flexShrink: 0, fontSize: 12, color: 'var(--dsh-mem-text-2)' }}>{rowLabel(l[0]!)}</span>
+                {inputBox(
+                  l[0]!,
+                  l[1]!,
+                  l[1]! + ' 输出预算（token，留空 = 默认 ' + (def[l[0]!] || '?') + '）',
+                  110,
+                  def[l[0]!],
+                  commitOutputs,
+                )}
+                <span style={{ fontSize: 11, color: 'var(--dsh-mem-text-3)' }}>token</span>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
-      <div style={S.switchRow}>
-        {inputBox(
-          'input',
-          '输入',
-          '单次蒸馏输入字符上限（≈token，中文 1 字≈1 token；留空 = 跟随配置 ' + (ib.fallback || '?') + '）',
-          120,
-          ib.fallback,
-          commitInput,
-        )}
-        <div>
-          <div style={S.switchLabel}>输入预算</div>
-          <div style={S.switchDesc}>
-            {'单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；' +
-              '留空或 0 = 跟随配置（当前生效 ' +
-              (effIn || '?') +
-              '，来自 llm.maxInputChars）'}
+      ) : null}
+      {showInput ? (
+        <div style={{ marginTop: 12 }}>
+          <div
+            style={S.switchLabel}
+            title={'单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；留空或 0 = 跟随配置（当前生效 ' + (effIn || '?') + '，来自 llm.maxInputChars）'}
+          >
+            输入预算
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+            <div style={rowStyle}>
+              <span style={{ width: 68, flexShrink: 0, fontSize: 12, color: 'var(--dsh-mem-text-2)' }}>单次输入</span>
+              {inputBox(
+                'input',
+                '输入',
+                '单次蒸馏输入字符上限（≈token，中文 1 字≈1 token；留空 = 跟随配置 ' + (ib.fallback || '?') + '）',
+                110,
+                ib.fallback,
+                commitInput,
+              )}
+              <span style={{ fontSize: 11, color: 'var(--dsh-mem-text-3)' }}>字符</span>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

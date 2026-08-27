@@ -76,6 +76,25 @@ export const memorySchema = Schema.object({
             model: Schema.string().default(''),
             reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
         })).default([]),
+        // 按层静态路由链（#34）：每层一条完整链（头行须双显式——启动侧只做形状默认，
+        // 语义校验（头行/去重/上限）在解析侧防御 + 设置页写入门；空数组 = 该层跟随全局）
+        layerRoutes: Schema.object({
+            l1: Schema.array(Schema.object({
+                provider: Schema.string().default(''),
+                model: Schema.string().default(''),
+                reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
+            })).default([]),
+            l2: Schema.array(Schema.object({
+                provider: Schema.string().default(''),
+                model: Schema.string().default(''),
+                reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
+            })).default([]),
+            l3: Schema.array(Schema.object({
+                provider: Schema.string().default(''),
+                model: Schema.string().default(''),
+                reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
+            })).default([]),
+        }).default({ l1: [], l2: [], l3: [] }),
         // 推理模型（如 v4-flash）的 reasoning 计入输出预算：预算不足会被思考吃光导致正文 0 字符。
         // 0.8.0 起各蒸馏层显式传分层预算（见 llm.ts LAYER_MAX_TOKENS_*），本值为未分层调用的兜底总闸
         maxTokens: Schema.number().min(1024).max(1_000_000).default(65_536),

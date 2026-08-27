@@ -6,10 +6,9 @@ import { modeLabel } from '../pill/modes.js';
 import type { RpcFn } from '../rpc.js';
 import { S } from '../styles.js';
 import { SwitchRow } from '../ui/controls.js';
-import { BudgetInputs } from './BudgetInputs.js';
+import { DistillSettings } from './DistillSettings.js';
 import { EmbeddingSection } from './EmbeddingSection.js';
 import { RebuildPanel } from './RebuildPanel.js';
-import { RouteChainEditor } from './RouteChainEditor.js';
 
 type ToggleKey = 'enabled' | 'capture' | 'distill' | 'recall';
 
@@ -48,7 +47,9 @@ export function OverviewTab(props: { rpc: RpcFn }) {
     // 乐观更新：立即翻 UI，失败回滚
     const prev = settingsData;
     const patch = { [key]: value } as SettingsSetRequest;
-    const next = { ...prev, settings: { ...prev.settings, ...patch } };
+    // settings-set 的层链键是 Partial（patch 语义），settings 视图要求全量 Record——
+    // 乐观更新按具体开关键注入，不做整包 spread（形状不兼容且会盖掉无关键）
+    const next = { ...prev, settings: { ...prev.settings, [key]: value } };
     setSettingsData(next);
     rpc('dsh-memory/settings-set', patch)
       .then((r) => {
@@ -140,11 +141,10 @@ export function OverviewTab(props: { rpc: RpcFn }) {
               toggle('recall', v);
             }}
           />
-          {/* 分组：蒸馏参数（统一路由链 + 输出预算）——旧「蒸馏思考」全局切换器
-              与「蒸馏模型」单路由选择器已并入 RouteChainEditor（档位逐路由设置） */}
+          {/* 分组：蒸馏参数（B 形态分段：全局默认链 + 按层路由 l1/l2/l3 + 预算随层归组）
+              ——旧「蒸馏思考」全局切换器与「蒸馏模型」单路由选择器已并入 RouteChainEditor */}
           <div style={S.panelLabel}>蒸馏参数</div>
-          <RouteChainEditor rpc={rpc} disabled={!master} />
-          <BudgetInputs rpc={rpc} disabled={!master} data={settingsData} setData={setSettingsData} onError={setError} />
+          <DistillSettings rpc={rpc} disabled={!master} data={settingsData} setData={setSettingsData} onError={setError} />
           {ceilingNote ? <p style={S.hint}>{ceilingNote}</p> : null}
         </div>
       ) : null}

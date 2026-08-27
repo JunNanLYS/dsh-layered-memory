@@ -109,6 +109,63 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
             model: import("@deepseek-ai/schemastery").default<string, string>;
             reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         }>[]>;
+        layerRoutes: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
+            l1: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>, Schemastery.ObjectT<{
+            l1: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>>;
         maxTokens: import("@deepseek-ai/schemastery").default<number, number>;
         reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: import("@deepseek-ai/schemastery").default<number, number>;
@@ -126,6 +183,63 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
             model: import("@deepseek-ai/schemastery").default<string, string>;
             reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         }>[]>;
+        layerRoutes: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
+            l1: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>, Schemastery.ObjectT<{
+            l1: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>>;
         maxTokens: import("@deepseek-ai/schemastery").default<number, number>;
         reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: import("@deepseek-ai/schemastery").default<number, number>;
@@ -240,6 +354,63 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
             model: import("@deepseek-ai/schemastery").default<string, string>;
             reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         }>[]>;
+        layerRoutes: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
+            l1: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>, Schemastery.ObjectT<{
+            l1: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>>;
         maxTokens: import("@deepseek-ai/schemastery").default<number, number>;
         reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: import("@deepseek-ai/schemastery").default<number, number>;
@@ -257,6 +428,63 @@ export declare const Config: import("@deepseek-ai/schemastery").default<Schemast
             model: import("@deepseek-ai/schemastery").default<string, string>;
             reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         }>[]>;
+        layerRoutes: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<{
+            l1: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>, Schemastery.ObjectT<{
+            l1: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l2: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+            l3: import("@deepseek-ai/schemastery").default<({
+                provider?: string | null | undefined;
+                model?: string | null | undefined;
+                reasoningEffort?: "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null | undefined;
+            } & import("@deepseek-ai/cosmokit").Dict)[], Schemastery.ObjectT<{
+                provider: import("@deepseek-ai/schemastery").default<string, string>;
+                model: import("@deepseek-ai/schemastery").default<string, string>;
+                reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
+            }>[]>;
+        }>>;
         maxTokens: import("@deepseek-ai/schemastery").default<number, number>;
         reasoningEffort: import("@deepseek-ai/schemastery").default<"" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", "" | "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max">;
         temperature: import("@deepseek-ai/schemastery").default<number, number>;

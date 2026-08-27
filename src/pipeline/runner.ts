@@ -117,6 +117,20 @@ export function effectiveCfg(cfg: MemoryConfig, live?: LiveSettingsHandle): Memo
           ...(b.l3 > 0 ? { l3: b.l3 } : {}),
         }
       : null;
+  // 运行时按层路由链（#34）：非空层链逐层注入 layerChainsRuntime（解析侧层内第一
+  // 优先级）；pinned = 部署锁，运行时层链与运行时全局链一并失效（同 chainMode 的
+  // pinned 处理）；全部层为空 = 无注入（返回引用不变路径不受影响）。层键逐个
+  // ?.length 容忍部分键缺失（旧存量 settings / 手写覆盖可能只带部分层）
+  const lc = s?.distillLayerChains;
+  const layerPick =
+    lc && !pinned
+      ? {
+          ...(lc.l1?.length ? { l1: lc.l1 } : {}),
+          ...(lc.l2?.length ? { l2: lc.l2 } : {}),
+          ...(lc.l3?.length ? { l3: lc.l3 } : {}),
+        }
+      : null;
+  const layerChains = layerPick && Object.keys(layerPick).length ? layerPick : null;
   const maxInput = s && s.distillMaxInputChars > 0 ? s.distillMaxInputChars : null;
   // 旧档位键的全局接管（含给静态回退条目盖章）：仅非链模式保留（旧存量值兼容）
   const fallbacksTakeover = !chainMode && eff && cfg.llm?.fallbacks?.length
@@ -127,7 +141,7 @@ export function effectiveCfg(cfg: MemoryConfig, live?: LiveSettingsHandle): Memo
   const effortInject = live && !chainMode && (eff !== '' || Boolean(cfg.llm?.reasoningEffort))
     ? { reasoningEffort: eff }
     : null;
-  if (!override && !budgets && !maxInput && !fallbacksTakeover && !chainEffort && !chainFallbacks && !effortInject) return cfg;
+  if (!override && !budgets && !maxInput && !fallbacksTakeover && !chainEffort && !chainFallbacks && !effortInject && !layerChains) return cfg;
   return {
     ...cfg,
     llm: {
@@ -139,6 +153,7 @@ export function effectiveCfg(cfg: MemoryConfig, live?: LiveSettingsHandle): Memo
       ...(fallbacksTakeover ? { fallbacks: fallbacksTakeover } : {}),
       ...(chainEffort ? { primaryEffort: chainEffort } : {}),
       ...(chainFallbacks ? { fallbacks: chainFallbacks } : {}),
+      ...(layerChains ? { layerChainsRuntime: layerChains } : {}),
     },
   };
 }

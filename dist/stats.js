@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { EFFORT_CHOICES, resolveDataDir } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { emptyRecallStats } from './hooks/recall.js';
-import { buildRouteChain, decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelEfforts, resolveModelRoute } from './llm.js';
+import { buildRouteChain, decideSendableEffort, LAYER_DEFAULT_BUDGETS, layerChainOrNull, resolveModelContextWindow, resolveModelEfforts, resolveModelRoute } from './llm.js';
 import { projectDistillChain, validateDistillChain } from './settings.js';
 import { errDetail } from './util/filelog.js';
 import { snapshotTokenCost } from './token-cost.js';
@@ -199,12 +199,36 @@ async function handleEndpoint(endpoint, payload, deps) {
             const chat = stores.state.forFamily('chat');
             const work = stores.state.forFamily('work');
             const lastAt = Math.max(chat.lastExtractAt, work.lastExtractAt);
+            // 主对话模型的官方声明窗口（占用指示器分母；advisory 查询读本地快照且有缓存，
+            // 轮询热路径下稳态为 Map 命中——遵守本端点"只许内存注册表读取"的硬规则口径。
+            // race 封顶防第三方适配器 resolveModelInfo 挂起拖死轮询——llm-models 端点同款先例）
+            let contextWindowTokens = null;
+            try {
+                const sel = deps.ctx.get('agentDefaultModel')?.currentSelection?.();
+                if (sel?.provider && sel?.model) {
+                    contextWindowTokens = await Promise.race([
+                        resolveModelContextWindow(deps.ctx, sel.provider, sel.model),
+                        new Promise((resolve) => setTimeout(() => resolve(null), 3_000)),
+                    ]);
+                }
+            }
+            catch {
+                /* 可选服务缺失/解析失败 = 分母未知，UI 降级 */
+            }
             const v = {
                 supported: true,
                 sessionId,
                 mode,
                 defaultMode: modes?.default ?? cfg.family,
                 recall: { enabled: recallOn, ...(sessionInfo.recallStats(sessionId) ?? emptyRecallStats()) },
+                memoryOccupancy: sessionInfo.memoryOccupancy(sessionId),
+                occupancyBackfill: sessionInfo.profileEstimate
+                    ? {
+                        recallTokens: sessionInfo.recallEstimate ? await sessionInfo.recallEstimate(sessionId) : null,
+                        profileTokens: sessionInfo.profileEstimate(sessionId),
+                    }
+                    : null,
+                contextWindowTokens,
                 distill: distillView,
                 l0Count,
                 retrieval: caps.vectorSearch ? (caps.ftsSearch ? 'hybrid' : 'vector') : caps.ftsSearch ? 'keyword' : 'none',
@@ -246,6 +270,7 @@ async function handleEndpoint(endpoint, payload, deps) {
                     enabled: true, capture: true, distill: true, recall: true,
                     reasoningEffort: '', distillProvider: '', distillModel: '', distillChain: [],
                     distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, distillMaxInputChars: 0,
+                    distillLayerChains: { l1: [], l2: [], l3: [] },
                 },
                 // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
                 ceilings: { capture: cfg.capture.enabled, distill: cfg.extract.enabled, recall: cfg.recall.enabled },
@@ -292,6 +317,27 @@ async function handleEndpoint(endpoint, payload, deps) {
                 if (err)
                     throw new Error(err);
                 clean.distillChain = patch.distillChain;
+            }
+            // 运行时按层路由链（#34）：逐层校验（头行必须显式——层覆盖不支持跟随默认模型）；
+            // patch 语义只带要改的层，写入侧与存量层合并后落盘（空数组 = 该层回到跟随）
+            if (patch.distillLayerChains !== undefined) {
+                const rawLC = (patch.distillLayerChains ?? {});
+                // 与存量层合并后落全三键 Record（settings 视图类型是全量；缺层 = 清空该层跟随）
+                const prev = (live.get().distillLayerChains ?? {});
+                const merged = {
+                    l1: prev.l1 ?? [],
+                    l2: prev.l2 ?? [],
+                    l3: prev.l3 ?? [],
+                };
+                for (const key of ['l1', 'l2', 'l3']) {
+                    if (rawLC[key] === undefined)
+                        continue;
+                    const err = validateDistillChain(rawLC[key], { requireExplicitHead: true });
+                    if (err)
+                        throw new Error(`层路由 ${key}：${err}`);
+                    merged[key] = rawLC[key];
+                }
+                clean.distillLayerChains = merged;
             }
             if (patch.reasoningEffort !== undefined) {
                 const v = String(patch.reasoningEffort);
@@ -452,20 +498,35 @@ async function handleEndpoint(endpoint, payload, deps) {
             const chainCurrent = projectDistillChain(s);
             let effectiveChain = [];
             let effective = null;
+            let cfgView = cfg;
             try {
-                const cfgView = effectiveCfg(cfg, live);
+                cfgView = effectiveCfg(cfg, live);
                 effective = await resolveModelRoute(deps.ctx, cfgView);
                 effectiveChain = buildRouteChain({ provider: effective.provider, model: effective.model, effort: cfgView.llm.primaryEffort || '' }, cfgView.llm.fallbacks, cfgView.llm.reasoningEffort);
             }
             catch {
                 effective = null; // 无法解析（无默认选择且未覆盖）时 UI 显示占位
             }
+            const pinned = Boolean(cfg.llm.provider && cfg.llm.model);
+            // 按层层链视图：与解析真值同径（layerChainOrNull 吃 effectiveCfg 之后的 cfgView，
+            // pinned 时运行时层链未注入、静态层链胜出；跟随层直接复用全局 effectiveChain）
+            const mkLayerView = (key) => {
+                const rt = s?.distillLayerChains?.[key] ?? [];
+                const lr = layerChainOrNull(cfgView, key);
+                const rtLive = !pinned && rt.length > 0 && !!rt[0].provider && !!rt[0].model;
+                return {
+                    runtime: rt,
+                    static: cfg.llm.layerRoutes?.[key] ?? [],
+                    effectiveChain: lr ?? effectiveChain,
+                    source: rtLive ? 'runtime' : lr ? 'static' : 'global',
+                };
+            };
             const resp = {
                 supported: true,
                 providers,
                 default: def,
                 // 部署静态 pin（provider+model 双字段）优先于运行时选择，UI 据此禁用选择器
-                pinned: Boolean(cfg.llm.provider && cfg.llm.model),
+                pinned,
                 current,
                 // 所选供应商是否仍在已注册路由中（用户删掉供应商后提示回退）
                 currentRegistered: current.provider === '' || providers.some((p) => p.id === current.provider),
@@ -475,6 +536,13 @@ async function handleEndpoint(endpoint, payload, deps) {
                     static: cfg.llm.fallbacks ?? [],
                     effectiveChain,
                     source: chainCurrent.length ? 'runtime' : 'static',
+                },
+                // 按层层链（#34）：source 三态与解析真值同径（layerChainOrNull）——pinned 下
+                // 运行时层链不生效（与 effectiveCfg 注入条件一致），存量照实返回供 UI 展示
+                layerChains: {
+                    l1: mkLayerView('l1'),
+                    l2: mkLayerView('l2'),
+                    l3: mkLayerView('l3'),
                 },
             };
             return resp;

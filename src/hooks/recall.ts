@@ -16,6 +16,8 @@
  * 由定时刷新 + 管线更新后的主动失效来更新。
  */
 import type { Context } from '@deepseek-ai/cordis';
+import type {} from '@deepseek-ai/dsh-session'; // ctx.sessions 声明合并（回填读 live 会话）
+import type { SessionId } from '@deepseek-ai/dsh-session';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import type { MemoryConfig } from '../config.js';
@@ -23,14 +25,43 @@ import type { LiveSettingsHandle } from '../settings.js';
 import type { L1Store } from '../store/l1.js';
 import type { PersonaStore } from '../store/persona.js';
 import { RecallDedupeStore } from '../store/recall-dedupe.js';
+import { OccupancyStore } from '../store/occupancy.js';
 import type { SceneStore } from '../store/scenes.js';
 import type { SessionModeStore } from '../store/session-modes.js';
 import type { L1Hit, MemoryLogger } from '../types.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_EMBED_CAP_MS } from '../util/recall-budget.js';
+import {
+  clearProfileShare,
+  emptyOccupancyLedger,
+  estimateInjectedMessageTokens,
+  estimateStableSectionTokens,
+  recordProfileShare,
+  recordRecallInjection,
+  resetForCompaction,
+  type OccupancyLedger,
+} from '../util/context-occupancy.js';
 import { errDetail } from '../util/filelog.js';
 import { blocksToText } from '../util/text.js';
 
 const PROFILE_TTL = 60_000;
+
+/* ── 召回回填的持久化服务兜底（票08）─────────────────────────────────────
+ * 仅查看的旧会话不在 ctx.sessions live store（不发言就没有活 Session），surface
+ * 路径拿不到。兜底走官方持久化服务 ctx.sessionPersistence.loadStored(id)——
+ * "cwd 未知时跨项目目录读存储前缀"，多帧 zstd / packed 行 / torn 尾 / 项目槽
+ * 全部由官方后端处理。窗口近似：存储前缀没有派生 surface，遇 compaction 类
+ * 事件把此前累计清零（与账本 resetForCompaction 同语义，宁低勿高）。
+ * 结果按会话进程内缓存（查看态会话不再增长；一旦发言则由 live 路径接管）。
+ */
+interface StoredLike {
+  events?: ReadonlyArray<{
+    type?: string;
+    data?: { source?: Record<string, unknown>; content?: ReadonlyArray<{ type?: string; text?: string }> };
+  }>;
+}
+const storedEstimateCache = new Map<string, number | null>();
+
+
 
 /** 召回查询只取会话末尾 N 条消息（长会话每步把全史拼进 FTS MATCH 会让检索成本线性上涨）。 */
 const RECALL_QUERY_TAIL_MESSAGES = 8;
@@ -99,6 +130,16 @@ export interface RecallHooks {
   invalidateProfile(): void;
   /** 会话召回统计只读视图（未发生过检索的会话返回 undefined）。 */
   stats(sessionId: string): RecallSessionStats | undefined;
+  /** 记忆占用账本只读出口：内存优先，miss 时从流水复生（重启后历史会话）；从未注入返回 null。 */
+  occupancy(sessionId: string): OccupancyLedger | null;
+  /**
+   * 稳定区份额估算（票08 旧会话回填）：按当前画像/导航/指南组词折算 token，
+   * 纯读不记账——旧会话系统提示里"现在大约坐着多少稳定区"的最佳可得估计。
+   */
+  estimateProfileTokens(agentId: string): number;
+  /** 召回份额回填（票08）：live 会话 surface 现扫本插件注入，miss 时读盘上日志兜底；
+   *  均不可得返回 null。 */
+  estimateRecallTokens(sessionId: string): Promise<number | null>;
 }
 
 export function registerRecall(
@@ -112,6 +153,8 @@ export function registerRecall(
 ): RecallHooks {
   /** 召回去重存储（同会话已注入的记忆不再重复注入；写穿持久化，重启不丢）。 */
   const dedupe = new RecallDedupeStore(dataDir, logger);
+  /** 记忆占用流水（账本迁移写穿；重启后历史会话账目由此复生——票07）。 */
+  const occupancyStore = new OccupancyStore(dataDir, logger);
   /** 每 agent 召回统计（工具指南门控读 lastHits；悬浮卡信息区读全量计数）。 */
   const recallStats = new Map<string, RecallSessionStats>();
   const statFor = (id: string): RecallSessionStats => {
@@ -121,6 +164,17 @@ export function registerRecall(
       recallStats.set(id, s);
     }
     return s;
+  };
+  /** 每 agent 记忆占用账本（权威账本的唯一宿主实例；占用指示器与悬浮卡同源消费）。 */
+  const occupancyByAgent = new Map<string, OccupancyLedger>();
+  const ledgerFor = (id: string): OccupancyLedger => {
+    let led = occupancyByAgent.get(id);
+    if (!led) {
+      // 进程重启/agent 重建后回看：从流水复生（新迁移在持久值上继续累加——票07）
+      led = occupancyStore.load(id) ?? emptyOccupancyLedger();
+      occupancyByAgent.set(id, led);
+    }
+    return led;
   };
   // 画像/场景导航按族缓存（分族隔离：注入时按会话档位选族）
   const profileCache: Record<'chat' | 'work', ProfileParts> = {
@@ -155,14 +209,19 @@ export function registerRecall(
   // agent 销毁时清掉召回统计槽（去重记录不随 agent 清——持久化语义：会话恢复后继续压制）
   ctx.on('agent/disposed', (payload) => {
     recallStats.delete(payload.agent.id);
+    occupancyByAgent.delete(payload.agent.id);
   });
 
   // 上下文压缩/清空 → 已注入内容从模型上下文丢失，重置该会话的去重压制
   // （resume/startup 不重置：历史仍在，已注入的记忆模型还持有）。
+  // 占用账本同步全量归零（宁低勿高；v1 轮级粒度近似，事件级 shadow price 对齐留待后续）。
   ctx.on('agent/session-start', (payload) => {
     if (payload.source === 'compact' || payload.source === 'clear') {
       dedupe.reset(payload.agent.id);
-      logger.info(`[memory] 召回去重重置（agent=${payload.agent.id}，source=${payload.source}）`);
+      const led = ledgerFor(payload.agent.id);
+      resetForCompaction(led);
+      occupancyStore.save(payload.agent.id, led); // stock 归零 ⇒ 流水条目删除
+      logger.info(`[memory] 召回去重与占用账本重置（agent=${payload.agent.id}，source=${payload.source}）`);
     }
   });
 
@@ -254,6 +313,10 @@ export function registerRecall(
             // "上下文注入"（专用"跨会话召回"标题仅留给 session-reference 来源）
             source: { kind: 'plugin', plugin: 'memory', form: 'recall' },
           });
+          // 入账在成功构造注入消息之后、返回 enter 之前——任何前置抛错路径账目零扰动
+          const led = ledgerFor(payload.agent.id);
+          recordRecallInjection(led, text.length);
+          occupancyStore.save(payload.agent.id, led);
           // 注入消息排在用户新消息之前（原版 prepend 语义：先线索后问题）
           return { kind: 'enter', messages: [injection, ...decision.messages] };
         } catch (err) {
@@ -268,6 +331,95 @@ export function registerRecall(
   // ── 2. agent 作用域上下文 provider（系统提示稳定区：画像 + 导航 + 门控指南） ──
   // 插件可能在默认 agent 创建之后才加载（组合顺序由依赖决定），
   // 因此除了监听 agent/created，还要给已存在的 agent 补注册。
+  /**
+   * 稳定区当前组词（纯读，不记账）：text() 的取词部分单独成函数，
+   * 供旧会话回填估算（RecallHooks.estimateProfileTokens）复用同一口径。
+   */  const composeStableText = (agentId: string): string => {
+    const s = live.get();
+    if (!s.enabled || !s.recall) return '';
+    const mode = modes.get(agentId);
+    if (mode === 'off') return '';
+    // auto 档：两族按类别归组（画像/导航各一个标签，域内 <domain> 分块）；纯档：单族原格式
+    const body =
+      mode === 'auto'
+        ? formatProfileAuto(profileCache.chat, profileCache.work)
+        : formatProfileSingle(profileCache[mode]);
+    const hasRecallHit = (recallStats.get(agentId)?.lastHits ?? 0) > 0;
+    // 指南三条件门控：工具已注册（cfg.tools）&&（稳定内容 ∥ 本轮召回命中）——
+    // 空库用户与关闭工具的用户不付这份固定 token（原版 auto-recall 同款语义）
+    if (!cfg.tools) return body;
+    if (!body && !hasRecallHit) return '';
+    return body ? `${body}\n\n${MEMORY_TOOLS_GUIDE}` : MEMORY_TOOLS_GUIDE;
+  };
+
+  async function estimateRecallFromStorage(sessionId: string): Promise<number | null> {
+    if (storedEstimateCache.has(sessionId)) return storedEstimateCache.get(sessionId) ?? null;
+    let tokens: number | null = null;
+    try {
+      // 可选服务（JSONL 后端注册名）；缺失/其它实现 → 回填隐藏
+      const persistence = (await (ctx as unknown as { get?: (name: string) => unknown }).get?.('sessionPersistence')) as
+        | { loadStored?: (id: never, signal?: AbortSignal) => Promise<StoredLike | undefined> }
+        | undefined;
+      const stored = typeof persistence?.loadStored === 'function' ? await persistence.loadStored(sessionId as never) : undefined;
+      if (stored?.events) {
+        tokens = 0;
+        for (const ev of stored.events) {
+          if (typeof ev.type === 'string' && ev.type.startsWith('compaction')) tokens = 0;
+          if (ev.type !== 'user/message') continue;
+          const src = ev.data?.source;
+          if (!src || src.kind !== 'plugin' || src.plugin !== 'memory' || src.form !== 'recall') continue;
+          let chars = 0;
+          for (const b of ev.data?.content ?? []) {
+            if (b?.type === 'text' && typeof b.text === 'string') chars += b.text.length;
+          }
+          if (chars > 0) tokens += estimateInjectedMessageTokens(chars);
+        }
+      }
+    } catch {
+      tokens = null;
+    }
+    storedEstimateCache.set(sessionId, tokens);
+    return tokens;
+  }
+
+  /**
+   * 召回份额回填（票08 旧会话）：live 会话的 surface（模型可见序号集）∩ 全事件日志
+   * 里本插件的 recall 注入，官方同式折算。窗口语义天然正确——被压缩折叠的注入不在
+   * surface.nodes 上，自动出局。会话不在 live store（未打开）返回 null。
+   */
+  const estimateRecallTokens = async (sessionId: string): Promise<number | null> => {
+    try {
+      // cordis 属性访问（ctx.sessions）对未 inject 的服务抛 "without inject"（实测）；
+      // 可选服务一律走 ctx.get() 的宽容路径
+      const sessions = ctx.get?.('sessions') as
+        | { get?: (id: SessionId) => { surface: { nodes: readonly number[] }; events: ReadonlyArray<{ type: string; seq: number; data?: { source?: Record<string, unknown>; content?: ReadonlyArray<{ type?: string; text?: string }> } }> } | undefined }
+        | undefined;
+      const session = typeof sessions?.get === 'function' ? sessions.get(sessionId as SessionId) : undefined;
+      if (session) {
+        const visible = new Set(session.surface.nodes);
+        let total = 0;
+        for (const ev of session.events) {
+          if (ev.type !== 'user/message' || !visible.has(ev.seq)) continue;
+          const msg = ev.data as
+            | { source?: Record<string, unknown>; content?: ReadonlyArray<{ type?: string; text?: string }> }
+            | undefined;
+          const src = msg?.source;
+          if (!src || src.kind !== 'plugin' || src.plugin !== 'memory' || src.form !== 'recall') continue;
+          let chars = 0;
+          for (const b of msg.content ?? []) {
+            if (b?.type === 'text' && typeof b.text === 'string') chars += b.text.length;
+          }
+          if (chars > 0) total += estimateInjectedMessageTokens(chars);
+        }
+        return total;
+      }
+      // 仅查看的旧会话不在 live store：官方持久化服务读存储前缀兜底（见函数头）
+      return estimateRecallFromStorage(sessionId);
+    } catch {
+      return null; // 服务缺失/形状异常：回填隐藏，不扰动主流程
+    }
+  };
+
   const registered = new WeakSet<object>();
   // context() 的 disposer 必须挂到插件自身生命周期：agent.ctx 比插件实例活得久，
   // 不主动清理会导致热重载后旧注册泄漏、新实例撞名（"already registered"）
@@ -281,21 +433,13 @@ export function registerRecall(
           name: 'memory:profile',
           order: 510,
           text: () => {
-            const s = live.get();
-            if (!s.enabled || !s.recall) return '';
-            const mode = modes.get(agent.id);
-            if (mode === 'off') return '';
-            // auto 档：两族按类别归组（画像/导航各一个标签，域内 <domain> 分块）；纯档：单族原格式
-            const body =
-              mode === 'auto'
-                ? formatProfileAuto(profileCache.chat, profileCache.work)
-                : formatProfileSingle(profileCache[mode]);
-            const hasRecallHit = (recallStats.get(agent.id)?.lastHits ?? 0) > 0;
-            // 指南三条件门控：工具已注册（cfg.tools）&&（稳定内容 ∥ 本轮召回命中）——
-            // 空库用户与关闭工具的用户不付这份固定 token（原版 auto-recall 同款语义）
-            if (!cfg.tools) return body;
-            if (!body && !hasRecallHit) return '';
-            return body ? `${body}\n\n${MEMORY_TOOLS_GUIDE}` : MEMORY_TOOLS_GUIDE;
+            const final = composeStableText(agent.id);
+            const ledger = ledgerFor(agent.id);
+            // 空串即物理离场（停用/OFF/门控全空）：份额同边界清零；否则按实际长度入账
+            if (final === '') clearProfileShare(ledger);
+            else recordProfileShare(ledger, final.length);
+            occupancyStore.save(agent.id, ledger);
+            return final;
           },
         }),
       );
@@ -321,7 +465,19 @@ export function registerRecall(
     }
   });
 
-  return { invalidateProfile, stats: (id) => recallStats.get(id) };
+  return {
+    invalidateProfile,
+    stats: (id) => recallStats.get(id),
+    /** 占用账本只读出口：内存优先，miss 时从流水复生（重启后历史会话）；从未注入返回 null。 */
+    occupancy: (id): OccupancyLedger | null => {
+      const led = occupancyByAgent.get(id) ?? occupancyStore.load(id);
+      if (led) occupancyByAgent.set(id, led);
+      return led ?? null;
+    },
+    estimateProfileTokens: (id: string): number =>
+      estimateStableSectionTokens(composeStableText(id).length),
+    estimateRecallTokens,
+  };
 }
 
 /** 单族画像/导航片段（注入侧按档位组装，纯档与 auto 档格式不同）。 */
