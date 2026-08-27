@@ -524,7 +524,7 @@ var __defProp = Object.defineProperty;
 		    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
 		      "span",
 		      {
-		        title: opt.disabledTitle || "",
+		        title: opt.disabledTitle || opt.title || "",
 		        style: {
 		          ...S.segBtn,
 		          ...on ? S.segBtnOn : null,
@@ -1148,6 +1148,7 @@ var __defProp = Object.defineProperty;
 		  };
 		  const showOutputs = scope !== "input";
 		  const showInput = scope === "all" || scope === "input";
+		  const effNote = layers.map((l) => eff[l[0]] || "?").join(" / ");
 		  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
 		    showOutputs ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: S.switchRow, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { ...S.flexRow, gap: 6 }, children: layers.map((l) => {
@@ -1161,8 +1162,15 @@ var __defProp = Object.defineProperty;
 		        );
 		      }) }),
 		      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchLabel, children: "输出预算" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchDesc, children: scope === "all" ? "各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 " + layers.map((l) => eff[l[0]] || "?").join(" / ") + "）；思考档 high/xhigh/max 时实际限额自动 ×4" : "本层单次输出的 token 上限；留空或 0 = 跟随默认（当前生效 " + layers.map((l) => eff[l[0]] || "?").join(" / ") + "）；思考档 high/xhigh/max 时实际限额自动 ×4" })
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+		          "div",
+		          {
+		            style: S.switchLabel,
+		            title: "留空或 0 = 跟随默认（当前生效 " + effNote + "）；思考档 high/xhigh/max 时实际限额自动 ×4",
+		            children: "输出预算"
+		          }
+		        ),
+		        scope === "all" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchDesc, children: "各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 " + effNote + "）；思考档 high/xhigh/max 时实际限额自动 ×4" }) : null
 		      ] })
 		    ] }) : null,
 		    showInput ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: S.switchRow, children: [
@@ -1175,8 +1183,15 @@ var __defProp = Object.defineProperty;
 		        commitInput
 		      ),
 		      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchLabel, children: "输入预算" }),
-		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchDesc, children: "单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；留空或 0 = 跟随配置（当前生效 " + (effIn || "?") + "，来自 llm.maxInputChars）" })
+		        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+		          "div",
+		          {
+		            style: S.switchLabel,
+		            title: "单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；留空或 0 = 跟随配置（当前生效 " + (effIn || "?") + "，来自 llm.maxInputChars）",
+		            children: "输入预算"
+		          }
+		        ),
+		        scope === "all" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: S.switchDesc, children: "单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；留空或 0 = 跟随配置（当前生效 " + (effIn || "?") + "，来自 llm.maxInputChars）" }) : null
 		      ] })
 		    ] }) : null
 		  ] });
@@ -1535,7 +1550,7 @@ var __defProp = Object.defineProperty;
 		  function roRow(e, i) {
 		    return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: STY.roRow, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: STY.badge, children: i === 0 ? "主" : String(i + 1) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: STY.mono, children: e.provider + " / " + e.model }),
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: { ...STY.mono, color: "var(--dsh-mem-text-2)" }, children: e.provider + " / " + e.model }),
 		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: { marginLeft: "auto", flexShrink: 0, fontSize: 11, color: "var(--dsh-mem-text-3)" }, children: e.effort ? "档位 " + e.effort : "跟随部署配置" })
 		    ] }, "ro" + i);
 		  }
@@ -1543,7 +1558,7 @@ var __defProp = Object.defineProperty;
 		    const effPin = isLayer ? layerView?.effectiveChain ?? [] : info.chain && info.chain.effectiveChain || [];
 		    return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: STY.wrap, children: [
 		      effPin.map(roRow),
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: STY.note, children: isLayer ? "部署已锁定路由（pin）：本层运行时编辑只读；静态层链（若有）照常生效。调整请修改 profile cordis.patch.yml 中 llm 的配置。" : "部署已锁定路由（pin 优先于运行时链）；调整请修改 profile cordis.patch.yml 中 llm 的配置。" })
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: STY.note, children: "部署已锁定路由（pin），调整请修改 cordis.patch.yml 中 llm 的配置。" })
 		    ] });
 		  }
 		  if (rows === null) {
@@ -1552,25 +1567,20 @@ var __defProp = Object.defineProperty;
 		      const src = lv?.source ?? "global";
 		      if (src === "static" && lv) {
 		        return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: STY.wrap, children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { ...STY.note, marginBottom: 6 }, children: "当前生效 = 部署 YAML 层链（只读，下方行不可直接编辑）" }),
 		          lv.static.map((e, i) => roRow({ provider: e.provider, model: e.model, effort: e.reasoningEffort || "" }, i)),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { onClick: forkStatic, disabled, children: "自定义本层链" }) }),
-		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: STY.note, children: "部署 YAML 层链生效；「自定义本层链」保存后，运行时层链将覆盖静态层链。" })
+		          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { onClick: forkStatic, disabled, children: "自定义本层链" }) })
 		        ] });
 		      }
 		      const previewRows = lv?.effectiveChain ?? [];
 		      return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: STY.wrap, children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { ...STY.note, marginBottom: 6 }, children: "当前生效 = 全局默认链（只读预览，下方行不可直接编辑）" }),
 		        previewRows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: S.switchDesc, children: "本层跟随全局链，暂无可用路由。" }) : previewRows.map(roRow),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { onClick: forkStatic, disabled, children: "自定义本层链" }) }),
-		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: STY.note, children: "本层未单独配置，走「全局默认」范围的链；要调整本层请点上方按钮，要调整所有跟随层请去「全局默认」。" })
+		        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { onClick: forkStatic, disabled, children: "自定义本层链" }) })
 		      ] });
 		    }
 		    const effFollow = info.chain && info.chain.effectiveChain || [];
 		    return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: STY.wrap, children: [
 		      effFollow.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: S.switchDesc, children: "蒸馏跟随默认模型，未配置回退链。" }) : effFollow.map(roRow),
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { onClick: forkStatic, disabled, children: "编辑为运行时链" }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: STY.note, children: "未配置运行时链时跟随部署配置；「编辑为运行时链」会拷贝部署回退链为草稿，保存起运行时链接管。" })
+		      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { onClick: forkStatic, disabled, children: "编辑为运行时链" }) })
 		    ] });
 		  }
 		  const capped = rows.length >= 8;
@@ -1718,7 +1728,14 @@ var __defProp = Object.defineProperty;
 		  });
 		  const effChain = isLayer ? layerView?.effectiveChain ?? [] : info.chain && info.chain.effectiveChain || [];
 		  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: STY.wrap, children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { style: { ...S.switchDesc, marginBottom: 8 }, children: isLayer ? "本层链按序尝试：第 1 行是主路由，失败后按序降级到本层回退（不落全局链）；每行档位独立，缺省跟随部署配置。" : "路由按序尝试：第 1 行是主路由，失败（报错 / 掐断 / 网络异常 / 空输出）后按序降级；每行档位独立，缺省跟随部署配置。" }),
+		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+		      "div",
+		      {
+		        style: { ...S.switchDesc, marginBottom: 8 },
+		        title: isLayer ? "本层链失败只在层内降级，绝不落到全局链；每行档位独立" : "第 1 行主路由；失败（报错/掐断/网络异常/空输出）按序降级；每行档位独立",
+		        children: isLayer ? "主路由失败，只降级到本层回退" : "主路由失败，按序降级"
+		      }
+		    ),
 		    rowEls,
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(NButton, { style: STY.add, disabled: disabled || capped, onClick: addRow, children: capped ? "已达上限（8 条）" : "+ 添加回退路由" }),
 		    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 10 }, children: [
@@ -1751,22 +1768,8 @@ var __defProp = Object.defineProperty;
 		// client/src/tabs/DistillSettings.tsx
 		var import_jsx_runtime7 = require("react/jsx-runtime");
 		var STY2 = {
-		  rel: {
-		    display: "flex",
-		    alignItems: "center",
-		    gap: 6,
-		    flexWrap: "wrap",
-		    background: "var(--dsh-mem-accent-weak)",
-		    borderRadius: 8,
-		    padding: "7px 10px",
-		    marginBottom: 8,
-		    fontSize: 11.5,
-		    color: "var(--dsh-mem-text-2)"
-		  },
-		  relB: { color: "var(--dsh-mem-accent-text)", fontWeight: 600 },
-		  relArr: { color: "var(--dsh-mem-text-3)" },
-		  legend: { fontSize: 11, color: "var(--dsh-mem-text-3)", margin: "0 0 8px" },
-		  panelHead: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 },
+		  hint: { fontSize: 11, color: "var(--dsh-mem-text-3)", margin: "0 0 8px" },
+		  panelHead: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 },
 		  panelTitle: { fontSize: 13.5, fontWeight: 650, color: "var(--dsh-mem-text-1)" },
 		  chip: {
 		    display: "inline-flex",
@@ -1780,7 +1783,6 @@ var __defProp = Object.defineProperty;
 		  },
 		  chipAccent: { background: "var(--dsh-mem-accent-weak)", color: "var(--dsh-mem-accent-text)" },
 		  chipMuted: { background: "var(--dsh-mem-bg-inset)", color: "var(--dsh-mem-text-2)" },
-		  panelDesc: { fontSize: 12, color: "var(--dsh-mem-text-3)", margin: "2px 0 8px" },
 		  inUse: { fontSize: 11, color: "var(--dsh-mem-text-3)", margin: "6px 0 0" }
 		};
 		function Dot(props) {
@@ -1798,9 +1800,9 @@ var __defProp = Object.defineProperty;
 		  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: { ...base, background: "var(--dsh-mem-track)" } });
 		}
 		var LAYER_META = {
-		  l1: { seg: "L1", title: "L1 · 抽取 / 去重", desc: "高频结构化任务通常配便宜快稳的链；抽取与去重两个调用点共用本链" },
-		  l2: { seg: "L2", title: "L2 · 场景摘要", desc: "中频较大输入，通常配平衡型链" },
-		  l3: { seg: "L3", title: "L3 · 画像蒸馏", desc: "低频大输入长输出，可配强能力链（慢首包可容忍）" }
+		  l1: { seg: "L1", title: "L1 · 抽取 / 去重" },
+		  l2: { seg: "L2", title: "L2 · 场景摘要" },
+		  l3: { seg: "L3", title: "L3 · 画像蒸馏" }
 		};
 		function DistillSettings(props) {
 		  const rpc = props.rpc;
@@ -1826,36 +1828,27 @@ var __defProp = Object.defineProperty;
 		  const dotOf = (k) => layers?.[k]?.source ?? "global";
 		  const users = ["l1", "l2", "l3"].filter((k) => dotOf(k) === "global");
 		  const segOptions = [
-		    { key: "g", label: "全局默认" },
+		    { key: "g", label: "全局默认", title: "未单独配置的层走这条链（当前在用：" + (users.length ? users.map((k) => LAYER_META[k].seg).join("、") : "无") + "）" },
 		    ...["l1", "l2", "l3"].map((k) => ({
 		      key: k,
+		      title: LAYER_META[k].title + " · " + (dotOf(k) === "runtime" ? "运行时自定义" : dotOf(k) === "static" ? "部署 YAML 层链（只读）" : "跟随全局"),
 		      label: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Dot, { kind: dotOf(k) }),
 		        LAYER_META[k].seg
 		      ] })
 		    }))
 		  ];
+		  const chipTitle = (k) => dotOf(k) === "runtime" ? "本层走设置页自定义链" : dotOf(k) === "static" ? "本层走部署 YAML 层链（UI 只读，自定义可覆盖）" : "本层未单独配置，走全局默认链";
 		  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
-		    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: STY2.rel, children: [
-		      "每层实际链 ",
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: STY2.relArr, children: "=" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: STY2.relB, children: "本层自定义" }),
-		      "（本页可编辑）",
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: STY2.relArr, children: "→" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: STY2.relB, children: "部署 YAML 层链" }),
-		      "（只读）",
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: STY2.relArr, children: "→" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: STY2.relB, children: "全局默认链" }),
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: { ...STY2.relArr, marginLeft: "auto" }, children: "逐级兜底 · pin 时运行时编辑只读" })
-		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Segmented, { value: tab, options: segOptions, onChange: (k) => setTab(k) }),
-		    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: STY2.legend, children: [
+		    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: STY2.hint, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Dot, { kind: "runtime" }),
-		      " 运行时自定义 · ",
+		      " 自定义 · ",
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Dot, { kind: "static" }),
-		      " 静态 YAML · ",
+		      " 部署 YAML · ",
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Dot, { kind: "global" }),
-		      " 跟随全局"
+		      " 跟随全局",
+		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { title: "每层实际链：运行时自定义 → 部署 YAML 层链 → 全局默认链，逐级兜底；部署 pin 时运行时编辑只读", children: "（层链优先于全局）" })
 		    ] }),
 		    tab === "g" ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: STY2.panelHead, children: [
@@ -1863,15 +1856,13 @@ var __defProp = Object.defineProperty;
 		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: { ...STY2.chip, ...STY2.chipAccent }, children: "运行时 · 可编辑" }),
 		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: { ...STY2.inUse, marginLeft: "auto" }, children: users.length ? "在用：" + users.map((k) => LAYER_META[k].seg).join("、") : "当前无层使用" })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: STY2.panelDesc, children: "未单独配置的层走这条链（当前：" + (users.length ? users.map((k) => LAYER_META[k].seg).join("、") : "无") + "）；配齐所有层后它自然闲置。" }),
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(RouteChainEditor, { rpc, disabled }, "g"),
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(BudgetInputs, { rpc, disabled, data: props.data, setData: props.setData, onError: props.onError, scope: "input" }, "g-budget")
 		    ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { style: STY2.panelHead, children: [
 		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: STY2.panelTitle, children: LAYER_META[tab].title }),
-		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: { ...STY2.chip, ...dotOf(tab) === "runtime" ? STY2.chipAccent : STY2.chipMuted }, children: dotOf(tab) === "runtime" ? "运行时自定义" : dotOf(tab) === "static" ? "静态 · YAML" : "跟随全局" })
+		        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: { ...STY2.chip, ...dotOf(tab) === "runtime" ? STY2.chipAccent : STY2.chipMuted }, title: chipTitle(tab), children: dotOf(tab) === "runtime" ? "运行时自定义" : dotOf(tab) === "static" ? "静态 · YAML" : "跟随全局" })
 		      ] }),
-		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { style: STY2.panelDesc, children: LAYER_META[tab].desc }),
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(RouteChainEditor, { rpc, disabled, scope: tab }, tab),
 		      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(BudgetInputs, { rpc, disabled, data: props.data, setData: props.setData, onError: props.onError, scope: tab }, tab + "-budget")
 		    ] })

@@ -285,12 +285,13 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean; scope?
     providersById[p.id] = p;
   });
 
-  /** 只读行（pinned / 跟随态共用）。 */
+  /** 只读行（pinned / 跟随态共用）。只读 = 降一档灰度（text-2）：与编辑态的描边
+   *  选择框形成一眼可辨的对比，"这些行不是本面板可编辑的"由视觉自释，不写说明。 */
   function roRow(e: { provider: string; model: string; effort: string }, i: number) {
     return (
       <div key={'ro' + i} style={STY.roRow}>
         <span style={STY.badge}>{i === 0 ? '主' : String(i + 1)}</span>
-        <span style={STY.mono}>{e.provider + ' / ' + e.model}</span>
+        <span style={{ ...STY.mono, color: 'var(--dsh-mem-text-2)' }}>{e.provider + ' / ' + e.model}</span>
         <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 11, color: 'var(--dsh-mem-text-3)' }}>
           {e.effort ? '档位 ' + e.effort : '跟随部署配置'}
         </span>
@@ -304,16 +305,12 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean; scope?
     return (
       <div style={STY.wrap}>
         {effPin.map(roRow)}
-        <div style={STY.note}>
-          {isLayer
-            ? '部署已锁定路由（pin）：本层运行时编辑只读；静态层链（若有）照常生效。调整请修改 profile cordis.patch.yml 中 llm 的配置。'
-            : '部署已锁定路由（pin 优先于运行时链）；调整请修改 profile cordis.patch.yml 中 llm 的配置。'}
-        </div>
+        <div style={STY.note}>部署已锁定路由（pin），调整请修改 cordis.patch.yml 中 llm 的配置。</div>
       </div>
     );
   }
 
-  // 跟随态：未配置运行时链 → 只读展示实际链 +「编辑为运行时链」/「自定义本层链」
+  // 跟随态：未配置运行时链 → 只读展示实际链（降灰 = 非本面板可编辑）+ 唯一动作按钮
   if (rows === null) {
     if (isLayer) {
       const lv = layerView;
@@ -321,28 +318,24 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean; scope?
       if (src === 'static' && lv) {
         return (
           <div style={STY.wrap}>
-            <div style={{ ...STY.note, marginBottom: 6 }}>当前生效 = 部署 YAML 层链（只读，下方行不可直接编辑）</div>
             {lv.static.map((e, i) => roRow({ provider: e.provider, model: e.model, effort: e.reasoningEffort || '' }, i))}
             <div style={{ marginTop: 6 }}>
               <NButton onClick={forkStatic} disabled={disabled}>
                 自定义本层链
               </NButton>
             </div>
-            <div style={STY.note}>部署 YAML 层链生效；「自定义本层链」保存后，运行时层链将覆盖静态层链。</div>
           </div>
         );
       }
       const previewRows = lv?.effectiveChain ?? [];
       return (
         <div style={STY.wrap}>
-          <div style={{ ...STY.note, marginBottom: 6 }}>当前生效 = 全局默认链（只读预览，下方行不可直接编辑）</div>
           {previewRows.length === 0 ? <div style={S.switchDesc}>本层跟随全局链，暂无可用路由。</div> : previewRows.map(roRow)}
           <div style={{ marginTop: 6 }}>
             <NButton onClick={forkStatic} disabled={disabled}>
               自定义本层链
             </NButton>
           </div>
-          <div style={STY.note}>本层未单独配置，走「全局默认」范围的链；要调整本层请点上方按钮，要调整所有跟随层请去「全局默认」。</div>
         </div>
       );
     }
@@ -358,9 +351,6 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean; scope?
           <NButton onClick={forkStatic} disabled={disabled}>
             编辑为运行时链
           </NButton>
-        </div>
-        <div style={STY.note}>
-          未配置运行时链时跟随部署配置；「编辑为运行时链」会拷贝部署回退链为草稿，保存起运行时链接管。
         </div>
       </div>
     );
@@ -520,10 +510,11 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean; scope?
 
   return (
     <div style={STY.wrap}>
-      <div style={{ ...S.switchDesc, marginBottom: 8 }}>
-        {isLayer
-          ? '本层链按序尝试：第 1 行是主路由，失败后按序降级到本层回退（不落全局链）；每行档位独立，缺省跟随部署配置。'
-          : '路由按序尝试：第 1 行是主路由，失败（报错 / 掐断 / 网络异常 / 空输出）后按序降级；每行档位独立，缺省跟随部署配置。'}
+      <div
+        style={{ ...S.switchDesc, marginBottom: 8 }}
+        title={isLayer ? '本层链失败只在层内降级，绝不落到全局链；每行档位独立' : '第 1 行主路由；失败（报错/掐断/网络异常/空输出）按序降级；每行档位独立'}
+      >
+        {isLayer ? '主路由失败，只降级到本层回退' : '主路由失败，按序降级'}
       </div>
       {rowEls}
       <NButton style={STY.add} disabled={disabled || capped} onClick={addRow}>

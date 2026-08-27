@@ -41,6 +41,8 @@ export interface SegOption {
   label: ReactNode;
   disabled?: boolean;
   disabledTitle?: string;
+  /** 悬停提示（非禁用态；解释性文字进 tooltip 不占版面，#34 文案极简约定） */
+  title?: string;
 }
 
 /** 分段选择器（支持逐项禁用：远程档未配四件套时置灰）。 */
@@ -60,7 +62,7 @@ export function Segmented(props: {
         return (
           <span
             key={opt.key}
-            title={opt.disabledTitle || ''}
+            title={opt.disabledTitle || opt.title || ''}
             style={{
               ...S.segBtn,
               ...(on ? S.segBtnOn : null),

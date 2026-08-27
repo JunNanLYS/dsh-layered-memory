@@ -172,31 +172,37 @@ token）与**输入预算**（单个输入，宽 120px，单位字符 ≈token�
 
 `scope` 参数（#34，缺省 `'all'` 原样）：`'input'`（仅输入行，全局面板用）|
 `'l1' | 'l2' | 'l3'`（仅该层输出——l1 = 抽取+去重两行；层面板用）。提交仍整组
-四键（未编辑键带当前值回写，面板间互不清零）。
+四键（未编辑键带当前值回写，面板间互不清零）。scoped 模式无描述句——生效值与
+放大规则挂标签 title tooltip（'all' 保留原描述行）。
 
 ### 蒸馏设置区分段壳（DistillSettings，#34 B 形态）
 
 概览 Tab「蒸馏参数」组的新外壳，把路由链与预算按**范围**组织（原型
 `.scratch/layer-routes/proto-layer-settings.html` 三轮肉眼检查定稿的 B 案）：
 
-- **解析关系条**（accent-weak 底、8px 圆角）：「每层实际链 = 本层自定义（本页可
-  编辑）→ 部署 YAML 层链（只读）→ 全局默认链 · 逐级兜底 · pin 时运行时编辑只读」；
-- **范围分段**（controls.Segmented）：[全局默认 | L1 | L2 | L3]，每层分段带状态点
-  —— 蓝实心 = 运行时自定义 / 空心（text-3 描边）= 静态 YAML / 灰（track）=
-  跟随全局；分段下有图例行。状态点数据源 `llm-providers` 的 `layerChains.<层>
-  .source`（host 侧与解析真值同径，5s 轮询）；
-- **全局默认面板**：RouteChainEditor（scope global，行为原样）+ BudgetInputs
-  （scope input）+ 头部「在用：哪些层」标注（source 为 global 的层；配齐则
-  「当前无层使用」）；
-- **层面板**：标题（L1 · 抽取 / 去重 等）+ 三态徽章（运行时自定义 / 静态 · YAML /
-  跟随全局）+ RouteChainEditor（scope 层键）+ BudgetInputs（scope 同层键）。
+- **一行提示兼图例**（11px text-3，无底色条）：`● 自定义 · ◌ 部署 YAML · ○ 跟随
+  全局（层链优先于全局）`——优先级全句挂该括号的 title tooltip（文案极简约定：
+  解释进 tooltip，不占版面）；
+- **范围分段**（controls.Segmented，SegOption 增 title）：[全局默认 | L1 | L2 |
+  L3]，每层分段带状态点——蓝实心 = 运行时自定义 / 空心（text-3 描边）= 静态
+  YAML / 灰（track）= 跟随全局；分段 title 与面板头部徽章 title 承载状态语义
+  （如"部署 YAML 层链（UI 只读，自定义可覆盖）"）。状态点数据源
+  `llm-providers` 的 `layerChains.<层>.source`（host 侧与解析真值同径，5s 轮询）；
+- **全局默认面板**：头部「在用：哪些层」标注（source 为 global 的层；配齐则
+  「当前无层使用」）+ RouteChainEditor（scope global）+ BudgetInputs（scope
+  input）；无说明段落；
+- **层面板**：标题（L1 · 抽取 / 去重 等）+ 三态徽章（title 承载状态语义）+
+  RouteChainEditor（scope 层键）+ BudgetInputs（scope 同层键）；无说明段落
+  （#34 文案极简：状态交给徽章/圆点、归属交给只读行降灰、动作交给按钮自命名、
+  解释进 tooltip）。
 
 RouteChainEditor 的 `scope` 参数化（缺省 global 原样）：层范围读写
 `settings-set` 的 `distillLayerChains.<层>`（空数组 = 该层回到跟随，无旧键要连带
 清）；**头行必须显式供应商+模型**（无「跟随默认模型」选项，主路由行删除改为
-顶替/无操作）；跟随态三态展示——顶部标注行「当前生效 = 部署 YAML 层链（只读）」
-或「当前生效 = 全局默认链（只读预览）」+ 行列表 + **「自定义本层链」按钮紧跟
-列表**（fork 静态链为草稿 / 无静态则空草稿）+ 引导说明行；编辑态清除按钮文案
+顶替/无操作）；跟随态三态展示——只读行列表（roRow 降灰 text-2 = 非本面板可编辑的视觉自释）
++ **「自定义本层链」按钮紧跟列表**（fork 静态链为草稿 / 无静态则空草稿），无
+说明行；编辑态描述行短语化（「主路由失败，按序降级」/「主路由失败，只降级到
+本层回退」，全句挂 title）；pinned 提示单行化；编辑态清除按钮文案
 层范围为「清除自定义 · 跟随全局」且用 danger 描边形态（红字红边 ghost——破坏性动作，
 danger 令牌"危险动作"语义；全局范围保持「清空并跟随部署配置」原 ghost）；
 pinned 时按层只读（静态层链照常生效提示）。**切范围 = key 重挂载**（编辑草稿

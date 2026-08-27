@@ -198,6 +198,7 @@ export function BudgetInputs(props: {
 
   const showOutputs = scope !== 'input';
   const showInput = scope === 'all' || scope === 'input';
+  const effNote = layers.map((l) => eff[l[0]!] || '?').join(' / ');
   return (
     <div>
       {showOutputs ? (
@@ -215,16 +216,18 @@ export function BudgetInputs(props: {
             })}
           </div>
           <div>
-            <div style={S.switchLabel}>输出预算</div>
-            <div style={S.switchDesc}>
-              {scope === 'all'
-                ? '各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 ' +
-                  layers.map((l) => eff[l[0]!] || '?').join(' / ') +
-                  '）；思考档 high/xhigh/max 时实际限额自动 ×4'
-                : '本层单次输出的 token 上限；留空或 0 = 跟随默认（当前生效 ' +
-                  layers.map((l) => eff[l[0]!] || '?').join(' / ') +
-                  '）；思考档 high/xhigh/max 时实际限额自动 ×4'}
+            <div
+              style={S.switchLabel}
+              title={'留空或 0 = 跟随默认（当前生效 ' + effNote + '）；思考档 high/xhigh/max 时实际限额自动 ×4'}
+            >
+              输出预算
             </div>
+            {scope === 'all' ? (
+              <div style={S.switchDesc}>
+                {'各蒸馏层单次输出的 token 上限（抽取/去重/L2/L3）；留空或 0 = 跟随默认（当前生效 ' + effNote +
+                  '）；思考档 high/xhigh/max 时实际限额自动 ×4'}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -239,13 +242,20 @@ export function BudgetInputs(props: {
             commitInput,
           )}
           <div>
-            <div style={S.switchLabel}>输入预算</div>
-            <div style={S.switchDesc}>
-              {'单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；' +
-                '留空或 0 = 跟随配置（当前生效 ' +
-                (effIn || '?') +
-                '，来自 llm.maxInputChars）'}
+            <div
+              style={S.switchLabel}
+              title={'单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；留空或 0 = 跟随配置（当前生效 ' + (effIn || '?') + '，来自 llm.maxInputChars）'}
+            >
+              输入预算
             </div>
+            {scope === 'all' ? (
+              <div style={S.switchDesc}>
+                {'单次蒸馏调用的输入字符上限（≈token）：L1 抽取按此分块、L2/L3 超限截断；' +
+                  '留空或 0 = 跟随配置（当前生效 ' +
+                  (effIn || '?') +
+                  '，来自 llm.maxInputChars）'}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
