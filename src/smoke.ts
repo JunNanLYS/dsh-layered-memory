@@ -1537,9 +1537,11 @@ async function main(): Promise<void> {
             next: () => Promise<Decision>,
           ) => Promise<Decision>)
         | undefined;
+      let sessionStart: ((payload: { agent: { id: string }; source?: string }) => void) | undefined;
       const ctxT5 = {
-        on: (ev: string, h: typeof preStep, _opts?: unknown) => {
-          if (ev === 'agent/pre-step') preStep = h;
+        on: (ev: string, h: (payload?: unknown, next?: unknown) => unknown, _opts?: unknown) => {
+          if (ev === 'agent/pre-step') preStep = h as typeof preStep;
+          if (ev === 'agent/session-start') sessionStart = h as typeof sessionStart;
           return () => {};
         },
         effect: (f: () => (() => void)) => f(),
@@ -1568,7 +1570,7 @@ async function main(): Promise<void> {
       const modesT5 = new SessionModeStore(tmpT5, 'auto');
       await modesT5.init();
       const liveT5 = { supported: true, get: () => ({ enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' }) };
-      registerRecall(
+      const recallT5 = registerRecall(
         ctxT5,
         {
           tools: true,
@@ -1660,6 +1662,25 @@ async function main(): Promise<void> {
 
       // ⑥ 指南三条件门控：有本轮召回命中（① 设置）→ 即便画像/导航全空也注入指南
       assert((contextText['memory:profile']() ?? '').includes('记忆工具调用指南'), '本轮有召回命中 → 指南注入（画像/导航为空）');
+
+      // ⑥b 占用账本联动（票03）：双通道入账、OFF 即时清零、切回净回补、压缩复位
+      const occT5 = recallT5.occupancy('agent-t5');
+      assert(
+        occT5 !== null && occT5.profileTokens > 0 && occT5.recallTokens > 0
+        && occT5.stockTokens === occT5.profileTokens + occT5.recallTokens,
+        '占用账本：稳定区与召回双通道入账，stock 恒等式成立',
+      );
+      assert(occT5 !== null && occT5.lastInjectTokens > 0, '占用账本：lastInject 记录最近一轮注入增量');
+      const recallShareT5 = occT5!.recallTokens;
+      modesT5.set('agent-t5', 'off');
+      assert((contextText['memory:profile']() ?? '') === '', 'OFF 边界：稳定区组装即返回空串');
+      assert(occT5 !== null && occT5.profileTokens === 0 && occT5.stockTokens === recallShareT5, 'OFF 边界：profile 份额同边界清零，召回留存（既定事实可见）');
+      modesT5.set('agent-t5', 'auto');
+      assert((contextText['memory:profile']() ?? '').includes('记忆工具调用指南'), '切回 auto：稳定区重新组进');
+      assert(occT5 !== null && occT5.profileTokens > 0 && occT5.stockTokens === occT5.profileTokens + recallShareT5, '切回 auto：份额净额回补，恒等式保持');
+      sessionStart?.({ agent: { id: 'agent-t5' }, source: 'compact' });
+      assert(occT5 !== null && occT5.stockTokens === 0 && occT5.recallTokens === 0 && occT5.profileTokens === 0 && occT5.lastInjectTokens === 0, 'compaction 复位：session-start(compact) 全量归零');
+
       // ⑧ 召回超时（fake pre-step 缝）：慢检索在总预算内未返回 → 跳过本轮注入（决策原样返回）
       const origSearch = (storesT5 as { l1: { search: () => Promise<unknown> } }).l1.search;
       (storesT5 as { l1: { search: () => Promise<unknown> } }).l1.search = () =>

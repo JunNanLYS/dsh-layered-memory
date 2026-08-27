@@ -27,7 +27,14 @@ import type { SceneStore } from '../store/scenes.js';
 import type { SessionModeStore } from '../store/session-modes.js';
 import type { L1Hit, MemoryLogger } from '../types.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_EMBED_CAP_MS } from '../util/recall-budget.js';
-import { emptyOccupancyLedger, recordRecallInjection, type OccupancyLedger } from '../util/context-occupancy.js';
+import {
+  clearProfileShare,
+  emptyOccupancyLedger,
+  recordProfileShare,
+  recordRecallInjection,
+  resetForCompaction,
+  type OccupancyLedger,
+} from '../util/context-occupancy.js';
 import { errDetail } from '../util/filelog.js';
 import { blocksToText } from '../util/text.js';
 
@@ -173,10 +180,12 @@ export function registerRecall(
 
   // 上下文压缩/清空 → 已注入内容从模型上下文丢失，重置该会话的去重压制
   // （resume/startup 不重置：历史仍在，已注入的记忆模型还持有）。
+  // 占用账本同步全量归零（宁低勿高；v1 轮级粒度近似，事件级 shadow price 对齐留待后续）。
   ctx.on('agent/session-start', (payload) => {
     if (payload.source === 'compact' || payload.source === 'clear') {
       dedupe.reset(payload.agent.id);
-      logger.info(`[memory] 召回去重重置（agent=${payload.agent.id}，source=${payload.source}）`);
+      resetForCompaction(ledgerFor(payload.agent.id));
+      logger.info(`[memory] 召回去重与占用账本重置（agent=${payload.agent.id}，source=${payload.source}）`);
     }
   });
 
@@ -298,9 +307,17 @@ export function registerRecall(
           order: 510,
           text: () => {
             const s = live.get();
-            if (!s.enabled || !s.recall) return '';
+            const ledger = ledgerFor(agent.id);
+            if (!s.enabled || !s.recall) {
+              clearProfileShare(ledger);
+              return '';
+            }
             const mode = modes.get(agent.id);
-            if (mode === 'off') return '';
+            if (mode === 'off') {
+              // OFF 边界：本次起稳定区不再组进系统提示，份额同步清零（物理离场同边界）
+              clearProfileShare(ledger);
+              return '';
+            }
             // auto 档：两族按类别归组（画像/导航各一个标签，域内 <domain> 分块）；纯档：单族原格式
             const body =
               mode === 'auto'
@@ -309,9 +326,16 @@ export function registerRecall(
             const hasRecallHit = (recallStats.get(agent.id)?.lastHits ?? 0) > 0;
             // 指南三条件门控：工具已注册（cfg.tools）&&（稳定内容 ∥ 本轮召回命中）——
             // 空库用户与关闭工具的用户不付这份固定 token（原版 auto-recall 同款语义）
-            if (!cfg.tools) return body;
-            if (!body && !hasRecallHit) return '';
-            return body ? `${body}\n\n${MEMORY_TOOLS_GUIDE}` : MEMORY_TOOLS_GUIDE;
+            const final = !cfg.tools
+              ? body
+              : !body && !hasRecallHit
+                ? ''
+                : body
+                  ? `${body}\n\n${MEMORY_TOOLS_GUIDE}`
+                  : MEMORY_TOOLS_GUIDE;
+            // 实际组进系统提示的串长度入账（子片不加结构开销；增量式重复调用不双算）
+            recordProfileShare(ledger, final.length);
+            return final;
           },
         }),
       );
