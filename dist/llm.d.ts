@@ -96,6 +96,9 @@ export declare function layerEffortTrigger(cfg: LayerRouteCfgView, key: LayerRou
  * （bench/测试缝）= 全局解析。
  */
 export declare function resolveLayerRoutes(ctx: Context, cfg: MemoryConfig, layer?: DistillLayer): Promise<DistillRoute[]>;
+/** 层链解析的同步半边（llm-providers 视图与 resolveLayerRoutes 共用一条真值路径）：
+ *  该层配了有效层链 → 完整链；null = 该层跟随全局解析。 */
+export declare function layerChainOrNull(cfg: LayerRouteCfgView, key: LayerRouteKey): DistillRoute[] | null;
 export interface ModelEffortInfo {
     /** 模型可设置的思考档位 id（适配器声明；空 = 未声明/不可设置） */
     efforts: string[];

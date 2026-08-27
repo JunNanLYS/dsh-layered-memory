@@ -509,6 +509,16 @@ export interface EffectiveChainRoute {
     model: string;
     effort: string;
 }
+/** 按层层链视图（#34 B 分段 UI 数据源）：runtime = 设置页运行时层链（pinned 下不生效，
+ *  视图照实返回存量）；static = 部署 YAML layerRoutes；effectiveChain = 该层实际链
+ *  （层链完整替换，或跟随全局时与全局链同值）；source 三态：runtime 接管 / static
+ *  生效 / global 跟随全局解析。 */
+export interface LayerChainView {
+    runtime: DistillChainEntry[];
+    static: StaticFallbackEntry[];
+    effectiveChain: EffectiveChainRoute[];
+    source: 'runtime' | 'static' | 'global';
+}
 export interface LlmProvidersResponse {
     supported: true;
     providers: Array<{
@@ -537,6 +547,8 @@ export interface LlmProvidersResponse {
         effectiveChain: EffectiveChainRoute[];
         source: 'runtime' | 'static';
     };
+    /** 按层层链（l1/l2/l3；l1 同管抽取+去重两个调用点）。 */
+    layerChains: Record<LayerRouteKey, LayerChainView>;
 }
 /** dsh-memory/llm-models */
 export interface LlmModelsRequest {

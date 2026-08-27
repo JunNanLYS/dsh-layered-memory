@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { EFFORT_CHOICES, resolveDataDir } from './config.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { emptyRecallStats } from './hooks/recall.js';
-import { buildRouteChain, decideSendableEffort, LAYER_DEFAULT_BUDGETS, resolveModelContextWindow, resolveModelEfforts, resolveModelRoute } from './llm.js';
+import { buildRouteChain, decideSendableEffort, LAYER_DEFAULT_BUDGETS, layerChainOrNull, resolveModelContextWindow, resolveModelEfforts, resolveModelRoute } from './llm.js';
 import { projectDistillChain, validateDistillChain } from './settings.js';
 import { errDetail } from './util/filelog.js';
 import { snapshotTokenCost } from './token-cost.js';
@@ -322,8 +322,12 @@ async function handleEndpoint(endpoint, payload, deps) {
             // patch 语义只带要改的层，写入侧与存量层合并后落盘（空数组 = 该层回到跟随）
             if (patch.distillLayerChains !== undefined) {
                 const rawLC = (patch.distillLayerChains ?? {});
+                // 与存量层合并后落全三键 Record（settings 视图类型是全量；缺层 = 清空该层跟随）
+                const prev = (live.get().distillLayerChains ?? {});
                 const merged = {
-                    ...live.get().distillLayerChains,
+                    l1: prev.l1 ?? [],
+                    l2: prev.l2 ?? [],
+                    l3: prev.l3 ?? [],
                 };
                 for (const key of ['l1', 'l2', 'l3']) {
                     if (rawLC[key] === undefined)
@@ -494,20 +498,35 @@ async function handleEndpoint(endpoint, payload, deps) {
             const chainCurrent = projectDistillChain(s);
             let effectiveChain = [];
             let effective = null;
+            let cfgView = cfg;
             try {
-                const cfgView = effectiveCfg(cfg, live);
+                cfgView = effectiveCfg(cfg, live);
                 effective = await resolveModelRoute(deps.ctx, cfgView);
                 effectiveChain = buildRouteChain({ provider: effective.provider, model: effective.model, effort: cfgView.llm.primaryEffort || '' }, cfgView.llm.fallbacks, cfgView.llm.reasoningEffort);
             }
             catch {
                 effective = null; // 无法解析（无默认选择且未覆盖）时 UI 显示占位
             }
+            const pinned = Boolean(cfg.llm.provider && cfg.llm.model);
+            // 按层层链视图：与解析真值同径（layerChainOrNull 吃 effectiveCfg 之后的 cfgView，
+            // pinned 时运行时层链未注入、静态层链胜出；跟随层直接复用全局 effectiveChain）
+            const mkLayerView = (key) => {
+                const rt = s?.distillLayerChains?.[key] ?? [];
+                const lr = layerChainOrNull(cfgView, key);
+                const rtLive = !pinned && rt.length > 0 && !!rt[0].provider && !!rt[0].model;
+                return {
+                    runtime: rt,
+                    static: cfg.llm.layerRoutes?.[key] ?? [],
+                    effectiveChain: lr ?? effectiveChain,
+                    source: rtLive ? 'runtime' : lr ? 'static' : 'global',
+                };
+            };
             const resp = {
                 supported: true,
                 providers,
                 default: def,
                 // 部署静态 pin（provider+model 双字段）优先于运行时选择，UI 据此禁用选择器
-                pinned: Boolean(cfg.llm.provider && cfg.llm.model),
+                pinned,
                 current,
                 // 所选供应商是否仍在已注册路由中（用户删掉供应商后提示回退）
                 currentRegistered: current.provider === '' || providers.some((p) => p.id === current.provider),
@@ -517,6 +536,13 @@ async function handleEndpoint(endpoint, payload, deps) {
                     static: cfg.llm.fallbacks ?? [],
                     effectiveChain,
                     source: chainCurrent.length ? 'runtime' : 'static',
+                },
+                // 按层层链（#34）：source 三态与解析真值同径（layerChainOrNull）——pinned 下
+                // 运行时层链不生效（与 effectiveCfg 注入条件一致），存量照实返回供 UI 展示
+                layerChains: {
+                    l1: mkLayerView('l1'),
+                    l2: mkLayerView('l2'),
+                    l3: mkLayerView('l3'),
                 },
             };
             return resp;

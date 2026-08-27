@@ -786,6 +786,33 @@ async function main(): Promise<void> {
       }
       const sc2 = await call('dsh-memory/settings-set', { distillChain: [] }) as never as { settings: { distillChain: unknown[] } };
       assert(sc2.settings.distillChain.length === 0, 'distillChain 清空（回到跟随部署配置）');
+
+      // 按层路由链（#34）：写入门往返 + 头行双显式拒收 + llm-providers layerChains 三态
+      const slc1 = await call('dsh-memory/settings-set', { distillLayerChains: { l1: [
+        { provider: 'custom-oai', model: 'custom-model', reasoningEffort: 'low' },
+        { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: '' },
+      ] } }) as never as { settings: { distillLayerChains: Record<string, unknown[]> } };
+      assert(slc1.settings.distillLayerChains.l1.length === 2, 'distillLayerChains.l1 写入往返（未带层保留存量）');
+      let badLayerHead = false;
+      try { await call('dsh-memory/settings-set', { distillLayerChains: { l2: [{ provider: '', model: '', reasoningEffort: '' }] } }); } catch { badLayerHead = true; }
+      assert(badLayerHead, '层链头行双空被拒（层覆盖不支持跟随默认模型）');
+      let badLayerEffort = false;
+      try { await call('dsh-memory/settings-set', { distillLayerChains: { l2: [{ provider: 'p', model: 'm', reasoningEffort: 'banana' }] } }); } catch { badLayerEffort = true; }
+      assert(badLayerEffort, '层链非法档位被拒');
+      const lp3 = await call('dsh-memory/llm-providers') as never as {
+        layerChains: Record<string, { runtime: unknown[]; static: unknown[]; effectiveChain: Array<{ provider: string; model: string; effort: string }>; source: string }>;
+      };
+      assert(
+        lp3.layerChains.l1.source === 'runtime' && lp3.layerChains.l1.runtime.length === 2 &&
+          lp3.layerChains.l1.effectiveChain[0].model === 'custom-model' && lp3.layerChains.l1.effectiveChain[1].provider === 'deepseek-official',
+        'layerChains.l1：运行时层链接管、effectiveChain 为层链（不落全局链）',
+      );
+      assert(lp3.layerChains.l2.source === 'global', 'layerChains.l2：未配置层跟随全局');
+      assert(lp3.layerChains.l3.source === 'global', 'layerChains.l3：未配置层跟随全局');
+      const slc2 = await call('dsh-memory/settings-set', { distillLayerChains: { l1: [] } }) as never as { settings: { distillLayerChains: Record<string, unknown[]> } };
+      assert(slc2.settings.distillLayerChains.l1.length === 0, 'distillLayerChains.l1 清空（该层回到跟随）');
+      const lp4 = await call('dsh-memory/llm-providers') as never as { layerChains: Record<string, { source: string }> };
+      assert(lp4.layerChains.l1.source === 'global', '清空后 layerChains.l1 回到跟随全局');
       const lm2 = await call('dsh-memory/llm-models', { provider: 'custom-oai' }) as never as { models: Array<{ id: string; efforts: string[] }> };
       assert(lm2.models.some((m) => m.id === 'custom-model' && m.efforts.join('/') === 'low/high'), 'llm-models 附带模型档位能力表（行内档位下拉数据源）');
 

@@ -6,9 +6,13 @@
  * settings-set 的 distillChain（空数组 = 跟随部署配置与默认模型）。部署静态 pin
  * （pinned）时整区块只读。旧「蒸馏思考」全局切换器与「蒸馏模型」单路由选择器
  * 已由本编辑器取代：档位逐路由设置，缺省「跟随部署配置」（部署全局静态档）。
+ *
+ * scope（#34 按层路由）：'global'（缺省，行为原样）| 'l1' | 'l2' | 'l3'——层范围
+ * 读写 settings 的 distillLayerChains.<层>；头行必须显式供应商+模型（不支持跟随
+ * 默认模型）；跟随态展示静态 YAML 层链（只读）或全局链预览，「自定义链」开草稿。
  */
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { DistillChainEntry, EffortChoice, LlmProvidersResponse, ModelWithEfforts } from '../../../src/contract.js';
+import type { DistillChainEntry, EffortChoice, LayerRouteKey, LlmProvidersResponse, ModelWithEfforts } from '../../../src/contract.js';
 import type { RpcFn } from '../rpc.js';
 import { S } from '../styles.js';
 import { NSel, type NSelOption } from '../ui/NSel.js';
@@ -50,9 +54,11 @@ function copyRow(e: { provider?: string; model?: string; reasoningEffort?: strin
   return { provider: e.provider || '', model: e.model || '', reasoningEffort: (e.reasoningEffort || '') as EffortChoice };
 }
 
-export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean }) {
+export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean; scope?: 'global' | LayerRouteKey }) {
   const rpc = props.rpc;
   const disabled = !!props.disabled;
+  const scope = props.scope ?? 'global';
+  const isLayer = scope !== 'global';
 
   const [info, setInfo] = useState<LlmProvidersResponse | null>(null);
   // 编辑草稿（null = 跟随态：只读展示 + 「编辑为运行时链」入口）
@@ -96,12 +102,15 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean }) {
     });
   }, [rpc, info]);
 
-  // 运行时链已存在 → 草稿初始化一次（此后轮询不覆盖本地编辑；清空跟随后退回）
+  // 运行时链已存在 → 草稿初始化一次（此后轮询不覆盖本地编辑；清空跟随后退回）。
+  // 层范围读 layerChains.<层>.runtime（写入门已保证头行显式）。
+  const layerView = isLayer && info && info.layerChains ? info.layerChains[scope] : null;
+  const savedRows = isLayer ? (layerView?.runtime ?? []) : (info && info.chain ? info.chain.current : []);
   useEffect(() => {
-    if (rows === null && info && info.chain && info.chain.current.length) {
-      setRows(info.chain.current.map(copyRow));
+    if (rows === null && info && savedRows.length) {
+      setRows(savedRows.map(copyRow));
     }
-  }, [info, rows]);
+  }, [info, rows, savedRows]);
 
   function updateRow(i: number, patch: Partial<DistillChainEntry>) {
     setRows(rows!.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -133,9 +142,14 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean }) {
   }
 
   function removeRow(i: number) {
-    // 主路由行的删除语义 = 重置为跟随默认（回退行保留）
-    if (i === 0) setRows([EMPTY_ROW].concat(rows!.slice(1)));
-    else setRows(rows!.slice(0, i).concat(rows!.slice(i + 1)));
+    // 主路由行的删除语义：全局 = 重置为跟随默认（回退行保留）；层 = 链头必须
+    // 显式（无跟随默认形态），多行时整行删除、链头由第 2 行顶替，单行无操作
+    if (i === 0) {
+      if (isLayer) setRows(rows!.length > 1 ? rows!.slice(1) : rows!);
+      else setRows([EMPTY_ROW].concat(rows!.slice(1)));
+    } else {
+      setRows(rows!.slice(0, i).concat(rows!.slice(i + 1)));
+    }
     setRowErrs({});
   }
 
@@ -147,8 +161,19 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean }) {
   }
 
   /** 跟随态入口：把部署静态回退链拷为可编辑草稿（主路由保持跟随默认），
-   *  保存第一刻起运行时链接管静态链。 */
+   *  保存第一刻起运行时链接管静态链。层范围：有静态层链则拷贝（头行本就显式），
+   *  否则给一行空草稿（首供应商，模型待选——保存时校验头行显式）。 */
   function forkStatic() {
+    if (isLayer) {
+      const st = (layerView && layerView.static) || [];
+      if (st.length) setRows(st.slice(0, 8).map(copyRow));
+      else {
+        const first = (info!.providers && info!.providers[0]) || { id: '' };
+        setRows([{ provider: first.id, model: '', reasoningEffort: '' }]);
+      }
+      setRowErrs({});
+      return;
+    }
     const st = (info!.chain && info!.chain.static) || [];
     // 静态 fallbacks 无条数上限，fork 截到运行时上限内（1 主路由 + 7 回退 = 8）
     setRows([EMPTY_ROW].concat(st.slice(0, 7).map(copyRow)));
@@ -158,7 +183,9 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean }) {
   function save() {
     const errs: Record<number, string> = {};
     const seen: Record<string, number> = {};
-    if ((rows![0]!.provider && !rows![0]!.model) || (!rows![0]!.provider && rows![0]!.model)) {
+    if (isLayer && (!rows![0]!.provider || !rows![0]!.model)) {
+      errs[0] = '主路由行必须显式选择供应商与模型（层链不支持跟随默认模型）';
+    } else if ((rows![0]!.provider && !rows![0]!.model) || (!rows![0]!.provider && rows![0]!.model)) {
       errs[0] = '主路由行供应商与模型须成对（双空 = 跟随默认模型）';
     }
     if (rows![0]!.provider && rows![0]!.model) seen[rows![0]!.provider + '::' + rows![0]!.model] = 0;
@@ -180,13 +207,27 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean }) {
       return;
     }
     if (Object.keys(errs).length) return;
-    // 乐观更新（写入在途时轮询响应被丢弃），成功后拉真值收敛
+    // 乐观更新（写入在途时轮询响应被丢弃），成功后拉真值收敛；
+    // 层范围写 distillLayerChains.<层>（host 侧与存量层合并）
     pendingWrites.current += 1;
-    setInfo({
-      ...info!,
-      chain: { ...info!.chain, current: rows!.map(copyRow), source: 'runtime' },
-    });
-    rpc('dsh-memory/settings-set', { distillChain: rows! })
+    if (isLayer && info && info.layerChains) {
+      setInfo({
+        ...info!,
+        layerChains: {
+          ...info.layerChains,
+          [scope]: { ...info.layerChains[scope], runtime: rows!.map(copyRow), source: 'runtime' },
+        },
+      });
+    } else {
+      setInfo({
+        ...info!,
+        chain: { ...info!.chain, current: rows!.map(copyRow), source: 'runtime' },
+      });
+    }
+    const payload = isLayer
+      ? ({ distillLayerChains: { [scope]: rows! } } as Record<string, unknown>)
+      : ({ distillChain: rows! } as Record<string, unknown>);
+    rpc('dsh-memory/settings-set', payload as never)
       .then((r) => {
         pendingWrites.current -= 1;
         setErr(!r || r.ok ? null : '路由链保存失败：' + ((r && r.error && r.error.message) || '未知错误'));
@@ -201,6 +242,23 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean }) {
 
   function clearToFollow() {
     pendingWrites.current += 1;
+    if (isLayer) {
+      // 层链清空 = 该层回到跟随（静态层链 → 全局解析逐级兜底）；无旧键要连带清
+      rpc('dsh-memory/settings-set', { distillLayerChains: { [scope]: [] } } as never)
+        .then((r) => {
+          pendingWrites.current -= 1;
+          setRows(null);
+          setRowErrs({});
+          setErr(!r || r.ok ? null : '清空失败，请重试');
+          refreshInfo();
+        })
+        .catch((e: unknown) => {
+          pendingWrites.current -= 1;
+          setErr('清空失败：' + String((e && (e as Error).message) || e));
+          refreshInfo();
+        });
+      return;
+    }
     // 清空链必须连带清旧运行时键——链空时旧键覆盖（distillProvider/distillModel）
     // 与旧档位接管（reasoningEffort）会立即复活，"跟随部署配置"就成了假承诺
     // （新 UI 已无旧键编辑入口，不清即永久滞留）
@@ -242,17 +300,49 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean }) {
 
   // pinned：整区块只读（部署锁定路由；静态链照常生效但不可在此编辑）
   if (info.pinned) {
-    const effPin = (info.chain && info.chain.effectiveChain) || [];
+    const effPin = isLayer ? (layerView?.effectiveChain ?? []) : ((info.chain && info.chain.effectiveChain) || []);
     return (
       <div style={STY.wrap}>
         {effPin.map(roRow)}
-        <div style={STY.note}>部署已锁定路由（pin 优先于运行时链）；调整请修改 profile cordis.patch.yml 中 llm 的配置。</div>
+        <div style={STY.note}>
+          {isLayer
+            ? '部署已锁定路由（pin）：本层运行时编辑只读；静态层链（若有）照常生效。调整请修改 profile cordis.patch.yml 中 llm 的配置。'
+            : '部署已锁定路由（pin 优先于运行时链）；调整请修改 profile cordis.patch.yml 中 llm 的配置。'}
+        </div>
       </div>
     );
   }
 
-  // 跟随态：未配置运行时链 → 只读展示实际链 +「编辑为运行时链」
+  // 跟随态：未配置运行时链 → 只读展示实际链 +「编辑为运行时链」/「自定义链」
   if (rows === null) {
+    if (isLayer) {
+      const lv = layerView;
+      const src = lv?.source ?? 'global';
+      const roList =
+        src === 'static' && lv
+          ? lv.static.map((e, i) => roRow({ provider: e.provider, model: e.model, effort: e.reasoningEffort || '' }, i))
+          : (lv?.effectiveChain ?? []).map(roRow);
+      return (
+        <div style={STY.wrap}>
+          {src === 'static' ? (
+            <>
+              {roList}
+              <div style={STY.note}>部署 YAML 层链生效（UI 只读）；「自定义链」可用运行时层链覆盖。</div>
+            </>
+          ) : (
+            <>
+              {roList.length === 0 ? <div style={S.switchDesc}>本层跟随全局链，暂无可用路由。</div> : roList}
+              <div style={STY.note}>本层跟随全局默认链（上方全局范围的链）；「自定义链」可为本层单独配路由。</div>
+            </>
+          )}
+          <div style={{ marginTop: 6 }}>
+            <NButton onClick={forkStatic} disabled={disabled}>
+              自定义链
+            </NButton>
+          </div>
+        </div>
+      );
+    }
     const effFollow = (info.chain && info.chain.effectiveChain) || [];
     return (
       <div style={STY.wrap}>
@@ -275,7 +365,7 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean }) {
 
   // 编辑态：统一列表（每行供应商 / 模型 / 档位 + 序调整 + 删除）
   const capped = rows.length >= 8;
-  const dirty = JSON.stringify(rows) !== JSON.stringify((info.chain && info.chain.current) || []);
+  const dirty = JSON.stringify(rows) !== JSON.stringify(savedRows);
 
   const rowEls = rows.map((row, i) => {
     const isPrimary = i === 0;
@@ -294,7 +384,7 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean }) {
     let providerOptions: NSelOption[] = providers.map((p) => {
       return { id: p.id, label: p.name !== p.id ? p.name + '（' + p.id + '）' : p.id };
     });
-    if (isPrimary) {
+    if (isPrimary && !isLayer) {
       providerOptions = [
         {
           id: '',
@@ -423,12 +513,14 @@ export function RouteChainEditor(props: { rpc: RpcFn; disabled?: boolean }) {
     );
   });
 
-  const effChain = (info.chain && info.chain.effectiveChain) || [];
+  const effChain = isLayer ? (layerView?.effectiveChain ?? []) : ((info.chain && info.chain.effectiveChain) || []);
 
   return (
     <div style={STY.wrap}>
       <div style={{ ...S.switchDesc, marginBottom: 8 }}>
-        路由按序尝试：第 1 行是主路由，失败（报错 / 掐断 / 网络异常 / 空输出）后按序降级；每行档位独立，缺省跟随部署配置。
+        {isLayer
+          ? '本层链按序尝试：第 1 行是主路由，失败后按序降级到本层回退（不落全局链）；每行档位独立，缺省跟随部署配置。'
+          : '路由按序尝试：第 1 行是主路由，失败（报错 / 掐断 / 网络异常 / 空输出）后按序降级；每行档位独立，缺省跟随部署配置。'}
       </div>
       {rowEls}
       <NButton style={STY.add} disabled={disabled || capped} onClick={addRow}>

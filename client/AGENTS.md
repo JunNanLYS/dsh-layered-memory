@@ -26,7 +26,8 @@
 - `pill/` — 输入栏会话档位 pill：`modes.ts`（档位常量）+ `ModeSlider.tsx`（macOS 风格滑动
   选择器）+ `SessionInfoArea.tsx`（悬浮卡）+ `MemoryModePill.tsx`（组装）。
 - `tabs/` — 设置页各 Tab：Overview / Records / Scenes / Persona / Log / Cost /
-  RebuildPanel / EmbeddingSection / RouteChainEditor / BudgetInputs。
+  RebuildPanel / EmbeddingSection / RouteChainEditor / BudgetInputs /
+  DistillSettings（#34 B 形态分段壳：路由链与预算按范围组织的「蒸馏参数」外壳）。
 - `panel.tsx` — TABS 表 + MemoryPanel（设置页根组件）。
 
 ## 铁律

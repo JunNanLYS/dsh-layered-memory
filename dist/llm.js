@@ -113,16 +113,22 @@ export function layerEffortTrigger(cfg, key) {
  * （bench/测试缝）= 全局解析。
  */
 export async function resolveLayerRoutes(ctx, cfg, layer) {
-    if (layer) {
-        const chain = layerChainOf(cfg, layerKeyFor(layer));
-        if (chain) {
-            return buildRouteChain({ provider: chain[0].provider, model: chain[0].model, effort: chain[0].reasoningEffort || '' }, chain.slice(1), cfg.llm.reasoningEffort);
-        }
-    }
+    const key = layer ? layerKeyFor(layer) : undefined;
+    const lr = key ? layerChainOrNull(cfg, key) : null;
+    if (lr)
+        return lr;
     const primary = await resolveModelRoute(ctx, cfg);
     return buildRouteChain(
     // 主路由显式档位来自运行时统一链（primaryEffort，'' = 跟随全局静态）
     { provider: primary.provider, model: primary.model, effort: cfg.llm.primaryEffort || '' }, cfg.llm.fallbacks, cfg.llm.reasoningEffort);
+}
+/** 层链解析的同步半边（llm-providers 视图与 resolveLayerRoutes 共用一条真值路径）：
+ *  该层配了有效层链 → 完整链；null = 该层跟随全局解析。 */
+export function layerChainOrNull(cfg, key) {
+    const chain = layerChainOf(cfg, key);
+    if (!chain)
+        return null;
+    return buildRouteChain({ provider: chain[0].provider, model: chain[0].model, effort: chain[0].reasoningEffort || '' }, chain.slice(1), cfg.llm.reasoningEffort);
 }
 /** 单路由持续失败的一次性告警去重表（effortWarned 同款；拓扑变化随能力缓存一起失效）。 */
 const routeDeadWarned = new Set();
