@@ -22,8 +22,8 @@
   ×4 放大触发跟随层档位（层链头候选 > 全局候选）；记账零改动（token_cost 行级
   已按 层+实际服务路由 归因）。
 
-  ![蒸馏参数分段面板 · 全局默认](assets/changelog/0.8.8/03-layer-segmented-panel.png)
-  ![L1 层面板 · 跟随全局只读预览与分层预算](assets/changelog/0.8.8/04-layer-l1-panel.png)
+  ![蒸馏参数分段面板 · 全局默认](assets/changelog/0.8.9/03-layer-segmented-panel.png)
+  ![L1 层面板 · 跟随全局只读预览与分层预算](assets/changelog/0.8.9/04-layer-l1-panel.png)
 
 - **上下文占用指示器（官方环外圈记忆光晕弧 + 明细面板分项）**：插件注入的记忆
   内容此前混在官方上下文环的大类里不可见，现在——输入栏官方环外侧多一条品牌蓝
@@ -35,8 +35,12 @@
   OFF 后既定事实继续可见、随压缩自然衰减。纯附加实现：移除全部新增节点后界面
   逐比特还原原生形态。
 
-  ![明细面板记忆占用分项](assets/changelog/0.8.8/01-panel.png)
-  ![官方环外圈记忆光晕弧](assets/changelog/0.8.8/02-halo.png)
+  ![明细面板记忆占用分项](assets/changelog/0.8.9/01-panel.png)
+  ![官方环外圈记忆光晕弧](assets/changelog/0.8.9/02-halo.png)
+
+## [0.8.8] — 2026-08-26
+
+### 新增
 
 - **RPC 契约单一事实源 `src/contract.ts`**：23 个 `dsh-memory/*` 端点的请求/响应
   类型集中为 types-only 模块（零运行时代码），host 侧（stats.ts 的 case 表）与
