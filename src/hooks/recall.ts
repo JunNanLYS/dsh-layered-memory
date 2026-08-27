@@ -27,6 +27,7 @@ import type { SceneStore } from '../store/scenes.js';
 import type { SessionModeStore } from '../store/session-modes.js';
 import type { L1Hit, MemoryLogger } from '../types.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_EMBED_CAP_MS } from '../util/recall-budget.js';
+import { emptyOccupancyLedger, recordRecallInjection, type OccupancyLedger } from '../util/context-occupancy.js';
 import { errDetail } from '../util/filelog.js';
 import { blocksToText } from '../util/text.js';
 
@@ -99,6 +100,8 @@ export interface RecallHooks {
   invalidateProfile(): void;
   /** 会话召回统计只读视图（未发生过检索的会话返回 undefined）。 */
   stats(sessionId: string): RecallSessionStats | undefined;
+  /** 记忆占用账本只读出口（未发生过注入的会话返回 null）。 */
+  occupancy(sessionId: string): OccupancyLedger | null;
 }
 
 export function registerRecall(
@@ -121,6 +124,16 @@ export function registerRecall(
       recallStats.set(id, s);
     }
     return s;
+  };
+  /** 每 agent 记忆占用账本（权威账本的唯一宿主实例；占用指示器与悬浮卡同源消费）。 */
+  const occupancyByAgent = new Map<string, OccupancyLedger>();
+  const ledgerFor = (id: string): OccupancyLedger => {
+    let led = occupancyByAgent.get(id);
+    if (!led) {
+      led = emptyOccupancyLedger();
+      occupancyByAgent.set(id, led);
+    }
+    return led;
   };
   // 画像/场景导航按族缓存（分族隔离：注入时按会话档位选族）
   const profileCache: Record<'chat' | 'work', ProfileParts> = {
@@ -155,6 +168,7 @@ export function registerRecall(
   // agent 销毁时清掉召回统计槽（去重记录不随 agent 清——持久化语义：会话恢复后继续压制）
   ctx.on('agent/disposed', (payload) => {
     recallStats.delete(payload.agent.id);
+    occupancyByAgent.delete(payload.agent.id);
   });
 
   // 上下文压缩/清空 → 已注入内容从模型上下文丢失，重置该会话的去重压制
@@ -254,6 +268,8 @@ export function registerRecall(
             // "上下文注入"（专用"跨会话召回"标题仅留给 session-reference 来源）
             source: { kind: 'plugin', plugin: 'memory', form: 'recall' },
           });
+          // 入账在成功构造注入消息之后、返回 enter 之前——任何前置抛错路径账目零扰动
+          recordRecallInjection(ledgerFor(payload.agent.id), text.length);
           // 注入消息排在用户新消息之前（原版 prepend 语义：先线索后问题）
           return { kind: 'enter', messages: [injection, ...decision.messages] };
         } catch (err) {
@@ -321,7 +337,12 @@ export function registerRecall(
     }
   });
 
-  return { invalidateProfile, stats: (id) => recallStats.get(id) };
+  return {
+    invalidateProfile,
+    stats: (id) => recallStats.get(id),
+    /** 占用账本只读出口（未发生过注入的会话为 null，调用方不得经此写回）。 */
+    occupancy: (id): OccupancyLedger | null => occupancyByAgent.get(id) ?? null,
+  };
 }
 
 /** 单族画像/导航片段（注入侧按档位组装，纯档与 auto 档格式不同）。 */

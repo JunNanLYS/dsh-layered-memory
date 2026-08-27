@@ -98,6 +98,13 @@ export interface RecallSessionStats {
   updatedAt: number;
 }
 
+/**
+ * 单会话记忆上下文占用（session-stats.memoryOccupancy；悬浮卡与输入栏占用指示器共用）。
+ * 形状与算术的唯一来源是 util/context-occupancy 的 OccupancyLedger——官方 token-meter
+ * 同式启发式，禁止任何一侧另写换算。null = 本会话从未注入过。
+ */
+export type MemoryOccupancy = import('./util/context-occupancy.js').OccupancyLedger;
+
 /** 重建阶段。 */
 export type RebuildPhase = 'idle' | 'preparing' | 'distilling' | 'finalizing' | 'done' | 'cancelled' | 'failed';
 
@@ -372,6 +379,8 @@ export type SessionStatsResponse =
       mode: MemoryMode;
       defaultMode: MemoryMode;
       recall: { enabled: boolean } & RecallSessionStats;
+      /** 记忆上下文占用账本（未注入过的会话为 null）。 */
+      memoryOccupancy: MemoryOccupancy | null;
       distill: SessionDistillView;
       l0Count: number;
       retrieval: 'hybrid' | 'vector' | 'keyword' | 'none';

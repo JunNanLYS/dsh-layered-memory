@@ -14,6 +14,18 @@ import type { MemoryConfig } from './config.js';
 import { memorySchema } from './config.js';
 import { EmbedHelper, NoopEmbeddingService, type EmbeddingService } from './store/embedding.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_TRUNCATION_SUFFIX, truncateRecallLine } from './util/recall-budget.js';
+import {
+  CONTEXT_METER_CIRCUMFERENCE,
+  clearProfileShare,
+  emptyOccupancyLedger,
+  estimateInjectedMessageTokens,
+  estimateStableSectionTokens,
+  haloDashArray,
+  isContextMeterAnchor,
+  recordProfileShare,
+  recordRecallInjection,
+  resetForCompaction,
+} from './util/context-occupancy.js';
 import { Bm25Index } from './store/bm25.js';
 import { ModelDownloadQueue, maskProxyUrl, resolveProxyUrl } from './store/download-queue.js';
 import {
@@ -546,7 +558,10 @@ async function main(): Promise<void> {
       // session-stats 数据源 stub：召回统计给已知值，runnerView 按 (sess-x, work) 给攒批/挂起视图
       const recallStatsStub = new Map<string, RecallSessionStats>();
       recallStatsStub.set('sess-x', { injectedTurns: 4, hitTurns: 3, totalHits: 9, timeouts: 1, suppressedRecalls: 2, lastHits: 2, lastDurationMs: 35, updatedAt: t });
+      // 记忆占用账本 stub：sess-y 无账本 ⇒ null（有/无两个 shape 分支各验一半）
+      const occStub = { stockTokens: 133, recallTokens: 108, profileTokens: 25, lastInjectTokens: 108, updatedAt: t };
       const sessionInfoStub = {
+        memoryOccupancy: (sid: string) => (sid === 'sess-x' ? occStub : null),
         recallStats: (sid: string) => recallStatsStub.get(sid),
         runnerView: (sid: string, mode: string) =>
           sid === 'sess-x' && mode === 'work'
@@ -654,6 +669,7 @@ async function main(): Promise<void> {
         mode: string;
         defaultMode: string;
         recall: { enabled: boolean; injectedTurns: number; hitTurns: number; totalHits: number; timeouts: number; lastHits: number };
+        memoryOccupancy: { stockTokens: number; recallTokens: number; profileTokens: number; lastInjectTokens: number; updatedAt: number } | null;
         distill: { pendingSlice: number; parkedSlices: number; threshold: number; producedRecords: number; lastDistillAt: string };
         l0Count: number;
         retrieval: string;
@@ -664,13 +680,22 @@ async function main(): Promise<void> {
       assert(sst.distill.pendingSlice === 3 && sst.distill.threshold === 8 && sst.distill.parkedSlices === 1 && sst.distill.producedRecords === 5, 'session-stats：攒批进度与挂起切片视图');
       assert(sst.distill.lastDistillAt === new Date(t).toISOString(), 'session-stats：lastDistillAt 统一 ISO 口径');
       assert(sst.l0Count === 2, 'session-stats：L0 会话计数（idx_l0_session_id 索引 COUNT）');
+      assert(
+        sst.memoryOccupancy !== null
+        && sst.memoryOccupancy.stockTokens === 133
+        && sst.memoryOccupancy.recallTokens === 108
+        && sst.memoryOccupancy.lastInjectTokens === 108,
+        'session-stats：记忆占用账本直通（host 权威账只此一份，client 只消费）',
+      );
       assert(sst.retrieval === 'keyword', 'session-stats：向量不可用降级标 keyword');
       const sstOff = await call('dsh-memory/session-stats', { sessionId: 'sess-y' }) as never as {
         recall: { enabled: boolean; injectedTurns: number };
         distill: { threshold: number | null };
+        memoryOccupancy: unknown;
       };
       assert(sstOff.recall.enabled === false && sstOff.recall.injectedTurns === 0, 'session-stats：off 档召回停用、无统计时零值（emptyRecallStats 兜底）');
       assert(sstOff.distill.threshold === null, 'session-stats：off 档无攒批阈值');
+      assert(sstOff.memoryOccupancy === null, 'session-stats：从未注入的会话占用为 null（非零对象）');
       // 数据源缺失（旧装配）走 supported=false：信息区整体隐藏
       const sst2HandlerPayload: unknown = await handler!('dsh-memory/session-stats', { sessionId: '' });
       assert((sst2HandlerPayload as { ok: boolean }).ok === false, 'session-stats：空 sessionId 拒绝');
@@ -3514,6 +3539,44 @@ async function main(): Promise<void> {
     } finally {
       await fs.rm(tmpD31, { recursive: true, force: true }).catch(() => {});
     }
+  }
+
+  // ── 32. 上下文占用账本（memory-occupancy）：官方同式换算 / 三边界迁移 / 弧几何 / 结构签名 ──
+  console.log('== 32. 上下文占用账本 ==');
+  {
+    // a. 换算公式：与官方 token-meter 同式（text 块 +4、消息再 +4 role；UTF-16 制式）
+    assert(estimateInjectedMessageTokens(400) === Math.ceil(400 / 4) + 8, '召回消息换算：ceil(chars/4)+8');
+    assert(estimateStableSectionTokens(100) === 25 && estimateStableSectionTokens(101) === 26, '稳定区子片：只按密度进位，不加结构开销');
+    const sur = '𝕏'.repeat(5);
+    assert(sur.length === 10 && estimateInjectedMessageTokens(sur.length) === Math.ceil(10 / 4) + 8, '字符数走 .length（UTF-16 单元），非码点数');
+
+    // b. 账本迁移：召回入账 → 稳定区增量记账（不双算）→ OFF 清 profile → compaction 全归零
+    const led = emptyOccupancyLedger(1_000);
+    recordRecallInjection(led, 400, 2_000);
+    assert(led.stockTokens === 108 && led.recallTokens === 108 && led.lastInjectTokens === 108, `召回入账（stock=${led.stockTokens}）`);
+    const stockAfterRecall = led.stockTokens;
+    recordProfileShare(led, 100, 3_000);
+    assert(led.profileTokens === 25 && led.stockTokens === stockAfterRecall + 25, '稳定区首次入账');
+    recordProfileShare(led, 200, 4_000);
+    assert(led.profileTokens === 50 && led.stockTokens === stockAfterRecall + 50, '稳定区增量：净额回补不双算');
+    clearProfileShare(led, 5_000);
+    assert(led.profileTokens === 0 && led.stockTokens === stockAfterRecall, 'OFF 边界：profile 即时清零，召回留存（既定事实可见）');
+    resetForCompaction(led, 6_000);
+    assert(led.stockTokens === 0 && led.recallTokens === 0 && led.lastInjectTokens === 0 && led.updatedAt === 6_000, 'compaction 复位：全量清零（宁低勿高近似）');
+
+    // c. 弧几何：12% 占比 dasharray 与真机反推的官方 fill 数值逐位一致
+    assert(haloDashArray(0.12) === `${0.12 * CONTEXT_METER_CIRCUMFERENCE} ${CONTEXT_METER_CIRCUMFERENCE}`, 'dasharray 形状沿用官方（len + 全周长 gap）');
+    assert(Math.abs(parseFloat(haloDashArray(0.12)) - 4.146902302738527) < 5e-13, '12% 弧长 ≈ 官方实测 4.146902302738527');
+    assert(haloDashArray(-1).startsWith('0 ') && haloDashArray(7).endsWith(` ${CONTEXT_METER_CIRCUMFERENCE}`), '越界钳制到 [0,1]');
+    assert(Number.isNaN(parseFloat(haloDashArray(Number.NaN))) === false && parseFloat(haloDashArray(Number.NaN)) === 0, 'NaN 视作零占比');
+
+    // d. 官方环结构签名：locale 无关锚定的正/反例
+    const good = { ariaHasPopup: 'dialog', viewBox: '0 0 14 14', circleRadii: [5.5, 5.5] };
+    assert(isContextMeterAnchor(good), '签名命中：dialog + viewBox + 双 r=5.5 圆');
+    assert(isContextMeterAnchor({ ...good, circleRadii: [5.5 + 1e-9, 5.5] }), '半径容差吞浮点噪声');
+    assert(!isContextMeterAnchor({ ...good, viewBox: '0 0 20 20' }), 'viewBox 不符即否决');
+    assert(!isContextMeterAnchor({ ...good, circleRadii: [5.5] }), '单圆不符（官方恒两圆）');
+    assert(!isContextMeterAnchor({ viewBox: '0 0 14 14', circleRadii: [5.5, 5.5] }), '缺 hasPopup 否决（防误锚他处 SVG）');
   }
 
   console.log(failures === 0 ? '\n全部通过 ✅' : `\n${failures} 个失败 ❌`);

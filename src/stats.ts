@@ -53,6 +53,8 @@ export interface MemoryStatusSource {
 export interface SessionInfoSource {
   /** 召回统计（recall.ts 注册表；未发生检索的会话返回 undefined）。 */
   recallStats(sessionId: string): RecallSessionStats | undefined;
+  /** 记忆上下文占用账本（context-occupancy 唯一权威实例；未注入过的会话返回 null）。 */
+  memoryOccupancy(sessionId: string): MemoryOccupancy | null;
   /** 蒸馏管线会话视图（runner：攒批进度/挂起切片/会话产出）。 */
   runnerView(
     sessionId: string,
@@ -72,6 +74,7 @@ import type {
   ListRecordsResponse,
   LlmModelsResponse,
   LlmProvidersResponse,
+  MemoryOccupancy,
   ModelWithEfforts,
   MemoryStats,
   RebuildStatusResponse,
@@ -330,6 +333,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         mode,
         defaultMode: modes?.default ?? cfg.family,
         recall: { enabled: recallOn, ...(sessionInfo.recallStats(sessionId) ?? emptyRecallStats()) },
+        memoryOccupancy: sessionInfo.memoryOccupancy(sessionId),
         distill: distillView,
         l0Count,
         retrieval: caps.vectorSearch ? (caps.ftsSearch ? 'hybrid' : 'vector') : caps.ftsSearch ? 'keyword' : 'none',
