@@ -23,6 +23,7 @@ import type { LiveSettingsHandle } from '../settings.js';
 import type { L1Store } from '../store/l1.js';
 import type { PersonaStore } from '../store/persona.js';
 import { RecallDedupeStore } from '../store/recall-dedupe.js';
+import { OccupancyStore } from '../store/occupancy.js';
 import type { SceneStore } from '../store/scenes.js';
 import type { SessionModeStore } from '../store/session-modes.js';
 import type { L1Hit, MemoryLogger } from '../types.js';
@@ -122,6 +123,8 @@ export function registerRecall(
 ): RecallHooks {
   /** 召回去重存储（同会话已注入的记忆不再重复注入；写穿持久化，重启不丢）。 */
   const dedupe = new RecallDedupeStore(dataDir, logger);
+  /** 记忆占用流水（账本迁移写穿；重启后历史会话账目由此复生——票07）。 */
+  const occupancyStore = new OccupancyStore(dataDir, logger);
   /** 每 agent 召回统计（工具指南门控读 lastHits；悬浮卡信息区读全量计数）。 */
   const recallStats = new Map<string, RecallSessionStats>();
   const statFor = (id: string): RecallSessionStats => {
@@ -137,7 +140,8 @@ export function registerRecall(
   const ledgerFor = (id: string): OccupancyLedger => {
     let led = occupancyByAgent.get(id);
     if (!led) {
-      led = emptyOccupancyLedger();
+      // 进程重启/agent 重建后回看：从流水复生（新迁移在持久值上继续累加——票07）
+      led = occupancyStore.load(id) ?? emptyOccupancyLedger();
       occupancyByAgent.set(id, led);
     }
     return led;
@@ -184,7 +188,9 @@ export function registerRecall(
   ctx.on('agent/session-start', (payload) => {
     if (payload.source === 'compact' || payload.source === 'clear') {
       dedupe.reset(payload.agent.id);
-      resetForCompaction(ledgerFor(payload.agent.id));
+      const led = ledgerFor(payload.agent.id);
+      resetForCompaction(led);
+      occupancyStore.save(payload.agent.id, led); // stock 归零 ⇒ 流水条目删除
       logger.info(`[memory] 召回去重与占用账本重置（agent=${payload.agent.id}，source=${payload.source}）`);
     }
   });
@@ -278,7 +284,9 @@ export function registerRecall(
             source: { kind: 'plugin', plugin: 'memory', form: 'recall' },
           });
           // 入账在成功构造注入消息之后、返回 enter 之前——任何前置抛错路径账目零扰动
-          recordRecallInjection(ledgerFor(payload.agent.id), text.length);
+          const led = ledgerFor(payload.agent.id);
+          recordRecallInjection(led, text.length);
+          occupancyStore.save(payload.agent.id, led);
           // 注入消息排在用户新消息之前（原版 prepend 语义：先线索后问题）
           return { kind: 'enter', messages: [injection, ...decision.messages] };
         } catch (err) {
@@ -310,12 +318,14 @@ export function registerRecall(
             const ledger = ledgerFor(agent.id);
             if (!s.enabled || !s.recall) {
               clearProfileShare(ledger);
+              occupancyStore.save(agent.id, ledger);
               return '';
             }
             const mode = modes.get(agent.id);
             if (mode === 'off') {
               // OFF 边界：本次起稳定区不再组进系统提示，份额同步清零（物理离场同边界）
               clearProfileShare(ledger);
+              occupancyStore.save(agent.id, ledger);
               return '';
             }
             // auto 档：两族按类别归组（画像/导航各一个标签，域内 <domain> 分块）；纯档：单族原格式
@@ -335,6 +345,7 @@ export function registerRecall(
                   : MEMORY_TOOLS_GUIDE;
             // 实际组进系统提示的串长度入账（子片不加结构开销；增量式重复调用不双算）
             recordProfileShare(ledger, final.length);
+            occupancyStore.save(agent.id, ledger);
             return final;
           },
         }),
@@ -364,8 +375,12 @@ export function registerRecall(
   return {
     invalidateProfile,
     stats: (id) => recallStats.get(id),
-    /** 占用账本只读出口（未发生过注入的会话为 null，调用方不得经此写回）。 */
-    occupancy: (id): OccupancyLedger | null => occupancyByAgent.get(id) ?? null,
+    /** 占用账本只读出口：内存优先，miss 时从流水复生（重启后历史会话）；从未注入返回 null。 */
+    occupancy: (id): OccupancyLedger | null => {
+      const led = occupancyByAgent.get(id) ?? occupancyStore.load(id);
+      if (led) occupancyByAgent.set(id, led);
+      return led ?? null;
+    },
   };
 }
 
