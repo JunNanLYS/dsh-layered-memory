@@ -1682,6 +1682,10 @@ async function main(): Promise<void> {
       assert(occT5 !== null && occT5.profileTokens > 0 && occT5.stockTokens === occT5.profileTokens + recallShareT5, '切回 auto：份额净额回补，恒等式保持');
       sessionStart?.({ agent: { id: 'agent-t5' }, source: 'compact' });
       assert(occT5 !== null && occT5.stockTokens === 0 && occT5.recallTokens === 0 && occT5.profileTokens === 0 && occT5.lastInjectTokens === 0, 'compaction 复位：session-start(compact) 全量归零');
+      recordProfileShare(occT5!, 88);
+      const snapResume = { stock: occT5!.stockTokens, profile: occT5!.profileTokens };
+      sessionStart?.({ agent: { id: 'agent-t5' }, source: 'resume' });
+      assert(occT5!.stockTokens === snapResume.stock && occT5!.profileTokens === snapResume.profile, 'resume/startup 不复位账本（历史仍在，已注入内容模型仍持有）');
 
       // ⑧ 召回超时（fake pre-step 缝）：慢检索在总预算内未返回 → 跳过本轮注入（决策原样返回）
       const origSearch = (storesT5 as { l1: { search: () => Promise<unknown> } }).l1.search;
@@ -1693,6 +1697,15 @@ async function main(): Promise<void> {
       );
       assert(d8.kind === 'enter' && d8.messages.length === 1, '召回超时：决策原样透传（不注入不阻塞）');
       (storesT5 as { l1: { search: () => Promise<unknown> } }).l1.search = origSearch;
+      // 超时跳过轮账目零扰动（票01 验收）：无注入 ⇒ 无入账（compact 复位后仅剩稳定区份额）
+      const occAfterTimeout = recallT5.occupancy('agent-t5');
+      assert(
+        occAfterTimeout !== null
+        && occAfterTimeout.lastInjectTokens === 0
+        && occAfterTimeout.recallTokens === 0
+        && occAfterTimeout.stockTokens === occAfterTimeout.profileTokens,
+        '召回超时跳过轮：账目零扰动',
+      );
 
       // ⑦ 工具关闭 → 指南消失（画像照常）
       const contextText2: Record<string, () => string> = {};

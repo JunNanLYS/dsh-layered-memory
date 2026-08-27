@@ -3,21 +3,26 @@
  * 追加一块自渲染的占用明细。只增不改——不触碰官方三桶行；关闭随容器销毁，
  * 打开期数字静止（零运行时工作）。
  *
- * 定位策略（locale 无关优先，失配静默放弃）：
- * 1. aria-expanded 翻转（观察器分发）后，取当前可见的 [role="dialog"] 中
- *    不含本组件标记且非锚点宿主的最近一个；
- * 2. 在其根上追加独立 <section data-dsh-mem-panel>；
- * 3. 找不到目标即本轮放弃（下轮开合重试），绝不写进错误容器。
- *
- * 可见性规则（component-design C2）：召回/稳定区行按各自份额>0 显示；
- * 占比行仅在有官方窗口分母时出现；OFF 态追加「已停用」注记行。
+ * 挂载规则：
+ * - 零存量/无快照 ⇒ 整节不出现（开局即 OFF 与"从未注入"等价，无既定事实可显示）；
+ * - OFF 且有残留存量 ⇒ 正常分项 + 「已停用 · 显示现存残留」注记；
+ * - 定位需满足"焦点仍在锚点按钮上 + 容器可见且无自家标记"，失配静默放弃
+ *   （下一次开合或快照更新时自动重试，见 update 订阅）。
  */
-import { onMeterPanelOpen, type MeterSnapshotView } from './occupancy-indicator.js';
+import {
+  currentAnchor,
+  currentMeterSnapshot,
+  onMeterPanelOpen,
+  onMeterSnapshotUpdate,
+  type MeterSnapshotView,
+} from './occupancy-indicator.js';
 
 const SECTION_TAG = 'dsh-mem-panel';
 let inited = false;
 /** 当前挂载的小节（关闭时主动摘除，防容器复用残留）。 */
 let mounted: HTMLElement | null = null;
+/** 面板当前是否处于打开期（快照更新补挂只在打开期生效）。 */
+let panelOpen = false;
 
 /** 官方 formatTokens 风格的数量级压缩（K/M 一位小数内）。 */
 function fmtTokens(n: number): string {
@@ -34,21 +39,35 @@ export function initPanelSection(read: () => MeterSnapshotView | null): void {
   if (inited) return;
   inited = true;
   onMeterPanelOpen((open) => {
+    panelOpen = open;
     if (!open) {
       mounted?.remove();
       mounted = null;
       return;
     }
-    const view = read();
-    if (!view) return;
     // 打开是一次离散用户动作：此处允许一次性的可见性探测（不属于巡检热路径）
-    const target = findDialogRoot();
-    if (!target) return; // 容器未就绪/结构变更：静默放弃，下轮重试
-    target.appendChild(renderSection(view));
+    tryMount(read);
+  });
+  onMeterSnapshotUpdate(() => {
+    // 冷启动竞态补偿：开面板瞬间无数据、稍后到账 ⇒ 立即补挂而非等下次开合
+    if (panelOpen && !mounted) tryMount(read);
   });
 }
 
-/** 找官方明细 dialog 根：可见、不含自家标记、不是锚点按钮自身的宿主。 */
+/** 尝试挂载：有可显示数据且定位成功才落 DOM。 */
+function tryMount(read: () => MeterSnapshotView | null): void {
+  const view = read();
+  if (!view || view.stockTokens === null || view.stockTokens <= 0) return; // 无既定事实 ⇒ 无显示
+  const anchor = currentAnchor();
+  if (!anchor || document.activeElement !== anchor) return; // 从属校验失败：静默放弃
+  const target = findDialogRoot();
+  if (!target) return;
+  mounted?.remove(); // 容器去重防御：同容器二次尝试先摘旧节
+  mounted = renderSection(view);
+  target.appendChild(mounted);
+}
+
+/** 找官方明细 dialog 根：可见、不含自家标记。 */
 function findDialogRoot(): HTMLElement | null {
   const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"]');
   for (let i = dialogs.length - 1; i >= 0; i--) {
@@ -78,7 +97,6 @@ function row(dotColor: string, label: string, tokens: number): HTMLDivElement {
 }
 
 function renderSection(view: MeterSnapshotView): HTMLElement {
-  mounted?.remove(); // 理论不可达（容器去重），防御重复挂载
   const section = document.createElement('section');
   section.setAttribute(`data-${SECTION_TAG}`, '');
   section.style.cssText = [
@@ -101,8 +119,8 @@ function renderSection(view: MeterSnapshotView): HTMLElement {
     section.append(row('var(--dsh-mem-accent)', '记忆稳定区', view.profileTokens));
   }
 
-  if (view.stockTokens !== null && view.contextWindowTokens !== null && view.contextWindowTokens > 0) {
-    const pct = Math.min(100, Math.max(0, (view.stockTokens / view.contextWindowTokens) * 100));
+  if (view.contextWindowTokens !== null && view.contextWindowTokens > 0) {
+    const pct = Math.min(100, Math.max(0, ((view.stockTokens ?? 0) / view.contextWindowTokens) * 100));
     const share = document.createElement('div');
     share.style.cssText = 'color:var(--dsh-mem-text-3);padding-top:2px;';
     share.textContent = `合计约占当前上下文 ${pct < 0.1 ? '<0.1' : pct.toFixed(1)}%`;

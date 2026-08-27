@@ -2502,6 +2502,7 @@ var __defProp = Object.defineProperty;
 		var activeSessionId = null;
 		var panelListeners = /* @__PURE__ */ new Set();
 		var panelWasOpen = false;
+		var snapshotListeners = /* @__PURE__ */ new Set();
 		function initOccupancyIndicator(call) {
 		  statsCall = call;
 		}
@@ -2509,11 +2510,15 @@ var __defProp = Object.defineProperty;
 		  if (sessionId === activeSessionId) return;
 		  activeSessionId = sessionId;
 		  panelWasOpen = false;
-		  if (sessionId !== null && !snapshotBySession.has(sessionId)) void fetchSnapshot();
+		  if (sessionId !== null && !snapshotBySession.has(sessionId)) void fetchSnapshot(true);
 		}
 		function onMeterPanelOpen(listener) {
 		  panelListeners.add(listener);
 		  return () => panelListeners.delete(listener);
+		}
+		function onMeterSnapshotUpdate(listener) {
+		  snapshotListeners.add(listener);
+		  return () => snapshotListeners.delete(listener);
 		}
 		function currentMeterSnapshot() {
 		  const snap = activeSessionId !== null ? snapshotBySession.get(activeSessionId) : void 0;
@@ -2526,9 +2531,14 @@ var __defProp = Object.defineProperty;
 		    mode: snap.mode
 		  };
 		}
+		function currentAnchor() {
+		  return anchorCache?.button ?? null;
+		}
 		var FETCH_MIN_INTERVAL_MS = 2e3;
+		var FETCH_FAILURE_REMOVE_AFTER = 3;
 		var lastFetchStartedAt = 0;
 		var fetchInFlight = false;
+		var fetchFailureStreak = 0;
 		async function fetchSnapshot(force = false) {
 		  const sid = activeSessionId;
 		  if (!statsCall || !sid || fetchInFlight) return;
@@ -2547,8 +2557,12 @@ var __defProp = Object.defineProperty;
 		      mode: v?.supported ? v.mode ?? null : null,
 		      updatedAt: Date.now()
 		    });
+		    fetchFailureStreak = 0;
+		    for (const l of snapshotListeners) l();
 		    scheduleReconcile();
 		  } catch {
+		    fetchFailureStreak++;
+		    scheduleReconcile();
 		  } finally {
 		    fetchInFlight = false;
 		  }
@@ -2627,7 +2641,8 @@ var __defProp = Object.defineProperty;
 		  const svg = anchorCache?.svg;
 		  if (!svg) return;
 		  const snap = activeSessionId !== null ? snapshotBySession.get(activeSessionId) : void 0;
-		  const stock = snap?.stockTokens ?? null;
+		  const failing = fetchFailureStreak >= FETCH_FAILURE_REMOVE_AFTER;
+		  const stock = !failing ? snap?.stockTokens ?? null : null;
 		  const win = snap?.contextWindowTokens ?? null;
 		  const ratio = stock !== null && win !== null && win > 0 ? Math.min(1, Math.max(0, stock / win)) : null;
 		  const existing = svg.querySelector(`circle.${PARASITE_CLASS}`);
@@ -2664,6 +2679,7 @@ var __defProp = Object.defineProperty;
 		var SECTION_TAG = "dsh-mem-panel";
 		var inited = false;
 		var mounted = null;
+		var panelOpen = false;
 		function fmtTokens(n) {
 		  if (n >= 1e6) return `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)}M`;
 		  if (n >= 1e3) return `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}K`;
@@ -2673,17 +2689,28 @@ var __defProp = Object.defineProperty;
 		  if (inited) return;
 		  inited = true;
 		  onMeterPanelOpen((open) => {
+		    panelOpen = open;
 		    if (!open) {
 		      mounted?.remove();
 		      mounted = null;
 		      return;
 		    }
-		    const view = read();
-		    if (!view) return;
-		    const target = findDialogRoot();
-		    if (!target) return;
-		    target.appendChild(renderSection(view));
+		    tryMount(read);
 		  });
+		  onMeterSnapshotUpdate(() => {
+		    if (panelOpen && !mounted) tryMount(read);
+		  });
+		}
+		function tryMount(read) {
+		  const view = read();
+		  if (!view || view.stockTokens === null || view.stockTokens <= 0) return;
+		  const anchor = currentAnchor();
+		  if (!anchor || document.activeElement !== anchor) return;
+		  const target = findDialogRoot();
+		  if (!target) return;
+		  mounted?.remove();
+		  mounted = renderSection(view);
+		  target.appendChild(mounted);
 		}
 		function findDialogRoot() {
 		  const dialogs = document.querySelectorAll('[role="dialog"]');
@@ -2712,7 +2739,6 @@ var __defProp = Object.defineProperty;
 		  return div;
 		}
 		function renderSection(view) {
-		  mounted?.remove();
 		  const section = document.createElement("section");
 		  section.setAttribute(`data-${SECTION_TAG}`, "");
 		  section.style.cssText = [
@@ -2732,8 +2758,8 @@ var __defProp = Object.defineProperty;
 		  if (view.profileTokens !== null && view.profileTokens > 0) {
 		    section.append(row("var(--dsh-mem-accent)", "记忆稳定区", view.profileTokens));
 		  }
-		  if (view.stockTokens !== null && view.contextWindowTokens !== null && view.contextWindowTokens > 0) {
-		    const pct = Math.min(100, Math.max(0, view.stockTokens / view.contextWindowTokens * 100));
+		  if (view.contextWindowTokens !== null && view.contextWindowTokens > 0) {
+		    const pct = Math.min(100, Math.max(0, (view.stockTokens ?? 0) / view.contextWindowTokens * 100));
 		    const share = document.createElement("div");
 		    share.style.cssText = "color:var(--dsh-mem-text-3);padding-top:2px;";
 		    share.textContent = `合计约占当前上下文 ${pct < 0.1 ? "<0.1" : pct.toFixed(1)}%`;

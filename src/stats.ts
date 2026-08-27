@@ -328,12 +328,16 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       const work = stores.state.forFamily('work');
       const lastAt = Math.max(chat.lastExtractAt, work.lastExtractAt);
       // 主对话模型的官方声明窗口（占用指示器分母；advisory 查询读本地快照且有缓存，
-      // 轮询热路径下稳态为 Map 命中——遵守本端点"只许内存注册表读取"的硬规则口径）
+      // 轮询热路径下稳态为 Map 命中——遵守本端点"只许内存注册表读取"的硬规则口径。
+      // race 封顶防第三方适配器 resolveModelInfo 挂起拖死轮询——llm-models 端点同款先例）
       let contextWindowTokens: number | null = null;
       try {
         const sel = deps.ctx.get('agentDefaultModel')?.currentSelection?.();
         if (sel?.provider && sel?.model) {
-          contextWindowTokens = await resolveModelContextWindow(deps.ctx, sel.provider, sel.model);
+          contextWindowTokens = await Promise.race([
+            resolveModelContextWindow(deps.ctx, sel.provider, sel.model),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 3_000)),
+          ]);
         }
       } catch {
         /* 可选服务缺失/解析失败 = 分母未知，UI 降级 */

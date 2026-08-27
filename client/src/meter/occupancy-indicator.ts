@@ -53,6 +53,9 @@ type PanelOpenListener = (open: boolean) => void;
 const panelListeners = new Set<PanelOpenListener>();
 let panelWasOpen = false;
 
+/* ── 快照更新监听（面板冷启动错过后的补挂时机） ── */
+const snapshotListeners = new Set<() => void>();
+
 /** 注入数据通道（幂等；后到的调用覆盖前值）。 */
 export function initOccupancyIndicator(call: StatsCall): void {
   statsCall = call;
@@ -63,13 +66,19 @@ export function noteOccupancySession(sessionId: string | null): void {
   if (sessionId === activeSessionId) return;
   activeSessionId = sessionId;
   panelWasOpen = false;
-  if (sessionId !== null && !snapshotBySession.has(sessionId)) void fetchSnapshot();
+  if (sessionId !== null && !snapshotBySession.has(sessionId)) void fetchSnapshot(true); // T3 冷启动不吃 T2 节流
 }
 
 /** 订阅官方明细面板开合（返回退订函数）。 */
 export function onMeterPanelOpen(listener: PanelOpenListener): () => void {
   panelListeners.add(listener);
   return () => panelListeners.delete(listener);
+}
+
+/** 订阅缓存更新（每次成功取数后触发；面板冷启动补挂消费）。 */
+export function onMeterSnapshotUpdate(listener: () => void): () => void {
+  snapshotListeners.add(listener);
+  return () => snapshotListeners.delete(listener);
 }
 
 /** 当前会话占用只读视图（无活跃会话或无缓存时为 null；面板挂载时机消费）。 */
@@ -85,11 +94,19 @@ export function currentMeterSnapshot(): MeterSnapshotView | null {
   };
 }
 
+/** 结构签名单例当前命中的官方环触发按钮（面板定位用它做从属校验）。 */
+export function currentAnchor(): HTMLButtonElement | null {
+  return anchorCache?.button ?? null;
+}
+
 /* ── 数据获取 ── */
 
 const FETCH_MIN_INTERVAL_MS = 2_000;
+/** 连续失败达到该次数 ⇒ 视为数据不可信，弧退回原生外观（契约 C1 视觉状态表）。 */
+const FETCH_FAILURE_REMOVE_AFTER = 3;
 let lastFetchStartedAt = 0;
 let fetchInFlight = false;
+let fetchFailureStreak = 0;
 
 /**
  * 拉 session-stats 更新当前会话缓存。T2 时钟触发时受最小间隔节流——
@@ -121,9 +138,13 @@ async function fetchSnapshot(force = false): Promise<void> {
       mode: v?.supported ? (v.mode ?? null) : null,
       updatedAt: Date.now(),
     });
+    fetchFailureStreak = 0;
+    for (const l of snapshotListeners) l();
     scheduleReconcile();
   } catch {
-    /* 失败保留旧缓存；连续失败由下一轮官方时钟自然重试（静默降级，不出红错） */
+    // 失败保留旧缓存；连续失败达阈值 ⇒ 弧退场（静默，无红错），下一轮官方时钟自然重试
+    fetchFailureStreak++;
+    scheduleReconcile();
   } finally {
     fetchInFlight = false;
   }
@@ -224,7 +245,8 @@ function applyHalo(): void {
   const svg = anchorCache?.svg;
   if (!svg) return;
   const snap = activeSessionId !== null ? snapshotBySession.get(activeSessionId) : undefined;
-  const stock = snap?.stockTokens ?? null;
+  const failing = fetchFailureStreak >= FETCH_FAILURE_REMOVE_AFTER;
+  const stock = !failing ? snap?.stockTokens ?? null : null; // 连败 ⇒ 数据不可信 ⇒ 无有效占比路径退场
   const win = snap?.contextWindowTokens ?? null;
   const ratio = stock !== null && win !== null && win > 0 ? Math.min(1, Math.max(0, stock / win)) : null;
 
