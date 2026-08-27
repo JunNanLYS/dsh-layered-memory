@@ -2058,7 +2058,7 @@ var __defProp = Object.defineProperty;
 		    if (!settingsData) return;
 		    const prev = settingsData;
 		    const patch = { [key]: value };
-		    const next = { ...prev, settings: { ...prev.settings, ...patch } };
+		    const next = { ...prev, settings: { ...prev.settings, [key]: value } };
 		    setSettingsData(next);
 		    rpc("dsh-memory/settings-set", patch).then((r) => {
 		      if (!r || !r.ok) {

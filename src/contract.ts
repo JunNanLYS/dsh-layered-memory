@@ -49,6 +49,10 @@ export interface StaticFallbackEntry {
   reasoningEffort?: string;
 }
 
+/** 按层路由的层键（#34）：l1 同管 l1-extract + l1-dedup 两个调用点（与成本看板
+ *  按层级归并口径同源）；预算键（DistillBudgetLayer）是另一套四键词表，不混用。 */
+export type LayerRouteKey = 'l1' | 'l2' | 'l3';
+
 /** 记忆模式运行时开关（settings-get/set 的 settings 载荷）。 */
 export interface MemoryLiveSettings {
   /** 总开关：关 = 捕获/蒸馏/召回注入全停（数据保留） */
@@ -76,6 +80,10 @@ export interface MemoryLiveSettings {
   /** 输入预算运行时覆盖（字符，≈token）：单次蒸馏调用的输入上限，L1 按此分块、
    *  超限截断；0 = 跟随静态配置 llm.maxInputChars。 */
   distillMaxInputChars: number;
+  /** 运行时按层路由链（#34）：层键 l1/l2/l3 各一条完整链（条目同 DistillChainEntry）；
+   *  非空即完整接管该层解析（压过静态 layerRoutes，层内第一优先级）；空数组 = 该层
+   *  跟随（静态层链 → 全局解析逐级兜底）。写入经 settings-set 逐层校验（头行必须显式）。 */
+  distillLayerChains: Record<LayerRouteKey, DistillChainEntry[]>;
 }
 
 /** 单会话召回统计（悬浮卡信息区数据源；口径见 recall.ts 注释）。 */
@@ -413,6 +421,8 @@ export interface SettingsSetRequest {
   distill?: boolean;
   recall?: boolean;
   distillChain?: DistillChainEntry[];
+  /** 运行时按层路由链（#34）：逐层 patch（只带要改的层；空数组 = 该层回到跟随）。 */
+  distillLayerChains?: Partial<Record<LayerRouteKey, DistillChainEntry[]>>;
   reasoningEffort?: EffortChoice;
   distillProvider?: string;
   distillModel?: string;

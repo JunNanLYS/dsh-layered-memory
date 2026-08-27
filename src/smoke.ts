@@ -51,7 +51,7 @@ import { SessionModeStore } from './store/session-modes.js';
 import { MemoryDb } from './store/sqlite.js';
 import { bm25RankToScore, buildFtsQuery, rrfMerge, tokenizeForFts, applyDecayWeight, DECAY_FLOOR } from './store/search-utils.js';
 import { liveSettingsSchema, projectDistillChain, registerLiveSettings, validateDistillChain, type LiveSettingsHandle, type MemoryLiveSettings } from './settings.js';
-import { buildRouteChain, callLLM, decideSendableEffort, layerMaxTokens, resolveLayerTokens } from './llm.js';
+import { buildRouteChain, callLLM, decideSendableEffort, LAYER_DEFAULT_BUDGETS, layerKeyFor, layerMaxTokens, resolveLayerRoutes, resolveLayerTokens } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
 import { registerMemoryRpc } from './stats.js';
 import { registerMemoryTools } from './tools/index.js';
@@ -60,6 +60,7 @@ import { dayKey } from './store/io.js';
 import { familyForType, normExtractedFamily, resolveRecordFamily } from './types.js';
 import { CaptureBuffers, isCaptureRelevant, registerCapture, trimBuffer } from './hooks/capture.js';
 import { RecallDedupeStore, RECALL_DEDUPE_IDS_CAP, RECALL_DEDUPE_SESSION_CAP } from './store/recall-dedupe.js';
+import { OccupancyStore, OCCUPANCY_SESSION_CAP } from './store/occupancy.js';
 import { buildRecallQuery, registerRecall, type RecallSessionStats } from './hooks/recall.js';
 import { sanitizeText, shouldCaptureL0, stripCodeBlocks } from './util/sanitize.js';
 import { errDetail, SIZE_CHECK_INTERVAL, withFileLog } from './util/filelog.js';
@@ -1540,10 +1541,12 @@ async function main(): Promise<void> {
           ) => Promise<Decision>)
         | undefined;
       let sessionStart: ((payload: { agent: { id: string }; source?: string }) => void) | undefined;
+      let disposed: ((payload: { agent: { id: string } }) => void) | undefined;
       const ctxT5 = {
         on: (ev: string, h: (payload?: unknown, next?: unknown) => unknown, _opts?: unknown) => {
           if (ev === 'agent/pre-step') preStep = h as typeof preStep;
           if (ev === 'agent/session-start') sessionStart = h as typeof sessionStart;
+          if (ev === 'agent/disposed') disposed = h as typeof disposed;
           return () => {};
         },
         effect: (f: () => (() => void)) => f(),
@@ -1680,12 +1683,24 @@ async function main(): Promise<void> {
       modesT5.set('agent-t5', 'auto');
       assert((contextText['memory:profile']() ?? '').includes('记忆工具调用指南'), '切回 auto：稳定区重新组进');
       assert(occT5 !== null && occT5.profileTokens > 0 && occT5.stockTokens === occT5.profileTokens + recallShareT5, '切回 auto：份额净额回补，恒等式保持');
+
+      // ⑥c 流水持久化语义（票07）：agent 销毁不删流水，occupancy() 复生；compact 复位在复生账本上写穿删除
+      disposed?.({ agent: { id: 'agent-t5' } });
+      const occReborn = recallT5.occupancy('agent-t5');
+      assert(
+        occReborn !== null && occReborn.stockTokens === occT5!.stockTokens && occReborn.recallTokens === recallShareT5,
+        'agent 销毁后 occupancy() 从流水复生同值账本（持久化语义与召回去重一致）',
+      );
       sessionStart?.({ agent: { id: 'agent-t5' }, source: 'compact' });
-      assert(occT5 !== null && occT5.stockTokens === 0 && occT5.recallTokens === 0 && occT5.profileTokens === 0 && occT5.lastInjectTokens === 0, 'compaction 复位：session-start(compact) 全量归零');
-      recordProfileShare(occT5!, 88);
-      const snapResume = { stock: occT5!.stockTokens, profile: occT5!.profileTokens };
+      const occReset = recallT5.occupancy('agent-t5');
+      assert(
+        occReset !== null && occReset.stockTokens === 0 && occReset.recallTokens === 0 && occReset.profileTokens === 0 && occReset.lastInjectTokens === 0,
+        'compaction 复位：复生账本上全量归零',
+      );
+      recordProfileShare(occReborn!, 88);
+      const snapResume = { stock: occReborn!.stockTokens, profile: occReborn!.profileTokens };
       sessionStart?.({ agent: { id: 'agent-t5' }, source: 'resume' });
-      assert(occT5!.stockTokens === snapResume.stock && occT5!.profileTokens === snapResume.profile, 'resume/startup 不复位账本（历史仍在，已注入内容模型仍持有）');
+      assert(occReborn!.stockTokens === snapResume.stock && occReborn!.profileTokens === snapResume.profile, 'resume/startup 不复位账本（历史仍在，已注入内容模型仍持有）');
 
       // ⑧ 召回超时（fake pre-step 缝）：慢检索在总预算内未返回 → 跳过本轮注入（决策原样返回）
       const origSearch = (storesT5 as { l1: { search: () => Promise<unknown> } }).l1.search;
@@ -2162,6 +2177,107 @@ async function main(): Promise<void> {
       const after6 = snapshotDistillUsage().layers['l2'];
       assert(threw && calls.length === 1 && emptyMsg.includes('empty output'), '未配置回退链时空输出抛明确错误（不再返回空串）');
       assert(after6.calls - before6.calls === 1 && after6.failures - before6.failures === 1, '未配置链时空输出同样按失败记账');
+    }
+
+    // g5. 按层独立路由（#34）：三级解析决策表 + effectiveCfg 层链注入 + callLLM 层分叉
+    {
+      // callLLM 路径的用例须带全 llm 必需字段（timeoutMs 等）；决策表用例只带解析所需
+      const mkCfg5 = (llm: Record<string, unknown>) => ({ family: 'auto', llm: { maxTokens: 2000, temperature: 0.3, maxInputChars: 100_000, timeoutMs: 10_000, ...llm } }) as never as MemoryConfig;
+      const mkLive5 = (patch: Record<string, unknown>) =>
+        ({ get: () => ({ reasoningEffort: '', distillProvider: '', distillModel: '', distillChain: [], distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, ...patch }) }) as never;
+      const gCtx = { get: () => undefined } as never;
+
+      // g5a. resolveLayerRoutes 决策表：静态层链替换 / 运行时压静态 / 未配置跟随全局 /
+      //      空数组跟随 / 头行残缺回退全局 / l1 双调用点同链 / 档位候选
+      const staticL1 = [
+        { provider: 'sp', model: 'sm', reasoningEffort: 'low' },
+        { provider: 'sp', model: 'sfb', reasoningEffort: '' },
+      ];
+      const base5 = mkCfg5({
+        provider: 'gp', model: 'gm', reasoningEffort: 'high',
+        fallbacks: [{ provider: 'gp', model: 'gfb' }],
+        layerRoutes: { l1: staticL1, l3: [] },
+      });
+      assert(layerKeyFor('l1-extract') === 'l1' && layerKeyFor('l1-dedup') === 'l1' && layerKeyFor('l2') === 'l2' && layerKeyFor('l3') === 'l3', '层键映射：extract/dedup 同属 l1');
+      const r5a = await resolveLayerRoutes(gCtx, base5, 'l1-extract');
+      assert(r5a.length === 2 && r5a[0].provider === 'sp' && r5a[0].effort === 'low' && r5a[1].model === 'sfb', '静态层链完整替换该层（头行档位候选生效）');
+      assert(r5a[1].effort === 'high', '层链空档位条目回退全局档位');
+      const r5b = await resolveLayerRoutes(gCtx, base5, 'l1-dedup');
+      assert(r5b.length === 2 && r5b[0].model === 'sm', 'l1-extract 与 l1-dedup 同走 l1 层链');
+      const r5c = await resolveLayerRoutes(gCtx, base5, 'l2');
+      assert(r5c.length === 2 && r5c[0].model === 'gm' && r5c[1].model === 'gfb' && r5c[0].effort === 'high', '未配置层走全局解析（主路由 + 全局回退，语义不动）');
+      const r5d = await resolveLayerRoutes(gCtx, base5, 'l3');
+      assert(r5d[0].model === 'gm', '空数组层链 = 跟随全局');
+      const r5e = await resolveLayerRoutes(gCtx, mkCfg5({
+        provider: 'gp', model: 'gm', reasoningEffort: '',
+        layerRoutes: { l1: staticL1 },
+        layerChainsRuntime: { l1: [{ provider: 'rp', model: 'rm', reasoningEffort: 'off' }] },
+      }), 'l1-extract');
+      assert(r5e.length === 1 && r5e[0].model === 'rm' && r5e[0].effort === 'off', '运行时层链压过静态层链（层内第一优先级）');
+      const r5f = await resolveLayerRoutes(gCtx, mkCfg5({
+        provider: 'gp', model: 'gm', reasoningEffort: '',
+        layerRoutes: { l2: [{ provider: '', model: '', reasoningEffort: '' }, { provider: 'sp', model: 'sm' }] },
+      }), 'l2');
+      assert(r5f[0].model === 'gm', '层链头行残缺 = 视为未配置回退全局（防御，配置错误不致失产）');
+      const r5g = await resolveLayerRoutes(gCtx, base5, undefined);
+      assert(r5g.length === 2 && r5g[0].model === 'gm', 'layer 缺省（bench/测试缝）= 全局解析');
+
+      // g5b. effectiveCfg 层链注入：非空逐层注入 / pin 失效 / 全空与缺省不注入
+      const lcLive5 = mkLive5({ distillLayerChains: { l1: [{ provider: 'rp', model: 'rm', reasoningEffort: '' }], l2: [], l3: [] } });
+      const lc1 = effectiveCfg(mkCfg5({ provider: '', model: '', reasoningEffort: '' }), lcLive5);
+      assert(lc1.llm.layerChainsRuntime?.l1?.length === 1 && !('l2' in (lc1.llm.layerChainsRuntime ?? {})) && !('l3' in (lc1.llm.layerChainsRuntime ?? {})), '运行时层链非空层注入（空层不带键）');
+      const lc2 = effectiveCfg(mkCfg5({ provider: 'pin-p', model: 'pin-m', reasoningEffort: '' }), lcLive5);
+      assert(!lc2.llm.layerChainsRuntime, 'pinned 下运行时层链失效（部署锁；静态 layerRoutes 穿透）');
+      const lc3 = effectiveCfg(mkCfg5({ provider: '', model: '', reasoningEffort: '' }), mkLive5({ distillLayerChains: { l1: [], l2: [], l3: [] } }));
+      assert(lc3.llm.layerChainsRuntime === undefined, '层链全空不注入');
+      const lc4 = effectiveCfg(mkCfg5({ provider: '', model: '', reasoningEffort: '' }), mkLive5({}));
+      assert(lc4.llm.layerChainsRuntime === undefined, '缺省 distillLayerChains（旧存量 settings）不注入');
+
+      // g5c. validateDistillChain 头行显式选项（层链写入门）
+      assert(validateDistillChain([{ provider: '', model: '', reasoningEffort: '' }], { requireExplicitHead: true }) !== null, '层链头行双空被拒（层覆盖不支持跟随默认模型）');
+      assert(validateDistillChain([{ provider: 'p', model: 'm', reasoningEffort: '' }], { requireExplicitHead: true }) === null, '层链头行双显式通过');
+      assert(validateDistillChain([{ provider: '', model: '', reasoningEffort: '' }]) === null, '全局链头行双空仍合法（语义不变）');
+
+      // g5d. callLLM 层分叉（fake stream）：覆盖层只走层链（层内降级不落全局链）、
+      //      未覆盖层照走全局链
+      const lcalls: Array<{ provider: string; model: string }> = [];
+      const lrCtx = {
+        llm: {
+          stream: async function* (o: { provider: string; model: string }) {
+            lcalls.push({ provider: o.provider, model: o.model });
+            if (o.model === 'dead-l') {
+              yield { type: 'finish', reason: { kind: 'aborted', failure: { message: 'cut' } } };
+              return;
+            }
+            yield { type: 'block-end', block: { type: 'text', text: `ok-${o.model}` } };
+            yield { type: 'finish', reason: { kind: 'stop' } };
+          },
+          resolveModelInfo: async () => ({ reasoning: {} }),
+        },
+        get: () => undefined,
+      } as never;
+      lcalls.length = 0;
+      const d5a = await callLLM(lrCtx, mkCfg5({
+        provider: 'gp', model: 'gm', reasoningEffort: '',
+        fallbacks: [{ provider: 'gp', model: 'gfb' }],
+        layerRoutes: { l1: [{ provider: 'sp', model: 'dead-l' }, { provider: 'sp', model: 'l1fb' }] },
+      }), { system: 's', user: 'u', layer: 'l1-extract' });
+      assert(d5a === 'ok-l1fb' && lcalls.length === 2 && lcalls.every((c) => c.provider === 'sp'), '层覆盖：主死只降级到层内回退，全局链不参与');
+      lcalls.length = 0;
+      const d5b = await callLLM(lrCtx, mkCfg5({
+        provider: 'gp', model: 'gm', reasoningEffort: '',
+        fallbacks: [{ provider: 'gp', model: 'gfb' }],
+        layerRoutes: { l1: [{ provider: 'sp', model: 'l1m' }] },
+      }), { system: 's', user: 'u', layer: 'l2' });
+      assert(d5b === 'ok-gm' && lcalls.length === 1 && lcalls[0].model === 'gm', '未覆盖层照走全局主路由（层链不影响他层）');
+
+      // g5e. D8：预算 ×4 放大触发跟层——层链头 low/全局 high 该层不放大；
+      //      未覆盖层照全局放大；运行时层链头 xhigh 该层放大
+      const e5a = { llm: { reasoningEffort: 'high', layerRoutes: { l1: [{ provider: 'sp', model: 'sm', reasoningEffort: 'low' }] } } };
+      assert(resolveLayerTokens(e5a, 'extract') === LAYER_DEFAULT_BUDGETS.extract, '层链头 low：该层不放大（全局 high 不外溢）');
+      assert(resolveLayerTokens(e5a, 'l2') === LAYER_DEFAULT_BUDGETS.l2 * 4, '未覆盖层照全局 high 放大');
+      const e5b = { llm: { reasoningEffort: 'low', layerChainsRuntime: { l1: [{ provider: 'sp', model: 'sm', reasoningEffort: 'xhigh' }] } } };
+      assert(resolveLayerTokens(e5b, 'dedup') === LAYER_DEFAULT_BUDGETS.dedup * 4, '运行时层链头 xhigh：该层放大（全局 low 不压制）');
     }
 
     // h. 输入预算覆盖：>0 注入 cfg.llm.maxInputChars（L1 分块/callLLM 截断/rebuild 估算全链消费）
@@ -3613,6 +3729,81 @@ async function main(): Promise<void> {
     assert(!isContextMeterAnchor({ ...good, viewBox: '0 0 20 20' }), 'viewBox 不符即否决');
     assert(!isContextMeterAnchor({ ...good, circleRadii: [5.5] }), '单圆不符（官方恒两圆）');
     assert(!isContextMeterAnchor({ viewBox: '0 0 14 14', circleRadii: [5.5, 5.5] }), '缺 hasPopup 否决（防误锚他处 SVG）');
+  }
+
+  // ── 33. 占用流水持久化（票07）：往返 / 复生 / 归零删除 / LRU / 坏文件降级 / 数值不变不写 ──
+  console.log('== 33. 占用流水持久化 ==');
+  {
+    // 时间戳用真实当下（90 天过期清理按 wall-clock；远古假时间会被剪掉）
+    const now33 = Date.now();
+    const tmp33 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-occ-'));
+    try {
+      // a. 往返：save → flush → 新实例 load 复生（重启语义）
+      const s1 = new OccupancyStore(tmp33, silentLogger);
+      const led1 = emptyOccupancyLedger(now33);
+      recordRecallInjection(led1, 400, now33 + 1);
+      recordProfileShare(led1, 100, now33 + 2);
+      s1.save('sess-a', led1);
+      await s1.flush();
+      const s2 = new OccupancyStore(tmp33, silentLogger);
+      await s2.flush(); // init 载入链
+      const reborn = s2.load('sess-a');
+      assert(
+        reborn !== null && reborn.stockTokens === led1.stockTokens && reborn.recallTokens === 108 && reborn.profileTokens === 25,
+        '占用流水往返：重启后账目复生（stock/recall/profile 完整）',
+      );
+      assert(s2.load('never-injected') === null, '从未注入的会话 load 为 null');
+
+      // b. 归零删除：compaction 复位后条目不落盘
+      const led2 = reborn!;
+      resetForCompaction(led2, now33 + 3);
+      s2.save('sess-a', led2);
+      await s2.flush();
+      const s3 = new OccupancyStore(tmp33, silentLogger);
+      await s3.flush();
+      assert(s3.load('sess-a') === null, 'stock 归零 ⇒ 流水条目删除（compaction 语义持久化）');
+
+      // c. 数值不变不触发写：同数值 save 后内存 updatedAt 刷新且不排写
+      const led3 = emptyOccupancyLedger(now33);
+      recordRecallInjection(led3, 88, now33 + 1);
+      s3.save('sess-b', led3);
+      await s3.flush();
+      const before = { ...s3.load('sess-b')! };
+      const chain = s3.flush();
+      led3.updatedAt = now33 + 99;
+      s3.save('sess-b', led3); // 数值未变只刷时间戳
+      await chain;
+      const after = s3.load('sess-b')!;
+      assert(
+        before.stockTokens === after.stockTokens && before.recallTokens === after.recallTokens,
+        '数值不变 save：内存条目保留（时间戳刷新，不产生文件写）',
+      );
+
+      // d. 会话 LRU 上限
+      const s4 = new OccupancyStore(tmp33, silentLogger);
+      for (let i = 0; i < OCCUPANCY_SESSION_CAP + 5; i++) {
+        const l = emptyOccupancyLedger(now33 + i);
+        recordRecallInjection(l, 10, now33 + i + 1);
+        s4.save(`sess-lru-${i}`, l);
+      }
+      await s4.flush();
+      const s5 = new OccupancyStore(tmp33, silentLogger);
+      await s5.flush();
+      assert(s5.load('sess-lru-0') === null && s5.load(`sess-lru-${OCCUPANCY_SESSION_CAP + 4}`) !== null, '会话 LRU 上限：最旧淘汰、最新保留');
+
+      // e. 坏文件降级：空起步不抛
+      const tmp33b = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-occ-bad-'));
+      try {
+        await fs.writeFile(path.join(tmp33b, 'occupancy.json'), '{oops', 'utf8');
+        const sBad = new OccupancyStore(tmp33b, silentLogger);
+        await sBad.flush();
+        assert(sBad.load('any') === null, '坏文件空起步不抛（降级内存态）');
+      } finally {
+        await fs.rm(tmp33b, { recursive: true, force: true }).catch(() => {});
+      }
+    } finally {
+      await fs.rm(tmp33, { recursive: true, force: true }).catch(() => {});
+    }
   }
 
   console.log(failures === 0 ? '\n全部通过 ✅' : `\n${failures} 个失败 ❌`);

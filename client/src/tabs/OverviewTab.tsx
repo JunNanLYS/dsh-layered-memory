@@ -48,7 +48,9 @@ export function OverviewTab(props: { rpc: RpcFn }) {
     // 乐观更新：立即翻 UI，失败回滚
     const prev = settingsData;
     const patch = { [key]: value } as SettingsSetRequest;
-    const next = { ...prev, settings: { ...prev.settings, ...patch } };
+    // settings-set 的层链键是 Partial（patch 语义），settings 视图要求全量 Record——
+    // 乐观更新按具体开关键注入，不做整包 spread（形状不兼容且会盖掉无关键）
+    const next = { ...prev, settings: { ...prev.settings, [key]: value } };
     setSettingsData(next);
     rpc('dsh-memory/settings-set', patch)
       .then((r) => {

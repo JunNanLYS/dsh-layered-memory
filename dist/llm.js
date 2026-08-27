@@ -22,11 +22,13 @@ export const LAYER_DEFAULT_BUDGETS = {
 /**
  * 解析某蒸馏层的生效输出预算：运行时覆盖（cfg.llm.budgets，由 effectiveCfg 从
  * 设置页 distillBudgets 注入，0/缺省 = 跟随）→ 内置默认 → 思考档放大
- * （high/xhigh/max ×4，reasoning 计入输出预算的历史事故防线）。
+ * （high/xhigh/max ×4，reasoning 计入输出预算的历史事故防线）。放大触发档位
+ * 跟层走（#34 D8）：层链头档位候选 > 全局主路由档位候选（primaryEffort > 静态全局）。
  */
 export function resolveLayerTokens(cfg, layer) {
     const override = cfg.llm.budgets?.[layer];
-    return layerMaxTokens(override && override > 0 ? override : LAYER_DEFAULT_BUDGETS[layer], cfg.llm.reasoningEffort);
+    const key = layer === 'l2' ? 'l2' : layer === 'l3' ? 'l3' : 'l1';
+    return layerMaxTokens(override && override > 0 ? override : LAYER_DEFAULT_BUDGETS[layer], layerEffortTrigger(cfg, key));
 }
 /**
  * 高思考档集合（输出预算 ×4 的档位）：阶段侧 layerMaxTokens 与 callLLM 的
@@ -73,6 +75,54 @@ export function buildRouteChain(primary, fallbacks, globalEffort) {
         routes.push({ provider: f.provider, model: f.model, effort: f.reasoningEffort || globalEffort });
     }
     return routes;
+}
+// ── 按层独立路由（#34 / ADR-0005）：层内三级 运行时层链 > 静态层链 > 全局解析 ──
+// 层链非空即完整替换该层解析（该层主路由与回退都归层链管，全局链对该层不参与）；
+// 档位是全局偏好轴：层链空档位条目/头行仍回退全局档位（primaryEffort 之后的
+// cfg.llm.reasoningEffort 语义照旧）。pin 只废运行时侧（effectiveCfg 不注入），
+// 静态层链天然穿透——与回退链"静态配置不构成 pin 绕过"先例同源。
+/** DistillLayer（调用点四键）→ 路由层键（三键）：l1-extract/l1-dedup 同属 l1。 */
+export function layerKeyFor(layer) {
+    return layer === 'l2' ? 'l2' : layer === 'l3' ? 'l3' : 'l1';
+}
+/**
+ * 取某层的生效层链（运行时优先）。头行残缺（provider/model 缺失——手写 YAML 错误
+ * 或防御性解析后的空链头）视为该层未配置、回退全局解析：路由配置错误不致该层
+ * 蒸馏失产，与回退链"条目缺失剔除"同一防御姿态。
+ */
+function layerChainOf(cfg, key) {
+    const rt = cfg.llm.layerChainsRuntime?.[key];
+    if (rt?.length && rt[0].provider && rt[0].model)
+        return rt;
+    const st = cfg.llm.layerRoutes?.[key];
+    if (st?.length && st[0].provider && st[0].model)
+        return st;
+    return undefined;
+}
+/** 该层的预算放大触发档位（D8）：层链头档位候选 > 全局主路由档位候选（primaryEffort > 静态全局）。 */
+export function layerEffortTrigger(cfg, key) {
+    const chain = layerChainOf(cfg, key);
+    return chain
+        ? chain[0].reasoningEffort || cfg.llm.primaryEffort || cfg.llm.reasoningEffort
+        : cfg.llm.primaryEffort || cfg.llm.reasoningEffort;
+}
+/**
+ * 解析某次蒸馏调用的实际路由链（callLLM 入口）：有层标签且该层配了层链 → 层链
+ * 完整替换（buildRouteChain 复用：头行在前、条目去重、档位三级候选）；否则现行
+ * 全局解析（主路由既有优先级 + fallbacks，语义一个比特不动）。layer 缺省
+ * （bench/测试缝）= 全局解析。
+ */
+export async function resolveLayerRoutes(ctx, cfg, layer) {
+    if (layer) {
+        const chain = layerChainOf(cfg, layerKeyFor(layer));
+        if (chain) {
+            return buildRouteChain({ provider: chain[0].provider, model: chain[0].model, effort: chain[0].reasoningEffort || '' }, chain.slice(1), cfg.llm.reasoningEffort);
+        }
+    }
+    const primary = await resolveModelRoute(ctx, cfg);
+    return buildRouteChain(
+    // 主路由显式档位来自运行时统一链（primaryEffort，'' = 跟随全局静态）
+    { provider: primary.provider, model: primary.model, effort: cfg.llm.primaryEffort || '' }, cfg.llm.fallbacks, cfg.llm.reasoningEffort);
 }
 /** 单路由持续失败的一次性告警去重表（effortWarned 同款；拓扑变化随能力缓存一起失效）。 */
 const routeDeadWarned = new Set();
@@ -190,10 +240,8 @@ export async function planDistillEffort(ctx, provider, model, cfgEffort, logger)
  * 适配器异常地没有发 block-end 时兜底。两者都累计会把输出翻倍。
  */
 export async function callLLM(ctx, cfg, opts) {
-    const primary = await resolveModelRoute(ctx, cfg);
-    const routes = buildRouteChain(
-    // 主路由显式档位来自运行时统一链（primaryEffort，'' = 跟随全局静态）
-    { provider: primary.provider, model: primary.model, effort: cfg.llm.primaryEffort || '' }, cfg.llm.fallbacks, cfg.llm.reasoningEffort);
+    // 按层路由（#34）：opts.layer 配了层链的层走层链完整替换，其余走全局解析
+    const routes = await resolveLayerRoutes(ctx, cfg, opts.layer);
     let lastErr;
     for (let i = 0; i < routes.length; i++) {
         const route = routes[i];
@@ -226,12 +274,16 @@ async function callRoute(ctx, cfg, opts, route) {
     const user = opts.user.length > cfg.llm.maxInputChars
         ? `${opts.user.slice(0, cfg.llm.maxInputChars)}\n\n[输入超出 ${cfg.llm.maxInputChars} 字符预算，已截断]`
         : opts.user;
-    // 输出预算 ×4 防线跟随【实际发送】的档位：阶段侧已按原始配置的高档位
-    // （HIGH_EFFORT_TIERS）放大过，这里只补自动档（'' → 模型默认/高档）解析出
-    // 高档时的欠放大缺口——两侧共用一张表，配置本身就是高档时不再放大（防 ×16 双乘）
+    // 输出预算 ×4 防线跟随【实际发送】的档位：阶段侧已按该层放大触发档位
+    // （layerEffortTrigger：层链头候选 > 全局主路由候选）放大过，这里只补自动档
+    // （'' → 模型默认/高档）解析出高档时的欠放大缺口——两侧共用一张表与同一触发值，
+    // 配置本身就是高档时不再放大（防 ×16 双乘）
     const baseMaxTokens = opts.maxTokens ?? cfg.llm.maxTokens;
     const highTiers = HIGH_EFFORT_TIERS;
-    const maxTokens = highTiers.includes(effort.effort) && !highTiers.includes(cfg.llm.reasoningEffort)
+    const triggerEffort = opts.layer
+        ? layerEffortTrigger(cfg, layerKeyFor(opts.layer))
+        : cfg.llm.primaryEffort || cfg.llm.reasoningEffort;
+    const maxTokens = highTiers.includes(effort.effort) && !highTiers.includes(triggerEffort)
         ? layerMaxTokens(baseMaxTokens, 'high')
         : baseMaxTokens;
     const stream = ctx.llm.stream({

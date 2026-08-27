@@ -13,7 +13,7 @@ import type { MemoryLogger } from './types.js';
 
 // EffortChoice/DistillBudgets/DistillChainEntry/MemoryLiveSettings 已迁入契约单一事实源
 // （src/contract.ts）：host 与 client（TS 化后的浏览器侧）共享同一套形状。
-import type { DistillBudgetLayer, DistillBudgets, DistillChainEntry, EffortChoice, MemoryLiveSettings } from './contract.js';
+import type { DistillBudgetLayer, DistillBudgets, DistillChainEntry, EffortChoice, LayerRouteKey, MemoryLiveSettings } from './contract.js';
 export type { DistillBudgets, DistillChainEntry, EffortChoice, MemoryLiveSettings } from './contract.js';
 
 /**
@@ -40,8 +40,16 @@ export function projectDistillChain(
   return [];
 }
 
-/** settings-set 写入门校验：返回错误文案（null = 通过）。 */
-export function validateDistillChain(chain: unknown): string | null {
+/**
+ * settings-set 写入门校验：返回错误文案（null = 通过）。
+ * opts.requireExplicitHead（#34 层链用）：头行必须 provider+model 双显式——层键出现
+ * 即意图覆盖；"双空 = 跟随默认模型"是全局链独有语义（"默认模型 + 自定义回退"的
+ * 诉求由全局 llm.fallbacks 承担），层链禁掉双空头，消除"层链头跟随哪套全局解析"的歧义。
+ */
+export function validateDistillChain(
+  chain: unknown,
+  opts?: { requireExplicitHead?: boolean },
+): string | null {
   if (!Array.isArray(chain)) return 'distillChain 须为数组';
   if (chain.length > DISTILL_CHAIN_MAX) return `路由链最多 ${DISTILL_CHAIN_MAX} 条`;
   const seen = new Set<string>();
@@ -54,6 +62,7 @@ export function validateDistillChain(chain: unknown): string | null {
     if (p.length > 200 || m.length > 200) return `第 ${i + 1} 行 provider/model 过长（≤200 字符）`;
     if (!(EFFORT_CHOICES as readonly string[]).includes(eff)) return `第 ${i + 1} 行思考档位非法: ${eff || '(空)'}`;
     if (i === 0) {
+      if (opts?.requireExplicitHead && (!p || !m)) return '主路由行必须显式选择供应商与模型（层链不支持跟随默认模型）';
       if ((p && !m) || (!p && m)) return '主路由行 provider 与 model 须成对（双空 = 跟随默认模型）';
     } else if (!p || !m) {
       return `第 ${i + 1} 行回退路由必须显式选择供应商与模型`;
@@ -88,6 +97,7 @@ const ALWAYS_ON: MemoryLiveSettings = {
   distillChain: [],
   distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
   distillMaxInputChars: 0,
+  distillLayerChains: { l1: [], l2: [], l3: [] },
 };
 
 /**
@@ -110,6 +120,13 @@ let cachedSvc: unknown;
 
 export function liveSettingsSchema(): Schema<MemoryLiveSettings> {
   const budget = () => Schema.number().min(0).max(1_000_000).default(0);
+  // 层链条目形状与 distillChain 相同（档位必填、'' = 跟随）；写入校验另在
+  // settings-set 门做逐层 requireExplicitHead（schema 层只管形状默认，语义门在 host）
+  const chainEntry = () => Schema.object({
+    provider: Schema.string().default(''),
+    model: Schema.string().default(''),
+    reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
+  });
   return Schema.object({
     enabled: Schema.boolean().default(true),
     capture: Schema.boolean().default(true),
@@ -118,11 +135,12 @@ export function liveSettingsSchema(): Schema<MemoryLiveSettings> {
     reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
     distillProvider: Schema.string().default(''),
     distillModel: Schema.string().default(''),
-    distillChain: Schema.array(Schema.object({
-      provider: Schema.string().default(''),
-      model: Schema.string().default(''),
-      reasoningEffort: Schema.union([...EFFORT_CHOICES]).default(''),
-    })).default([]),
+    distillChain: Schema.array(chainEntry()).default([]),
+    distillLayerChains: Schema.object({
+      l1: Schema.array(chainEntry()).default([]),
+      l2: Schema.array(chainEntry()).default([]),
+      l3: Schema.array(chainEntry()).default([]),
+    }).default({ l1: [], l2: [], l3: [] }),
     distillBudgets: Schema.object({
       extract: budget(),
       dedup: budget(),
@@ -248,21 +266,25 @@ function resolveSettings(value: unknown): MemoryLiveSettings {
   const num = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
   const rawBudgets = (v.distillBudgets ?? {}) as Partial<DistillBudgets>;
   // 路由链逐条防御：非对象条目剔除、超长截断、非法档位归空、超限截断到上限
-  const rawChain = Array.isArray(v.distillChain) ? v.distillChain : [];
-  const chain: DistillChainEntry[] = [];
-  for (const item of rawChain) {
-    if (chain.length >= DISTILL_CHAIN_MAX) break;
-    if (!item || typeof item !== 'object') continue;
-    const e = item as Partial<DistillChainEntry>;
-    const eff = typeof e.reasoningEffort === 'string' && (EFFORT_CHOICES as readonly string[]).includes(e.reasoningEffort)
-      ? e.reasoningEffort
-      : '';
-    chain.push({
-      provider: typeof e.provider === 'string' ? e.provider.slice(0, 200) : '',
-      model: typeof e.model === 'string' ? e.model.slice(0, 200) : '',
-      reasoningEffort: eff,
-    });
-  }
+  const defuseChain = (raw: unknown): DistillChainEntry[] => {
+    const out: DistillChainEntry[] = [];
+    if (!Array.isArray(raw)) return out;
+    for (const item of raw) {
+      if (out.length >= DISTILL_CHAIN_MAX) break;
+      if (!item || typeof item !== 'object') continue;
+      const e = item as Partial<DistillChainEntry>;
+      const eff = typeof e.reasoningEffort === 'string' && (EFFORT_CHOICES as readonly string[]).includes(e.reasoningEffort)
+        ? e.reasoningEffort
+        : '';
+      out.push({
+        provider: typeof e.provider === 'string' ? e.provider.slice(0, 200) : '',
+        model: typeof e.model === 'string' ? e.model.slice(0, 200) : '',
+        reasoningEffort: eff,
+      });
+    }
+    return out;
+  };
+  const rawLayer = (v.distillLayerChains ?? {}) as Partial<Record<LayerRouteKey, unknown>>;
   return {
     enabled: v.enabled !== false,
     capture: v.capture !== false,
@@ -274,7 +296,12 @@ function resolveSettings(value: unknown): MemoryLiveSettings {
         : '',
     distillProvider: typeof v.distillProvider === 'string' ? v.distillProvider : '',
     distillModel: typeof v.distillModel === 'string' ? v.distillModel : '',
-    distillChain: chain,
+    distillChain: defuseChain(v.distillChain),
+    distillLayerChains: {
+      l1: defuseChain(rawLayer.l1),
+      l2: defuseChain(rawLayer.l2),
+      l3: defuseChain(rawLayer.l3),
+    },
     distillBudgets: {
       extract: num(rawBudgets.extract),
       dedup: num(rawBudgets.dedup),

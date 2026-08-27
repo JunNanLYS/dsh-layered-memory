@@ -25,21 +25,27 @@ export declare const LAYER_MAX_TOKENS_L2 = 32000;
 /** L3 画像（完整 persona 文档）。 */
 export declare const LAYER_MAX_TOKENS_L3 = 16000;
 /** 分层输出预算键（已迁入契约 src/contract.ts；import type 供本地使用，re-export 不断裂既有引用）。 */
-import type { DistillBudgetLayer } from './contract.js';
+import type { DistillBudgetLayer, LayerRouteKey, StaticFallbackEntry } from './contract.js';
 export type { DistillBudgetLayer } from './contract.js';
 /** 各层内置默认预算（设置页"0 = 跟随默认"的默认值来源）。 */
 export declare const LAYER_DEFAULT_BUDGETS: Record<DistillBudgetLayer, number>;
+/** resolveLayerTokens/layerEffortTrigger 需要的最小 cfg 视图（smoke 决策表用窄对象即可构造）。 */
+export interface LayerRouteCfgView {
+    llm: {
+        reasoningEffort: string;
+        primaryEffort?: string;
+        layerRoutes?: Partial<Record<LayerRouteKey, StaticFallbackEntry[]>>;
+        layerChainsRuntime?: Partial<Record<LayerRouteKey, StaticFallbackEntry[]>>;
+        budgets?: Partial<Record<DistillBudgetLayer, number>>;
+    };
+}
 /**
  * 解析某蒸馏层的生效输出预算：运行时覆盖（cfg.llm.budgets，由 effectiveCfg 从
  * 设置页 distillBudgets 注入，0/缺省 = 跟随）→ 内置默认 → 思考档放大
- * （high/xhigh/max ×4，reasoning 计入输出预算的历史事故防线）。
+ * （high/xhigh/max ×4，reasoning 计入输出预算的历史事故防线）。放大触发档位
+ * 跟层走（#34 D8）：层链头档位候选 > 全局主路由档位候选（primaryEffort > 静态全局）。
  */
-export declare function resolveLayerTokens(cfg: {
-    llm: {
-        reasoningEffort: string;
-        budgets?: Partial<Record<DistillBudgetLayer, number>>;
-    };
-}, layer: DistillBudgetLayer): number;
+export declare function resolveLayerTokens(cfg: LayerRouteCfgView, layer: DistillBudgetLayer): number;
 /**
  * 高思考档集合（输出预算 ×4 的档位）：阶段侧 layerMaxTokens 与 callLLM 的
  * 自动档防线共用同一张表——此前两处字面量表分叉（防线漏 xhigh），显式 xhigh
@@ -79,6 +85,17 @@ export declare function buildRouteChain(primary: {
     model: string;
     effort?: string;
 }, fallbacks: FallbackRouteEntry[] | undefined, globalEffort: string): DistillRoute[];
+/** DistillLayer（调用点四键）→ 路由层键（三键）：l1-extract/l1-dedup 同属 l1。 */
+export declare function layerKeyFor(layer: DistillLayer): LayerRouteKey;
+/** 该层的预算放大触发档位（D8）：层链头档位候选 > 全局主路由档位候选（primaryEffort > 静态全局）。 */
+export declare function layerEffortTrigger(cfg: LayerRouteCfgView, key: LayerRouteKey): string;
+/**
+ * 解析某次蒸馏调用的实际路由链（callLLM 入口）：有层标签且该层配了层链 → 层链
+ * 完整替换（buildRouteChain 复用：头行在前、条目去重、档位三级候选）；否则现行
+ * 全局解析（主路由既有优先级 + fallbacks，语义一个比特不动）。layer 缺省
+ * （bench/测试缝）= 全局解析。
+ */
+export declare function resolveLayerRoutes(ctx: Context, cfg: MemoryConfig, layer?: DistillLayer): Promise<DistillRoute[]>;
 export interface ModelEffortInfo {
     /** 模型可设置的思考档位 id（适配器声明；空 = 未声明/不可设置） */
     efforts: string[];

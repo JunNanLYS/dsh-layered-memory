@@ -264,6 +264,7 @@ async function handleEndpoint(endpoint, payload, deps) {
                     enabled: true, capture: true, distill: true, recall: true,
                     reasoningEffort: '', distillProvider: '', distillModel: '', distillChain: [],
                     distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, distillMaxInputChars: 0,
+                    distillLayerChains: { l1: [], l2: [], l3: [] },
                 },
                 // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
                 ceilings: { capture: cfg.capture.enabled, distill: cfg.extract.enabled, recall: cfg.recall.enabled },
@@ -310,6 +311,23 @@ async function handleEndpoint(endpoint, payload, deps) {
                 if (err)
                     throw new Error(err);
                 clean.distillChain = patch.distillChain;
+            }
+            // 运行时按层路由链（#34）：逐层校验（头行必须显式——层覆盖不支持跟随默认模型）；
+            // patch 语义只带要改的层，写入侧与存量层合并后落盘（空数组 = 该层回到跟随）
+            if (patch.distillLayerChains !== undefined) {
+                const rawLC = (patch.distillLayerChains ?? {});
+                const merged = {
+                    ...live.get().distillLayerChains,
+                };
+                for (const key of ['l1', 'l2', 'l3']) {
+                    if (rawLC[key] === undefined)
+                        continue;
+                    const err = validateDistillChain(rawLC[key], { requireExplicitHead: true });
+                    if (err)
+                        throw new Error(`层路由 ${key}：${err}`);
+                    merged[key] = rawLC[key];
+                }
+                clean.distillLayerChains = merged;
             }
             if (patch.reasoningEffort !== undefined) {
                 const v = String(patch.reasoningEffort);

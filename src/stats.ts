@@ -390,6 +390,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
           enabled: true, capture: true, distill: true, recall: true,
           reasoningEffort: '', distillProvider: '', distillModel: '', distillChain: [],
           distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 }, distillMaxInputChars: 0,
+          distillLayerChains: { l1: [], l2: [], l3: [] },
         },
         // 静态部署上限（cordis.patch.yml）：运行时开关与它取 AND
         ceilings: { capture: cfg.capture.enabled, distill: cfg.extract.enabled, recall: cfg.recall.enabled },
@@ -425,7 +426,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
     case 'dsh-memory/settings-set': {
       if (!live) throw new Error('开关通道未初始化');
       const patch = (payload ?? {}) as Record<string, unknown>;
-      const clean: Record<string, boolean | string | number | DistillChainEntry[] | { extract: number; dedup: number; l2: number; l3: number }> = {};
+      const clean: Record<string, boolean | string | number | DistillChainEntry[] | { extract: number; dedup: number; l2: number; l3: number } | { l1: DistillChainEntry[]; l2: DistillChainEntry[]; l3: DistillChainEntry[] }> = {};
       for (const key of ['enabled', 'capture', 'distill', 'recall'] as const) {
         if (typeof patch[key] === 'boolean') clean[key] = patch[key] as boolean;
       }
@@ -434,6 +435,21 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         const err = validateDistillChain(patch.distillChain);
         if (err) throw new Error(err);
         clean.distillChain = patch.distillChain as DistillChainEntry[];
+      }
+      // 运行时按层路由链（#34）：逐层校验（头行必须显式——层覆盖不支持跟随默认模型）；
+      // patch 语义只带要改的层，写入侧与存量层合并后落盘（空数组 = 该层回到跟随）
+      if (patch.distillLayerChains !== undefined) {
+        const rawLC = (patch.distillLayerChains ?? {}) as Record<string, unknown>;
+        const merged: Record<string, DistillChainEntry[]> = {
+          ...(live.get().distillLayerChains as unknown as Record<string, DistillChainEntry[]>),
+        };
+        for (const key of ['l1', 'l2', 'l3'] as const) {
+          if (rawLC[key] === undefined) continue;
+          const err = validateDistillChain(rawLC[key], { requireExplicitHead: true });
+          if (err) throw new Error(`层路由 ${key}：${err}`);
+          merged[key] = rawLC[key] as DistillChainEntry[];
+        }
+        clean.distillLayerChains = merged as { l1: DistillChainEntry[]; l2: DistillChainEntry[]; l3: DistillChainEntry[] };
       }
       if (patch.reasoningEffort !== undefined) {
         const v = String(patch.reasoningEffort);
