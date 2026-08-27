@@ -186,6 +186,13 @@ async function fetchSnapshot(force = false): Promise<void> {
 /** 寄生圆类名（同时是回声环过滤标记）。 */
 const PARASITE_CLASS = 'dsh-mem-parasite';
 
+/**
+ * 最小可见弧长（viewBox 单位）：14px 渲染下 1 单位≈1px——真实占比常低至 0.6%
+ * （≈0.2 单位，亚像素不可见）。有记忆即至少画这道发光刻度（指示灯语义），
+ * 精确数字由面板分项承担。
+ */
+const MIN_VISIBLE_ARC = 2;
+
 let observer: MutationObserver | null = null;
 let reconcileScheduled = false;
 /** 锚点缓存：存活期内巡检走父链校验，不做全文档查询（高变动期降频纪律）。 */
@@ -303,7 +310,10 @@ function applyHalo(): void {
     halo.style.pointerEvents = 'none';
     svg.appendChild(halo); // 寄生动作本体：追加第三条 circle
   }
-  halo.setAttribute('stroke-dasharray', haloDashArray(ratio, CONTEXT_METER_CIRCUMFERENCE));
+  halo.setAttribute(
+    'stroke-dasharray',
+    haloDashArray(ratio, CONTEXT_METER_CIRCUMFERENCE, MIN_VISIBLE_ARC),
+  );
 
   // T2 时钟：官方 fill 的 dasharray 与上次记录不同 ⇒ 官方数字变了 ⇒ 节流重取权威账。
   // （首次记录不触发——冷启动取数由 noteOccupancySession 负责，这里只对"变化"响应。）

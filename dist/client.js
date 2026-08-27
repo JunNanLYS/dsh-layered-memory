@@ -2483,9 +2483,10 @@ var __defProp = Object.defineProperty;
 		
 		// src/util/context-occupancy.ts
 		var CONTEXT_METER_CIRCUMFERENCE = 34.55751918948772;
-		function haloDashArray(occupancyRatio, circumference = CONTEXT_METER_CIRCUMFERENCE) {
+		function haloDashArray(occupancyRatio, circumference = CONTEXT_METER_CIRCUMFERENCE, minLen = 0) {
 		  const clamped = Number.isFinite(occupancyRatio) ? Math.min(1, Math.max(0, occupancyRatio)) : 0;
-		  return `${clamped * circumference} ${circumference}`;
+		  const len = Math.max(clamped * circumference, clamped > 0 ? minLen : 0);
+		  return `${len} ${circumference}`;
 		}
 		var RADIUS_EPSILON = 1e-6;
 		function isContextMeterAnchor(sig) {
@@ -2584,6 +2585,7 @@ var __defProp = Object.defineProperty;
 		  }
 		}
 		var PARASITE_CLASS = "dsh-mem-parasite";
+		var MIN_VISIBLE_ARC = 2;
 		var observer = null;
 		var reconcileScheduled = false;
 		var anchorCache = null;
@@ -2682,7 +2684,10 @@ var __defProp = Object.defineProperty;
 		    halo.style.pointerEvents = "none";
 		    svg.appendChild(halo);
 		  }
-		  halo.setAttribute("stroke-dasharray", haloDashArray(ratio, CONTEXT_METER_CIRCUMFERENCE));
+		  halo.setAttribute(
+		    "stroke-dasharray",
+		    haloDashArray(ratio, CONTEXT_METER_CIRCUMFERENCE, MIN_VISIBLE_ARC)
+		  );
 		  const fill = svg.querySelector("circle:nth-of-type(2)");
 		  const offKey = fill?.getAttribute("stroke-dasharray") ?? "";
 		  if (svg.dataset.offKey !== void 0 && svg.dataset.offKey !== offKey) {

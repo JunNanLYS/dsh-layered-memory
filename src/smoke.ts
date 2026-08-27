@@ -3792,6 +3792,8 @@ async function main(): Promise<void> {
     assert(haloDashArray(0.12) === `${0.12 * CONTEXT_METER_CIRCUMFERENCE} ${CONTEXT_METER_CIRCUMFERENCE}`, 'dasharray 形状沿用官方（len + 全周长 gap）');
     assert(Math.abs(parseFloat(haloDashArray(0.12)) - 4.146902302738527) < 5e-13, '12% 弧长 ≈ 官方实测 4.146902302738527');
     assert(haloDashArray(-1).startsWith('0 ') && haloDashArray(7).endsWith(` ${CONTEXT_METER_CIRCUMFERENCE}`), '越界钳制到 [0,1]');
+    assert(parseFloat(haloDashArray(0.006, CONTEXT_METER_CIRCUMFERENCE, 2)) === 2, '最小可见弧长：低占比（0.6%≈0.2单位 亚像素）垫到 2 单位（指示灯语义）');
+    assert(parseFloat(haloDashArray(0.006, CONTEXT_METER_CIRCUMFERENCE, 0)) < 0.3, '默认无垫高：既有精确公式语义不变');
     assert(Number.isNaN(parseFloat(haloDashArray(Number.NaN))) === false && parseFloat(haloDashArray(Number.NaN)) === 0, 'NaN 视作零占比');
 
     // d. 官方环结构签名：locale 无关锚定的正/反例

@@ -55,8 +55,10 @@ export declare const CONTEXT_METER_CIRCUMFERENCE = 34.55751918948772;
 /**
  * 光晕弧 stroke-dasharray：形状沿用官方 fill（len + 全周长 gap）。
  * @param occupancyRatio 占窗口比 0..1（越界钳制）。
+ * @param minLen 最小可见弧长（单位=-viewBox 坐标；14px 渲染下 <1 单位即亚像素不可见，
+ *  真实占比常低至 0.6%≈0.2 单位——指示灯语义需要"存在即可见"，精确数字归面板）。
  */
-export declare function haloDashArray(occupancyRatio: number, circumference?: number): string;
+export declare function haloDashArray(occupancyRatio: number, circumference?: number, minLen?: number): string;
 /** 官方环触发按钮的结构签名（locale 无关定位依据；见组件设计 C1 锚点节）。 */
 export interface ContextMeterAnchorSignature {
     ariaHasPopup?: string | null;
