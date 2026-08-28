@@ -83,6 +83,7 @@ import type {
   ModelWithEfforts,
   MemoryStats,
   RebuildStatusResponse,
+  RecallDisabledReason,
   ScenesResponse,
   SessionModeGetResponse,
   SessionModeSetResponse,
@@ -298,21 +299,49 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       if (!modes) throw new Error('档位存储未初始化');
       const p = (payload ?? {}) as { sessionId?: string };
       const sessionId = expectSessionId(p.sessionId);
-      const v: SessionModeGetResponse = { sessionId, mode: modes.get(sessionId), defaultMode: modes.default };
+      // 注入解析权威在 host：recall 是原始覆盖（null=跟随全局），recallResolved 是生效值
+      const s = live?.get();
+      const globalRecall = s?.recall ?? true;
+      const v: SessionModeGetResponse = {
+        sessionId,
+        mode: modes.get(sessionId),
+        defaultMode: modes.default,
+        recall: modes.getRecall(sessionId) ?? null,
+        recallResolved: modes.resolvedRecall(sessionId, globalRecall),
+      };
       return v;
     }
 
     case 'dsh-memory/session-mode-set': {
       if (!modes) throw new Error('档位存储未初始化');
-      const p = (payload ?? {}) as { sessionId?: string; mode?: string };
+      const p = (payload ?? {}) as { sessionId?: string; mode?: string; recall?: boolean | null };
       const sessionId = expectSessionId(p.sessionId);
       const allowed: MemoryMode[] = ['auto', 'chat', 'work', 'off'];
       if (typeof p.mode !== 'string' || !allowed.includes(p.mode as MemoryMode)) {
         throw new Error(`非法档位: ${String(p.mode)}（允许 ${allowed.join('/')}）`);
       }
+      // 注入覆盖可选同车（#38）：布尔 = 设置覆盖；显式 null = 清除覆盖（跟随全局）；
+      // 缺省（undefined）= 仅切档、覆盖保持不动（旧 client 永不传 recall，行为不变）。
+      // 校验前置：非法 recall 在任何写穿发生前拒绝（不做部分提交）
+      if (p.recall !== undefined && typeof p.recall !== 'boolean' && p.recall !== null) {
+        throw new Error(`非法注入覆盖: ${String(p.recall)}（允许 true/false/null）`);
+      }
       modes.set(sessionId, p.mode as MemoryMode);
-      deps.logger.info(`[memory] 会话档位设置 session=${sessionId} mode=${p.mode}`);
-      const v: SessionModeSetResponse = { sessionId, mode: p.mode as MemoryMode };
+      if (typeof p.recall === 'boolean') {
+        modes.setRecall(sessionId, p.recall);
+      } else if (p.recall === null) {
+        modes.setRecall(sessionId, undefined);
+      }
+      deps.logger.info(
+        `[memory] 会话档位设置 session=${sessionId} mode=${p.mode} recall=${JSON.stringify(modes.getRecall(sessionId) ?? null)}`,
+      );
+      const s = live?.get();
+      const v: SessionModeSetResponse = {
+        sessionId,
+        mode: p.mode as MemoryMode,
+        recall: modes.getRecall(sessionId) ?? null,
+        recallResolved: modes.resolvedRecall(sessionId, s?.recall ?? true),
+      };
       return v;
     }
 
@@ -325,7 +354,16 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
       const caps = sessionInfo.capabilities();
       const l0Count = await sessionInfo.l0Count(sessionId);
       const s = live?.get();
-      const recallOn = cfg.recall.enabled && (s?.recall ?? true) && mode !== 'off';
+      // 注入生效四因子短路序（#38）：部署上限 → 全局开关 → 会话覆盖 → 档位；
+      // disabled 时 reason 带第一个为假因子（悬浮卡停用文案的数据源）
+      const globalRecall = s?.recall ?? true;
+      const sessionRecall = modes ? modes.resolvedRecall(sessionId, globalRecall) : true;
+      let recallReason: RecallDisabledReason | undefined;
+      if (!cfg.recall.enabled) recallReason = 'deploy';
+      else if (!globalRecall) recallReason = 'global';
+      else if (!sessionRecall) recallReason = 'session';
+      else if (mode === 'off') recallReason = 'mode';
+      const recallOn = recallReason === undefined;
       const view = sessionInfo.runnerView(sessionId, mode);
       // lastDistillAt 统一转 ISO（与 global.lastExtractAt 口径一致，client 直接 fmtAgo）
       const distillView = { ...view, lastDistillAt: view.lastDistillAt ? new Date(view.lastDistillAt).toISOString() : null };
@@ -352,7 +390,11 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         sessionId,
         mode,
         defaultMode: modes?.default ?? cfg.family,
-        recall: { enabled: recallOn, ...(sessionInfo.recallStats(sessionId) ?? emptyRecallStats()) },
+        recall: {
+          enabled: recallOn,
+          ...(recallReason ? { reason: recallReason } : {}),
+          ...(sessionInfo.recallStats(sessionId) ?? emptyRecallStats()),
+        },
         memoryOccupancy: sessionInfo.memoryOccupancy(sessionId),
         occupancyBackfill: sessionInfo.profileEstimate
           ? {

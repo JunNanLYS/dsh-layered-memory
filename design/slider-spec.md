@@ -113,6 +113,20 @@
 
 `props.error` 在滑轨下方 11px danger 色一行（`whiteSpace: nowrap`）。
 
+## 注入三态行（#38 只写不读）
+
+滑轨（族维度）正下方、会话信息区上方的一行分段控件——档位与注入正交分立的 UI 落点：
+
+- **布局**：`border-top: 1px solid --dsh-mem-border`（上 10px 下 8px）+ 左标签右分段的
+  `space-between` 行；标签「注入」两字 12px text-3（文案极简约定：无解释行，
+  语义进 Segmented 各项 title tooltip）；
+- **分段**：复用 `ui/controls.tsx` 的 `Segmented`（设置页同款令牌样式），三态
+  「跟随全局 / 开 / 关」——`跟随全局` = 清除会话覆盖（recall null），`关` = 只写
+  （强制关），`开` = 强制开；当前值来自 `session-mode-get` 的 `recall`；
+- **off 档禁用**：档位关闭 = 完全隐身（包含注入），分段 `disabled` 置灰；
+- **提交**：乐观更新 + RPC 失败回滚（与档位 commit 同款）；清除覆盖后的解析值由
+  `session-mode-set` 响应的 `recallResolved` 回填（client 不自猜全局开关）。
+
 ## 会话信息区（SessionInfoArea，滑轨下方）
 
 浮层下半部：分隔线（1px `--dsh-mem-border`，上 12px 下 10px）+ 2×2 指标网格 +
@@ -142,7 +156,7 @@
 
 | 格 | 值 | 标签 | 说明 |
 |---|---|---|---|
-| 召回命中 | `hitTurns/injectedTurns`；停用时显示"停用" | `召回命中 · N 条`（累计命中） | **注入统计**而非 bench 的离线 recall@k（运行时无 ground truth）；hover title 显示最近一轮命中数/耗时/超时次数 |
+| 召回命中 | `hitTurns/injectedTurns`；停用时显示"停用" | `召回命中 · N 条`（累计命中） | **注入统计**而非 bench 的离线 recall@k（运行时无 ground truth）；hover title 显示最近一轮命中数/耗时/超时次数。停用原因由 host `recall.reason` 短路判定带出（`deploy` 部署未启用 / `global` 全局开关关闭 / `session` 会话只写 / `mode` 档位关闭，#38 起含会话只写）；旧宿主无 reason 时回退本地枚举文案 |
 | 攒批进度 | `pendingSlice/threshold`；off 档显示挂起数 | `攒批进度`（有挂起时 `攒批 · 挂起 N`） | threshold 含 warmup 爬坡；off 档标签"挂起切片"（ADR-0003 挂起语义） |
 | 本会话记忆 | 累计产出 L1 条数 | `本会话记忆` | hover title 显示最近蒸馏时间 |
 | 会话消息 | L0 已捕获条数 | `会话消息` | 索引 COUNT |

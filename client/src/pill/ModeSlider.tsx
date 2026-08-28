@@ -1,5 +1,6 @@
 /** 滑动选择器浮层（参考 macOS 滑动器：拖拽圆头 1:1 连续跟手，松手按动量投影吸附最近档）。 */
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { Segmented } from '../ui/controls.js';
 import type { RpcFn } from '../rpc.js';
 import { ensureThemeStyle } from '../theme.js';
 import { FIELD_TIERS, INNER_W, MODES, RAIL_H, THUMB, TRACK_W, modeIndex, smStep } from './modes.js';
@@ -34,6 +35,9 @@ interface GridCell {
 export function ModeSlider(props: {
   mode: string;
   onCommit(key: string): void;
+  /** 会话级注入覆盖（#38）：null = 跟随全局；缺省（未传）= 浮层不渲染注入行。 */
+  recall?: boolean | null;
+  onCommitRecall?(next: boolean | null): void;
   error?: string | null;
   rpc?: RpcFn;
   sessionId?: string;
@@ -346,6 +350,34 @@ export function ModeSlider(props: {
         {props.error ? (
           <div style={{ fontSize: 11, color: 'var(--dsh-mem-danger)', marginTop: 10, whiteSpace: 'nowrap' }}>
             {props.error}
+          </div>
+        ) : null}
+        {/* 注入三态行（#38 只写不读）：滑轨（族维度）正下方，档位与注入正交分立。
+            文案极简：标签两字 + 三态词；语义「跟随全局」即清除会话覆盖。
+            off 档时行禁用（完全隐身包含注入，开关无意义） */}
+        {props.recall !== undefined && props.onCommitRecall ? (
+          <div
+            style={{
+              borderTop: '1px solid var(--dsh-mem-border)',
+              marginTop: 10,
+              paddingTop: 8,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 12, color: 'var(--dsh-mem-text-3)' }}>注入</span>
+            <Segmented
+              value={props.recall === null ? 'follow' : props.recall ? 'on' : 'off'}
+              disabled={props.mode === 'off'}
+              options={[
+                { key: 'follow', label: '跟随全局', title: '清除本会话覆盖，跟随全局召回开关' },
+                { key: 'on', label: '开', title: '本会话强制注入记忆' },
+                { key: 'off', label: '关', title: '只写：记忆照常沉淀，但不注入本会话' },
+              ]}
+              onChange={(key) => props.onCommitRecall!(key === 'on' ? true : key === 'off' ? false : null)}
+            />
           </div>
         ) : null}
         {/* 会话信息区（分隔线 + 2×2 指标 + 状态行）：session-stats 热路径端点，

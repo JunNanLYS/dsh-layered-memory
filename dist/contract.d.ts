@@ -75,6 +75,8 @@ export interface MemoryLiveSettings {
      *  跟随（静态层链 → 全局解析逐级兜底）。写入经 settings-set 逐层校验（头行必须显式）。 */
     distillLayerChains: Record<LayerRouteKey, DistillChainEntry[]>;
 }
+/** 召回停用原因（session-stats recall.enabled=false 时带出；短路序第一个为假的因子）。 */
+export type RecallDisabledReason = 'deploy' | 'global' | 'session' | 'mode';
 /** 单会话召回统计（悬浮卡信息区数据源；口径见 recall.ts 注释）。 */
 export interface RecallSessionStats {
     /** 发生过召回检索的轮次数（含零命中、全量压制与超时）。 */
@@ -332,14 +334,27 @@ export interface SessionModeGetResponse {
     sessionId: string;
     mode: MemoryMode;
     defaultMode: MemoryMode;
+    /** 会话级注入覆盖（#38 只写不读）：null = 未覆盖（跟随全局）——线上 JSON 用 null
+     *  不用 undefined（序列化丢包）。 */
+    recall: boolean | null;
+    /** host 解析后的注入生效值（会话覆盖 ?? 全局开关）：pill 面文直接消费，
+     *  client 无需另知全局开关。 */
+    recallResolved: boolean;
 }
 export interface SessionModeSetRequest {
     sessionId: string;
     mode: MemoryMode;
+    /** 会话级注入覆盖：布尔 = 设置覆盖；显式 null = 清除（跟随全局）；缺省 = 不动
+     *  （旧 client 纯切档兼容，覆盖不丢）。mode 与 recall 可独立设置。 */
+    recall?: boolean | null;
 }
 export interface SessionModeSetResponse {
     sessionId: string;
     mode: MemoryMode;
+    /** 设置后的覆盖态（null = 跟随全局）。 */
+    recall: boolean | null;
+    /** 设置后的注入生效值（client 面文直接消费；清除覆盖后由 host 告知解析结果）。 */
+    recallResolved: boolean;
 }
 /** dsh-memory/session-stats（悬浮卡信息区；热路径端点）。 */
 export interface SessionStatsRequest {
@@ -360,8 +375,12 @@ export type SessionStatsResponse = {
     sessionId: string;
     mode: MemoryMode;
     defaultMode: MemoryMode;
+    /** 注入统计 + 生效位；enabled=false 时 reason 带短路序第一个为假因子
+     *  （deploy 部署上限 / global 全局开关 / session 会话只写 / mode 档位关闭），
+     *  旧宿主缺省该字段时 client 回退本地枚举文案。 */
     recall: {
         enabled: boolean;
+        reason?: RecallDisabledReason;
     } & RecallSessionStats;
     /** 记忆上下文占用账本（未注入过的会话为 null）。 */
     memoryOccupancy: MemoryOccupancy | null;

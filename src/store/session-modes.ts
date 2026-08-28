@@ -15,6 +15,9 @@ const MAX_ENTRIES = 500;
 
 interface ModeEntry {
   mode: MemoryMode;
+  /** 会话级注入覆盖（#38 只写不读）：true/false = 强制开/关；缺省 = 跟随全局。
+   *  只影响读侧三闸门（pre-step / 稳定区 / 工具），捕获与蒸馏零感知。 */
+  recall?: boolean;
   updatedAt: number;
 }
 
@@ -55,7 +58,12 @@ export class SessionModeStore {
     for (const [sid, entry] of Object.entries(data.sessions)) {
       if (!isMemoryMode(entry?.mode)) continue;
       if (now - (entry.updatedAt ?? 0) > PRUNE_MS) continue;
-      this.entries.set(sid, { mode: entry.mode, updatedAt: entry.updatedAt ?? now });
+      this.entries.set(sid, {
+        mode: entry.mode,
+        // 非布尔视为损坏丢弃（= 跟随全局）；旧文件无此键同款兼容
+        recall: typeof entry.recall === 'boolean' ? entry.recall : undefined,
+        updatedAt: entry.updatedAt ?? now,
+      });
       count++;
     }
     if (count > 0) this.logger?.info(`[memory] 会话档位载入 ${count} 条（默认档=${this.defaultMode}）`);
@@ -70,6 +78,28 @@ export class SessionModeStore {
     return this.entries.get(sessionId)?.mode ?? this.loaded;
   }
 
+  /** 会话级注入覆盖原始值（#38）：undefined = 未覆盖，跟随全局。 */
+  getRecall(sessionId: string): boolean | undefined {
+    return this.entries.get(sessionId)?.recall;
+  }
+
+  /** 解析后的注入开关：会话覆盖 ?? 全局运行时开关（部署级 cfg.recall.enabled
+   *  与主闸 s.enabled 不经此处，仍按既有硬门生效——覆盖打不穿部署上限）。 */
+  resolvedRecall(sessionId: string, globalRecall: boolean): boolean {
+    return this.entries.get(sessionId)?.recall ?? globalRecall;
+  }
+
+  /** 设置会话级注入覆盖（#38；undefined = 清除覆盖跟随全局。写穿持久化）。 */
+  setRecall(sessionId: string, recall: boolean | undefined): void {
+    const entry = this.entries.get(sessionId);
+    this.entries.set(sessionId, {
+      mode: entry?.mode ?? this.loaded,
+      recall,
+      updatedAt: Date.now(),
+    });
+    this.writeChain = this.writeChain.then(() => this.persist());
+  }
+
   /** 注册档位切换回调（同步调用；回调异常只记日志不阻断写穿）。 */
   setModeChangeHandler(cb: (sessionId: string, oldMode: MemoryMode, newMode: MemoryMode) => void): void {
     this.onModeChange = cb;
@@ -78,7 +108,9 @@ export class SessionModeStore {
   /** 设置会话档位（写穿持久化；持久化失败保持内存态生效）。 */
   set(sessionId: string, mode: MemoryMode): void {
     const old = this.get(sessionId);
-    this.entries.set(sessionId, { mode, updatedAt: Date.now() });
+    // 已有注入覆盖跨切档保留（#38：档位与注入正交，切档不动覆盖）
+    const recall = this.entries.get(sessionId)?.recall;
+    this.entries.set(sessionId, { mode, recall, updatedAt: Date.now() });
     this.writeChain = this.writeChain.then(() => this.persist());
     if (old !== mode && this.onModeChange) {
       try {

@@ -23,6 +23,13 @@ pill 半透明衍生色一律 `color-mix(in srgb, <档位色> N%, transparent)`�
 
 pill 文本格式：`记忆 · 档位名`（全角间隔两侧各一空格）。
 
+**只写面文（#38，方案 A 面文换字）**：非 off 档且会话注入生效值为否（host 下发
+`recallResolved=false`，即会话覆盖关或全局关+会话未强制开）时，面文整词换作
+`记忆 · 只写`——族名收进浮层滑轨，注入态优先上脸（复合状态一控件的官方语法，
+同输入栏「模型名 + effort ▾」先例）。流光形态、档位色与光晕不变（词承载状态，
+色仍随底层档位弱暗示）；off 档维持「关闭」灰态优先（完全隐身不含只写）。
+解析权威在 host（`session-mode-get/set` 响应的 `recallResolved`），client 不另知全局开关。
+
 **关闭 / 未加载（`mode === null`）= dsh 透明按钮**：
 
 - `.dsh-mem-pill-off`：`border: none; background: transparent`——裸 `<button>` 会露出

@@ -17,6 +17,13 @@ export declare class SessionModeStore {
     get default(): MemoryMode;
     /** 同步读取：未设置过的会话返回默认档。 */
     get(sessionId: string): MemoryMode;
+    /** 会话级注入覆盖原始值（#38）：undefined = 未覆盖，跟随全局。 */
+    getRecall(sessionId: string): boolean | undefined;
+    /** 解析后的注入开关：会话覆盖 ?? 全局运行时开关（部署级 cfg.recall.enabled
+     *  与主闸 s.enabled 不经此处，仍按既有硬门生效——覆盖打不穿部署上限）。 */
+    resolvedRecall(sessionId: string, globalRecall: boolean): boolean;
+    /** 设置会话级注入覆盖（#38；undefined = 清除覆盖跟随全局。写穿持久化）。 */
+    setRecall(sessionId: string, recall: boolean | undefined): void;
     /** 注册档位切换回调（同步调用；回调异常只记日志不阻断写穿）。 */
     setModeChangeHandler(cb: (sessionId: string, oldMode: MemoryMode, newMode: MemoryMode) => void): void;
     /** 设置会话档位（写穿持久化；持久化失败保持内存态生效）。 */

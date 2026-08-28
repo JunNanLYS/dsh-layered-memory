@@ -1,10 +1,12 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
 const OFF_NOTICE = '本会话的记忆档位为"关闭"：该会话对记忆系统完全隐身，不读取也不写入记忆。';
-export function registerMemoryTools(ctx, cfg, stores, logger, modes) {
+const WRITE_ONLY_NOTICE = '本会话为只写模式：记忆照常沉淀，但不读取。';
+const GLOBAL_OFF_NOTICE = '记忆注入已全局停用：本会话不读取记忆（沉淀照常）。';
+export function registerMemoryTools(ctx, cfg, stores, logger, modes, live) {
     if (!cfg.tools)
         return;
     /**
-     * 调用会话的检索族（auto → undefined 不过滤；off → null 表示整体禁用）。
+     * 调用会话的检索族（auto → undefined 不过滤；off/只写 → null 表示整体禁用）。
      * fail-open：exec.agent 缺失（宿主调用路径未带 agent 标识）按全族检索放行——
      * 档位隔离依赖宿主正确传递 exec.agent.id，缺失只告警一次不拒绝工具调用。
      */
@@ -20,7 +22,23 @@ export function registerMemoryTools(ctx, cfg, stores, logger, modes) {
         const mode = modes.get(agentId);
         if (mode === 'off')
             return null;
+        // 只写会话拒读（#38，T2 裁决）：与注入同属读维度，不拒则"不注入"从工具路径漏风
+        if (!modes.resolvedRecall(agentId, live.get().recall))
+            return null;
         return mode === 'auto' ? undefined : mode;
+    };
+    /** 拒读时的归因文案（familyOfCaller 判 null 后重查内存 Map，成本可忽略）：
+     *  off 完全隐身 / 会话只写覆盖 / 全局召回关——三种停用各说各话，不谎报只写。 */
+    const blockNoticeOf = (agentId) => {
+        if (agentId !== undefined) {
+            if (modes.get(agentId) === 'off')
+                return OFF_NOTICE;
+            if (modes.getRecall(agentId) === false)
+                return WRITE_ONLY_NOTICE;
+            if (!modes.resolvedRecall(agentId, live.get().recall))
+                return GLOBAL_OFF_NOTICE;
+        }
+        return OFF_NOTICE;
     };
     // ── memory_search: L1 结构化记忆 ──
     ctx.tools.register(defineTool({
@@ -59,7 +77,7 @@ export function registerMemoryTools(ctx, cfg, stores, logger, modes) {
         execute: async (args, exec) => {
             const family = familyOfCaller(exec.agent?.id);
             if (family === null)
-                return { items: [], notice: OFF_NOTICE };
+                return { items: [], notice: blockNoticeOf(exec.agent?.id) };
             const limit = Math.min(Math.max(args.limit ?? 5, 1), 20);
             const hits = await stores.l1.search(args.query, limit, { type: args.type || undefined, family: family ?? undefined });
             return {
@@ -107,7 +125,7 @@ export function registerMemoryTools(ctx, cfg, stores, logger, modes) {
         },
         execute: async (args, exec) => {
             if (familyOfCaller(exec.agent?.id) === null)
-                return { items: [], notice: OFF_NOTICE };
+                return { items: [], notice: blockNoticeOf(exec.agent?.id) };
             const limit = Math.min(Math.max(args.limit ?? 5, 1), 20);
             const records = await stores.l0.search(args.query, limit);
             return {
@@ -141,7 +159,7 @@ export function registerMemoryTools(ctx, cfg, stores, logger, modes) {
         },
         execute: async (args, exec) => {
             if (familyOfCaller(exec.agent?.id) === null)
-                return { content: OFF_NOTICE };
+                return { content: blockNoticeOf(exec.agent?.id) };
             const p = args.path.trim();
             let content;
             if (p === 'persona.md' || p === 'persona-chat.md' || p === 'persona' || p === 'persona-chat') {

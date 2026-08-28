@@ -664,6 +664,17 @@ async function main(): Promise<void> {
       try { await call('dsh-memory/session-mode-set', { sessionId: 'sess-z', mode: 'sleep' }); } catch { badMode = true; }
       assert(badMode, 'session-mode-set 拒绝非法档位');
 
+      // ── 会话级注入覆盖（#38 只写不读）：get/set 往返 + 缺省不动 + 显式 null 清除 ──
+      const smG0 = await call('dsh-memory/session-mode-get', { sessionId: 'sess-r0' }) as never as { recall: boolean | null; recallResolved: boolean };
+      assert(smG0.recall === null && smG0.recallResolved === true, 'session-mode-get 未覆盖会话 recall=null 且解析为全局开');
+      const smW = await call('dsh-memory/session-mode-set', { sessionId: 'sess-r0', mode: 'work', recall: false }) as never as { mode: string; recall: boolean | null; recallResolved: boolean };
+      assert(smW.recall === false && smW.recallResolved === false, 'session-mode-set 写入只写覆盖并回传 host 解析值');
+      await call('dsh-memory/session-mode-set', { sessionId: 'sess-r0', mode: 'chat' });
+      const smKeep = await call('dsh-memory/session-mode-get', { sessionId: 'sess-r0' }) as never as { mode: string; recall: boolean | null };
+      assert(smKeep.mode === 'chat' && smKeep.recall === false, '缺省 recall 切档不丢覆盖（档位与注入正交）');
+      const smC = await call('dsh-memory/session-mode-set', { sessionId: 'sess-r0', mode: 'chat', recall: null }) as never as { recall: boolean | null; recallResolved: boolean };
+      assert(smC.recall === null && smC.recallResolved === true, '显式 null 清除覆盖并回到全局解析值');
+
       // session-stats（悬浮卡信息区热路径端点）：会话档位联动 + 召回统计 + 攒批/挂起视图 + 索引计数
       const sst = await call('dsh-memory/session-stats', { sessionId: 'sess-x' }) as never as {
         supported: boolean;
@@ -692,13 +703,21 @@ async function main(): Promise<void> {
       assert(sst.contextWindowTokens === null, 'session-stats：无模型服务环境分母优雅降级为 null');
       assert(sst.retrieval === 'keyword', 'session-stats：向量不可用降级标 keyword');
       const sstOff = await call('dsh-memory/session-stats', { sessionId: 'sess-y' }) as never as {
-        recall: { enabled: boolean; injectedTurns: number };
+        recall: { enabled: boolean; reason?: string; injectedTurns: number };
         distill: { threshold: number | null };
         memoryOccupancy: unknown;
       };
-      assert(sstOff.recall.enabled === false && sstOff.recall.injectedTurns === 0, 'session-stats：off 档召回停用、无统计时零值（emptyRecallStats 兜底）');
+      assert(sstOff.recall.enabled === false && sstOff.recall.reason === 'mode' && sstOff.recall.injectedTurns === 0, 'session-stats：off 档召回停用（reason=mode）、无统计时零值（emptyRecallStats 兜底）');
       assert(sstOff.distill.threshold === null, 'session-stats：off 档无攒批阈值');
       assert(sstOff.memoryOccupancy === null, 'session-stats：从未注入的会话占用为 null（非零对象）');
+      // 只写会话（#38）：注入停用 reason=session；写侧零感知（攒批视图照常）
+      await call('dsh-memory/session-mode-set', { sessionId: 'sess-x', mode: 'work', recall: false });
+      const sstWo = await call('dsh-memory/session-stats', { sessionId: 'sess-x' }) as never as { recall: { enabled: boolean; reason?: string }; distill: { pendingSlice: number } };
+      assert(sstWo.recall.enabled === false && sstWo.recall.reason === 'session', 'session-stats：只写会话停用注入且 reason=session');
+      assert(sstWo.distill.pendingSlice === 3, 'session-stats：只写会话写侧零感知（攒批视图照常）');
+      await call('dsh-memory/session-mode-set', { sessionId: 'sess-x', mode: 'work', recall: null as boolean | null });
+      const sstBack = await call('dsh-memory/session-stats', { sessionId: 'sess-x' }) as never as { recall: { enabled: boolean; reason?: string } };
+      assert(sstBack.recall.enabled === true && sstBack.recall.reason === undefined, 'session-stats：清除只写后恢复注入且无 reason');
       // 数据源缺失（旧装配）走 supported=false：信息区整体隐藏
       const sst2HandlerPayload: unknown = await handler!('dsh-memory/session-stats', { sessionId: '' });
       assert((sst2HandlerPayload as { ok: boolean }).ok === false, 'session-stats：空 sessionId 拒绝');
@@ -927,7 +946,8 @@ async function main(): Promise<void> {
           },
         },
       } as never;
-      registerMemoryTools(ctxT, { tools: true } as never, { l0: l0T, l1: l1T, scenes: scenesT, persona: personaT }, silentLogger, modesT);
+      const toolGlobalRecall = { value: true };
+      registerMemoryTools(ctxT, { tools: true } as never, { l0: l0T, l1: l1T, scenes: scenesT, persona: personaT }, silentLogger, modesT, { supported: true, get: () => ({ recall: toolGlobalRecall.value }) } as never);
       assert(Object.keys(specs).length === 3, '三工具注册');
 
       const ms = await specs['memory_search'].execute({ query: 'emoji' }, { agent: { id: 'sess-off' } });
@@ -941,6 +961,26 @@ async function main(): Promise<void> {
 
       const okSearch = await specs['memory_search'].execute({ query: 'emoji' }, { agent: { id: 'sess-auto' } }) as { items: Array<{ content: string }>; notice?: string };
       assert(okSearch.items.length === 1 && okSearch.items[0].content.includes('emoji') && okSearch.notice === undefined, 'auto 档正常检索且无提示字段');
+
+      // 只写会话（#38，T2）：注入覆盖=关 → 三工具拒读且文案区分（非「隐身」）
+      // （档位取 chat：清除覆盖后按族过滤能命中上方 chat 族测试记录）
+      modesT.set('sess-wo', 'chat');
+      modesT.setRecall('sess-wo', false);
+      const msWo = await specs['memory_search'].execute({ query: 'emoji' }, { agent: { id: 'sess-wo' } }) as { items: unknown[]; notice?: string };
+      assert(msWo.items.length === 0 && (msWo.notice as string).includes('只写') && !(msWo.notice as string).includes('隐身'), '只写会话 memory_search 拒读并返回只写文案');
+      const csWo = await specs['conversation_search'].execute({ query: '消息' }, { agent: { id: 'sess-wo' } }) as { items: unknown[]; notice?: string };
+      assert(csWo.items.length === 0 && (csWo.notice as string).includes('只写'), '只写会话 conversation_search 拒读');
+      const rsWo = await specs['memory_read_scene'].execute({ path: 'persona.md' }, { agent: { id: 'sess-wo' } }) as { content: string };
+      assert((rsWo.content as string).includes('只写'), '只写会话 memory_read_scene 拒读');
+      // 清除覆盖 → 恢复检索（写侧捕获不经工具，本就不受影响）
+      modesT.setRecall('sess-wo', undefined);
+      const okWo = await specs['memory_search'].execute({ query: 'emoji' }, { agent: { id: 'sess-wo' } }) as { items: unknown[]; notice?: string };
+      assert(okWo.items.length === 1 && okWo.notice === undefined, '只写覆盖清除后恢复检索');
+      // 全局召回关（无会话覆盖）→ 拒读但归因全局（不谎报只写）
+      toolGlobalRecall.value = false;
+      const msG = await specs['memory_search'].execute({ query: 'emoji' }, { agent: { id: 'sess-wo' } }) as { items: unknown[]; notice?: string };
+      assert(msG.items.length === 0 && (msG.notice as string).includes('全局') && !(msG.notice as string).includes('只写'), '全局召回关拒读且归因全局（不谎报只写）');
+      toolGlobalRecall.value = true;
       dbT.close();
     } finally {
       await fs.rm(tmpTool, { recursive: true, force: true }).catch(() => {});
@@ -1639,7 +1679,9 @@ async function main(): Promise<void> {
       } as never;
       const modesT5 = new SessionModeStore(tmpT5, 'auto');
       await modesT5.init();
-      const liveT5 = { supported: true, get: () => ({ enabled: true, capture: true, distill: true, recall: true, reasoningEffort: '' }) };
+      // 全局 recall 可变（#38 用例切换「全局关」场景）
+      let liveGlobalRecall = true;
+      const liveT5 = { supported: true, get: () => ({ enabled: true, capture: true, distill: true, recall: liveGlobalRecall, reasoningEffort: '' }) };
       const recallT5 = registerRecall(
         ctxT5,
         {
@@ -1729,6 +1771,59 @@ async function main(): Promise<void> {
       assert(d5.kind === 'enter' && d5.messages.length === 1, 'off 档不注入');
       assert(searchCalls === 2, `off 档不发起检索（${searchCalls}）`);
       modesT5.set('agent-t5', 'auto');
+
+      // ⑤b 只写覆盖（#38）：注入停、检索停、稳定区物理离场
+      modesT5.setRecall('agent-t5', false);
+      const d5b = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
+        () => Promise.resolve(enter([userMsg])),
+      );
+      assert(d5b.kind === 'enter' && d5b.messages.length === 1, '只写会话不注入');
+      assert(searchCalls === 2, `只写会话不发起检索（${searchCalls}）`);
+      assert((contextText['memory:profile']() ?? '') === '', '只写会话稳定区物理离场（空串）');
+
+      // ⑤c off 优先于会话强制开：off 档完全隐身不受覆盖影响
+      modesT5.setRecall('agent-t5', true);
+      modesT5.set('agent-t5', 'off');
+      const d5c = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
+        () => Promise.resolve(enter([userMsg])),
+      );
+      assert(d5c.kind === 'enter' && d5c.messages.length === 1, 'off 档优先：强制开覆盖下仍不注入');
+      assert((contextText['memory:profile']() ?? '') === '', 'off 档稳定区离场不理会会话强制开');
+      modesT5.set('agent-t5', 'auto');
+
+      // ⑤d 全局关 + 会话强制开 → 注入恢复（反向组合）
+      liveGlobalRecall = false;
+      hitId = 'h3'; // ④ 已注入 h2，换新 id 避免去重全量压制
+      const d5d = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
+        () => Promise.resolve(enter([userMsg])),
+      );
+      assert(d5d.kind === 'enter' && d5d.messages.length === 2, '全局关 + 会话强制开 → 注入恢复');
+      assert(searchCalls === 3, `强制开发起检索（${searchCalls}）`);
+
+      // ⑤e 跟随全局（清除覆盖）→ 全局关生效不注入
+      modesT5.setRecall('agent-t5', undefined);
+      const d5e = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
+        () => Promise.resolve(enter([userMsg])),
+      );
+      assert(d5e.kind === 'enter' && d5e.messages.length === 1, '跟随全局：全局关时不注入');
+      liveGlobalRecall = true;
+
+      // 旧文件兼容：无 recall 键的存量 entry 载入 → 覆盖空、解析跟随全局
+      await fs.writeFile(
+        path.join(tmpT5, 'session-modes.json'),
+        JSON.stringify({ version: 1, sessions: { 'agent-legacy': { mode: 'work', updatedAt: Date.now() } } }),
+        'utf8',
+      );
+      const legacyModes = new SessionModeStore(tmpT5, 'auto');
+      await legacyModes.init();
+      assert(
+        legacyModes.getRecall('agent-legacy') === undefined && legacyModes.resolvedRecall('agent-legacy', false) === false,
+        '旧文件无 recall 键 → 覆盖空、解析跟随全局',
+      );
 
       // ⑥ 指南三条件门控：有本轮召回命中（① 设置）→ 即便画像/导航全空也注入指南
       assert((contextText['memory:profile']() ?? '').includes('记忆工具调用指南'), '本轮有召回命中 → 指南注入（画像/导航为空）');

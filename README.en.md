@@ -159,6 +159,16 @@ trajectory view):
 - Each session's choice is persisted by sessionId to `session-modes.json`, surviving
   restarts/session restore; stacks with the global switches (global is the master gate);
   L2/L3 are fully family-isolated — content never leaks across families.
+- **Write-only sessions (#38)**: a three-state "injection" switch inside the popover
+  (follow global / on / off) — set to "off" for a **write-only session**: capture and
+  distillation continue as usual (conversation still settles into L0→L1→L2/L3), but
+  nothing is injected into this session (recall injection, the persona/navigation
+  stable section and the tools guide all stop; `memory_search` and the other read
+  tools return a write-only notice). The pill face changes to `Memory · Write-only`;
+  the override persists per session, and switching back to "follow global" clears it
+  to the settings-page recall toggle. Ideal for debug/eval/sensitive sessions that
+  should absorb without interference. Orthogonal to the off mode: off remains full
+  stealth (capture off too), while write-only keeps the "in" and gates the "out".
 
 ## UI Preview
 
