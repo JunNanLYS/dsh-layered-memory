@@ -20,6 +20,7 @@ import type { MemoryFamily, MemoryLogger } from '../types.js';
 
 const OFF_NOTICE = '本会话的记忆档位为"关闭"：该会话对记忆系统完全隐身，不读取也不写入记忆。';
 const WRITE_ONLY_NOTICE = '本会话为只写模式：记忆照常沉淀，但不读取。';
+const GLOBAL_OFF_NOTICE = '记忆注入已全局停用：本会话不读取记忆（沉淀照常）。';
 
 export function registerMemoryTools(
   ctx: Context,
@@ -57,10 +58,13 @@ export function registerMemoryTools(
     return mode === 'auto' ? undefined : mode;
   };
 
-  /** 拒读时的区分文案（familyOfCaller 判 null 后重查一次内存 Map，成本可忽略）。 */
+  /** 拒读时的归因文案（familyOfCaller 判 null 后重查内存 Map，成本可忽略）：
+   *  off 完全隐身 / 会话只写覆盖 / 全局召回关——三种停用各说各话，不谎报只写。 */
   const blockNoticeOf = (agentId: string | undefined): string => {
-    if (agentId !== undefined && modes.get(agentId) !== 'off' && !modes.resolvedRecall(agentId, live.get().recall)) {
-      return WRITE_ONLY_NOTICE;
+    if (agentId !== undefined) {
+      if (modes.get(agentId) === 'off') return OFF_NOTICE;
+      if (modes.getRecall(agentId) === false) return WRITE_ONLY_NOTICE;
+      if (!modes.resolvedRecall(agentId, live.get().recall)) return GLOBAL_OFF_NOTICE;
     }
     return OFF_NOTICE;
   };

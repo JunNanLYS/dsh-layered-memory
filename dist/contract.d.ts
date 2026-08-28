@@ -344,7 +344,8 @@ export interface SessionModeGetResponse {
 export interface SessionModeSetRequest {
     sessionId: string;
     mode: MemoryMode;
-    /** 会话级注入覆盖；null/缺省 = 清除覆盖（跟随全局）。mode 与 recall 可独立设置。 */
+    /** 会话级注入覆盖：布尔 = 设置覆盖；显式 null = 清除（跟随全局）；缺省 = 不动
+     *  （旧 client 纯切档兼容，覆盖不丢）。mode 与 recall 可独立设置。 */
     recall?: boolean | null;
 }
 export interface SessionModeSetResponse {

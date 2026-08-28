@@ -3485,28 +3485,33 @@ var __defProp = Object.defineProperty;
 		    };
 		  }, [open]);
 		  const commit = (next) => {
-		    if (!rpc || next === mode) return;
+		    if (!rpc || !sessionId || mode === null || next === mode) return;
 		    const prev = mode;
+		    const token = seqRef.current;
 		    setMode(next);
 		    setError(null);
 		    rpc("dsh-memory/session-mode-set", { sessionId, mode: next }).then((r) => {
+		      if (token !== seqRef.current) return;
 		      if (!r || !r.ok) {
 		        setMode(prev);
 		        setError(r && r.error ? "档位写入失败：" + r.error.message : "档位写入失败");
 		      }
 		    }).catch((e) => {
+		      if (token !== seqRef.current) return;
 		      setMode(prev);
 		      setError("档位写入失败：" + String(e && e.message || e));
 		    });
 		  };
 		  const commitRecall = (next) => {
-		    if (!rpc || !sessionId || next === recall) return;
+		    if (!rpc || !sessionId || mode === null || next === recall) return;
 		    const prevRecall = recall;
 		    const prevResolved = recallResolved;
+		    const token = seqRef.current;
 		    setRecall(next);
 		    if (next !== null) setRecallResolved(next);
 		    setError(null);
-		    rpc("dsh-memory/session-mode-set", { sessionId, mode: mode ?? "auto", recall: next }).then((r) => {
+		    rpc("dsh-memory/session-mode-set", { sessionId, mode, recall: next }).then((r) => {
+		      if (token !== seqRef.current) return;
 		      if (!r || !r.ok) {
 		        setRecall(prevRecall);
 		        setRecallResolved(prevResolved);
@@ -3516,6 +3521,7 @@ var __defProp = Object.defineProperty;
 		        setRecallResolved(r.value.recallResolved);
 		      }
 		    }).catch((e) => {
+		      if (token !== seqRef.current) return;
 		      setRecall(prevRecall);
 		      setRecallResolved(prevResolved);
 		      setError("注入设置失败：" + String(e && e.message || e));
@@ -3570,7 +3576,7 @@ var __defProp = Object.defineProperty;
 		      {
 		        mode: mode || "auto",
 		        onCommit: commit,
-		        recall,
+		        recall: loaded ? recall : void 0,
 		        onCommitRecall: commitRecall,
 		        error,
 		        rpc,

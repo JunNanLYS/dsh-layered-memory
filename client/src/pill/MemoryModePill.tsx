@@ -82,36 +82,42 @@ export function MemoryModePill(props: {
     };
   }, [open]);
 
-  /** 乐观提交：立即更新 UI，RPC 失败回滚并提示。 */
+  /** 乐观提交：立即更新 UI，RPC 失败回滚并提示。token 比对丢弃过期会话的迟到响应。 */
   const commit = (next: string) => {
-    if (!rpc || next === mode) return;
+    if (!rpc || !sessionId || mode === null || next === mode) return;
     const prev = mode;
+    const token = seqRef.current;
     setMode(next);
     setError(null);
-    rpc('dsh-memory/session-mode-set', { sessionId: sessionId!, mode: next as 'auto' })
+    rpc('dsh-memory/session-mode-set', { sessionId, mode: next as 'auto' })
       .then((r) => {
+        if (token !== seqRef.current) return;
         if (!r || !r.ok) {
           setMode(prev);
           setError(r && r.error ? '档位写入失败：' + r.error.message : '档位写入失败');
         }
       })
       .catch((e: unknown) => {
+        if (token !== seqRef.current) return;
         setMode(prev);
         setError('档位写入失败：' + String((e && (e as Error).message) || e));
       });
   };
 
   /** 注入覆盖提交（#38）：null = 清除覆盖（跟随全局）；显式传 mode（host 侧缺省
-   *  recall 不动现值）。清除后的解析值（= 全局）只有 host 知道，以 set 响应回填。 */
+   *  recall 不动现值）。清除后的解析值（= 全局）只有 host 知道，以 set 响应回填。
+   *  mode 未加载时拒绝提交——请求必带 mode，缺省发射会把会话实际档位顶成 auto。 */
   const commitRecall = (next: boolean | null) => {
-    if (!rpc || !sessionId || next === recall) return;
+    if (!rpc || !sessionId || mode === null || next === recall) return;
     const prevRecall = recall;
     const prevResolved = recallResolved;
+    const token = seqRef.current;
     setRecall(next);
     if (next !== null) setRecallResolved(next);
     setError(null);
-    rpc('dsh-memory/session-mode-set', { sessionId, mode: (mode ?? 'auto') as 'auto', recall: next })
+    rpc('dsh-memory/session-mode-set', { sessionId, mode: mode as 'auto', recall: next })
       .then((r) => {
+        if (token !== seqRef.current) return;
         if (!r || !r.ok) {
           setRecall(prevRecall);
           setRecallResolved(prevResolved);
@@ -122,6 +128,7 @@ export function MemoryModePill(props: {
         }
       })
       .catch((e: unknown) => {
+        if (token !== seqRef.current) return;
         setRecall(prevRecall);
         setRecallResolved(prevResolved);
         setError('注入设置失败：' + String((e && (e as Error).message) || e));
@@ -179,7 +186,7 @@ export function MemoryModePill(props: {
         <ModeSlider
           mode={mode || 'auto'}
           onCommit={commit}
-          recall={recall}
+          recall={loaded ? recall : undefined}
           onCommitRecall={commitRecall}
           error={error}
           rpc={rpc}

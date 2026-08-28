@@ -186,12 +186,13 @@ async function handleEndpoint(endpoint, payload, deps) {
             if (typeof p.mode !== 'string' || !allowed.includes(p.mode)) {
                 throw new Error(`非法档位: ${String(p.mode)}（允许 ${allowed.join('/')}）`);
             }
-            modes.set(sessionId, p.mode);
             // 注入覆盖可选同车（#38）：布尔 = 设置覆盖；显式 null = 清除覆盖（跟随全局）；
-            // 缺省（undefined）= 仅切档、覆盖保持不动（旧 client 永不传 recall，行为不变）
+            // 缺省（undefined）= 仅切档、覆盖保持不动（旧 client 永不传 recall，行为不变）。
+            // 校验前置：非法 recall 在任何写穿发生前拒绝（不做部分提交）
             if (p.recall !== undefined && typeof p.recall !== 'boolean' && p.recall !== null) {
                 throw new Error(`非法注入覆盖: ${String(p.recall)}（允许 true/false/null）`);
             }
+            modes.set(sessionId, p.mode);
             if (typeof p.recall === 'boolean') {
                 modes.setRecall(sessionId, p.recall);
             }

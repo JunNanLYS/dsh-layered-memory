@@ -946,7 +946,8 @@ async function main(): Promise<void> {
           },
         },
       } as never;
-      registerMemoryTools(ctxT, { tools: true } as never, { l0: l0T, l1: l1T, scenes: scenesT, persona: personaT }, silentLogger, modesT, { supported: true, get: () => ({ recall: true }) } as never);
+      const toolGlobalRecall = { value: true };
+      registerMemoryTools(ctxT, { tools: true } as never, { l0: l0T, l1: l1T, scenes: scenesT, persona: personaT }, silentLogger, modesT, { supported: true, get: () => ({ recall: toolGlobalRecall.value }) } as never);
       assert(Object.keys(specs).length === 3, '三工具注册');
 
       const ms = await specs['memory_search'].execute({ query: 'emoji' }, { agent: { id: 'sess-off' } });
@@ -975,6 +976,11 @@ async function main(): Promise<void> {
       modesT.setRecall('sess-wo', undefined);
       const okWo = await specs['memory_search'].execute({ query: 'emoji' }, { agent: { id: 'sess-wo' } }) as { items: unknown[]; notice?: string };
       assert(okWo.items.length === 1 && okWo.notice === undefined, '只写覆盖清除后恢复检索');
+      // 全局召回关（无会话覆盖）→ 拒读但归因全局（不谎报只写）
+      toolGlobalRecall.value = false;
+      const msG = await specs['memory_search'].execute({ query: 'emoji' }, { agent: { id: 'sess-wo' } }) as { items: unknown[]; notice?: string };
+      assert(msG.items.length === 0 && (msG.notice as string).includes('全局') && !(msG.notice as string).includes('只写'), '全局召回关拒读且归因全局（不谎报只写）');
+      toolGlobalRecall.value = true;
       dbT.close();
     } finally {
       await fs.rm(tmpTool, { recursive: true, force: true }).catch(() => {});
