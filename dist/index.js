@@ -299,7 +299,7 @@ export async function apply(ctx, config) {
     }
     const recall = registerRecall(ctx, config, stores, logger, live, modes, dataDir);
     runner.setAfterRun(recall.invalidateProfile);
-    registerMemoryTools(ctx, config, stores, logger, modes);
+    registerMemoryTools(ctx, config, stores, logger, modes, live);
     registerMemoryRpc(ctx, config, stores, logger, {
         degraded: () => !storageOk || db.isDegraded(),
         pending: () => runner.pendingCount,

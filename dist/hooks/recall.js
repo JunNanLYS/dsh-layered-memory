@@ -132,7 +132,8 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
             try {
                 const s = live.get();
                 const mode = modes.get(payload.agent.id);
-                if (!s.enabled || !s.recall || mode === 'off')
+                // 三级读闸：主闸 → off 档（完全隐身）→ 注入开关（#38：会话覆盖 ?? 全局）
+                if (!s.enabled || mode === 'off' || !modes.resolvedRecall(payload.agent.id, s.recall))
                     return decision;
                 // 只在有新的用户来源消息的步骤注入（轮首 claim 或 steering 插话）；纯工具步透传
                 const hasNewUserMessage = decision.messages.some((m) => m.source?.kind === 'user');
@@ -222,10 +223,9 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
      * 供旧会话回填估算（RecallHooks.estimateProfileTokens）复用同一口径。
      */ const composeStableText = (agentId) => {
         const s = live.get();
-        if (!s.enabled || !s.recall)
-            return '';
         const mode = modes.get(agentId);
-        if (mode === 'off')
+        // 与 pre-step 同款三级读闸（#38）：主闸 → off 档 → 注入开关；空串即物理离场
+        if (!s.enabled || mode === 'off' || !modes.resolvedRecall(agentId, s.recall))
             return '';
         // auto 档：两族按类别归组（画像/导航各一个标签，域内 <domain> 分块）；纯档：单族原格式
         const body = mode === 'auto'

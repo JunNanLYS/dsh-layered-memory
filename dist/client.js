@@ -3066,7 +3066,13 @@ var __defProp = Object.defineProperty;
 		  if (rc.enabled === false) {
 		    rcVal = "停用";
 		    rcLabel = "召回命中";
-		    rcTitle = "召回已停用（开关关闭 / 档位关闭 / 部署未启用）";
+		    const reasonText = {
+		      deploy: "部署未启用",
+		      global: "全局开关关闭",
+		      session: "会话只写",
+		      mode: "档位关闭"
+		    };
+		    rcTitle = rc.reason ? "召回已停用（" + (reasonText[rc.reason] ?? rc.reason) + "）" : "召回已停用（开关关闭 / 档位关闭 / 部署未启用）";
 		  } else {
 		    rcVal = (rc.hitTurns || 0) + "/" + (rc.injectedTurns || 0);
 		    rcLabel = "召回命中 · " + (rc.totalHits || 0) + " 条";
@@ -3383,6 +3389,36 @@ var __defProp = Object.defineProperty;
 		              }
 		            ),
 		            props.error ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { fontSize: 11, color: "var(--dsh-mem-danger)", marginTop: 10, whiteSpace: "nowrap" }, children: props.error }) : null,
+		            props.recall !== void 0 && props.onCommitRecall ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
+		              "div",
+		              {
+		                style: {
+		                  borderTop: "1px solid var(--dsh-mem-border)",
+		                  marginTop: 10,
+		                  paddingTop: 8,
+		                  display: "flex",
+		                  justifyContent: "space-between",
+		                  alignItems: "center",
+		                  gap: 8
+		                },
+		                children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { style: { fontSize: 12, color: "var(--dsh-mem-text-3)" }, children: "注入" }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+		                    Segmented,
+		                    {
+		                      value: props.recall === null ? "follow" : props.recall ? "on" : "off",
+		                      disabled: props.mode === "off",
+		                      options: [
+		                        { key: "follow", label: "跟随全局", title: "清除本会话覆盖，跟随全局召回开关" },
+		                        { key: "on", label: "开", title: "本会话强制注入记忆" },
+		                        { key: "off", label: "关", title: "只写：记忆照常沉淀，但不注入本会话" }
+		                      ],
+		                      onChange: (key) => props.onCommitRecall(key === "on" ? true : key === "off" ? false : null)
+		                    }
+		                  )
+		                ]
+		              }
+		            ) : null,
 		            props.rpc && props.sessionId ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(SessionInfoArea, { rpc: props.rpc, sessionId: props.sessionId }) : null
 		          ]
 		        }
@@ -3397,6 +3433,8 @@ var __defProp = Object.defineProperty;
 		  const rpc = props.rpc;
 		  const sessionId = props.sessionId || props.session && props.session.sessionId;
 		  const [mode, setMode] = (0, import_react17.useState)(null);
+		  const [recall, setRecall] = (0, import_react17.useState)(null);
+		  const [recallResolved, setRecallResolved] = (0, import_react17.useState)(true);
 		  const [error, setError] = (0, import_react17.useState)(null);
 		  const [open, setOpen] = (0, import_react17.useState)(false);
 		  const wrapRef = (0, import_react17.useRef)(null);
@@ -3407,8 +3445,11 @@ var __defProp = Object.defineProperty;
 		    setError(null);
 		    rpc("dsh-memory/session-mode-get", { sessionId }).then((r) => {
 		      if (token !== seqRef.current) return;
-		      if (r && r.ok && r.value) setMode(r.value.mode);
-		      else setError(r && !r.ok ? r.error.message : "RPC error");
+		      if (r && r.ok && r.value) {
+		        setMode(r.value.mode);
+		        setRecall(r.value.recall);
+		        setRecallResolved(r.value.recallResolved);
+		      } else setError(r && !r.ok ? r.error.message : "RPC error");
 		    }).catch((e) => {
 		      if (token !== seqRef.current) return;
 		      setError(String(e && e.message || e));
@@ -3458,11 +3499,34 @@ var __defProp = Object.defineProperty;
 		      setError("档位写入失败：" + String(e && e.message || e));
 		    });
 		  };
+		  const commitRecall = (next) => {
+		    if (!rpc || !sessionId || next === recall) return;
+		    const prevRecall = recall;
+		    const prevResolved = recallResolved;
+		    setRecall(next);
+		    if (next !== null) setRecallResolved(next);
+		    setError(null);
+		    rpc("dsh-memory/session-mode-set", { sessionId, mode: mode ?? "auto", recall: next }).then((r) => {
+		      if (!r || !r.ok) {
+		        setRecall(prevRecall);
+		        setRecallResolved(prevResolved);
+		        setError(r && r.error ? "注入设置失败：" + r.error.message : "注入设置失败");
+		      } else {
+		        setRecall(r.value.recall);
+		        setRecallResolved(r.value.recallResolved);
+		      }
+		    }).catch((e) => {
+		      setRecall(prevRecall);
+		      setRecallResolved(prevResolved);
+		      setError("注入设置失败：" + String(e && e.message || e));
+		    });
+		  };
 		  if (!sessionId || !rpc) return null;
 		  const info = modeInfo(mode);
 		  const loaded = mode !== null;
 		  const isOff = loaded && mode === "off";
 		  const isFlow = loaded && !isOff;
+		  const faceLabel = !loaded ? error ? "⚠" : "…" : isOff ? info.label : !recallResolved ? "只写" : info.label;
 		  ensureThemeStyle();
 		  const pillStyle = {
 		    display: "inline-flex",
@@ -3497,11 +3561,22 @@ var __defProp = Object.defineProperty;
 		        style: pillStyle,
 		        children: [
 		          "记忆 · ",
-		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { children: loaded ? info.label : error ? "⚠" : "…" })
+		          /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { children: faceLabel })
 		        ]
 		      }
 		    ),
-		    open ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(ModeSlider, { mode: mode || "auto", onCommit: commit, error, rpc, sessionId }) : null
+		    open ? /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+		      ModeSlider,
+		      {
+		        mode: mode || "auto",
+		        onCommit: commit,
+		        recall,
+		        onCommitRecall: commitRecall,
+		        error,
+		        rpc,
+		        sessionId
+		      }
+		    ) : null
 		  ] });
 		}
 		

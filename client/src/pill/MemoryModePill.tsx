@@ -16,6 +16,10 @@ export function MemoryModePill(props: {
   const rpc = props.rpc;
   const sessionId = props.sessionId || (props.session && props.session.sessionId);
   const [mode, setMode] = useState<string | null>(null);
+  // 会话级注入覆盖（#38 只写不读）：null = 跟随全局；recallResolved = host 解析后的
+  // 生效值（面文直接消费——client 不另知全局开关，解析权威在 host）
+  const [recall, setRecall] = useState<boolean | null>(null);
+  const [recallResolved, setRecallResolved] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -29,8 +33,11 @@ export function MemoryModePill(props: {
     rpc('dsh-memory/session-mode-get', { sessionId })
       .then((r) => {
         if (token !== seqRef.current) return;
-        if (r && r.ok && r.value) setMode(r.value.mode);
-        else setError(r && !r.ok ? r.error.message : 'RPC error');
+        if (r && r.ok && r.value) {
+          setMode(r.value.mode);
+          setRecall(r.value.recall);
+          setRecallResolved(r.value.recallResolved);
+        } else setError(r && !r.ok ? r.error.message : 'RPC error');
       })
       .catch((e: unknown) => {
         if (token !== seqRef.current) return;
@@ -94,6 +101,33 @@ export function MemoryModePill(props: {
       });
   };
 
+  /** 注入覆盖提交（#38）：null = 清除覆盖（跟随全局）；显式传 mode（host 侧缺省
+   *  recall 不动现值）。清除后的解析值（= 全局）只有 host 知道，以 set 响应回填。 */
+  const commitRecall = (next: boolean | null) => {
+    if (!rpc || !sessionId || next === recall) return;
+    const prevRecall = recall;
+    const prevResolved = recallResolved;
+    setRecall(next);
+    if (next !== null) setRecallResolved(next);
+    setError(null);
+    rpc('dsh-memory/session-mode-set', { sessionId, mode: (mode ?? 'auto') as 'auto', recall: next })
+      .then((r) => {
+        if (!r || !r.ok) {
+          setRecall(prevRecall);
+          setRecallResolved(prevResolved);
+          setError(r && r.error ? '注入设置失败：' + r.error.message : '注入设置失败');
+        } else {
+          setRecall(r.value.recall);
+          setRecallResolved(r.value.recallResolved);
+        }
+      })
+      .catch((e: unknown) => {
+        setRecall(prevRecall);
+        setRecallResolved(prevResolved);
+        setError('注入设置失败：' + String((e && (e as Error).message) || e));
+      });
+  };
+
   if (!sessionId || !rpc) return null;
   const info = modeInfo(mode);
   const loaded = mode !== null;
@@ -101,6 +135,9 @@ export function MemoryModePill(props: {
   // 日常/工作/智能 = 同款流光 + 光晕，档位区分靠蓝阶文字色与流光内底混色深度
   const isOff = loaded && mode === 'off';
   const isFlow = loaded && !isOff;
+  // 面文换字（#38 方案 A）：非 off 且注入生效值为否 → 面文整词换作「只写」，
+  // 族名收进菜单（注入态优先上脸）；off 档维持「关闭」灰态优先（完全隐身不含只写）
+  const faceLabel = !loaded ? (error ? '⚠' : '…') : isOff ? info.label : !recallResolved ? '只写' : info.label;
 
   ensureThemeStyle();
 
@@ -136,10 +173,18 @@ export function MemoryModePill(props: {
         className={isFlow ? 'dsh-mem-flow' : 'dsh-mem-pill-off'}
         style={pillStyle}
       >
-        记忆 · <span>{loaded ? info.label : error ? '⚠' : '…'}</span>
+        记忆 · <span>{faceLabel}</span>
       </button>
       {open ? (
-        <ModeSlider mode={mode || 'auto'} onCommit={commit} error={error} rpc={rpc} sessionId={sessionId} />
+        <ModeSlider
+          mode={mode || 'auto'}
+          onCommit={commit}
+          recall={recall}
+          onCommitRecall={commitRecall}
+          error={error}
+          rpc={rpc}
+          sessionId={sessionId}
+        />
       ) : null}
     </div>
   );

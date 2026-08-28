@@ -5,7 +5,7 @@
  * 浮层卸载即停（ModeSlider 只在 pill 展开期间挂载）。
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { RecallSessionStats, SessionDistillView, SessionStatsResponse } from '../../../src/contract.js';
+import type { RecallDisabledReason, RecallSessionStats, SessionDistillView, SessionStatsResponse } from '../../../src/contract.js';
 import { fmtAgo, fmtTime } from '../format.js';
 import type { RpcFn } from '../rpc.js';
 
@@ -77,7 +77,7 @@ export function SessionInfoArea(props: { rpc: RpcFn; sessionId: string }) {
     );
   }
 
-  const rc = (stats.recall || {}) as Partial<{ enabled: boolean } & RecallSessionStats>;
+  const rc = (stats.recall || {}) as Partial<{ enabled: boolean; reason?: RecallDisabledReason } & RecallSessionStats>;
   const di = (stats.distill || {}) as Partial<SessionDistillView>;
   const gl = (stats.global || {}) as SessionStatsView['global'];
   const isOff = stats.mode === 'off';
@@ -89,7 +89,16 @@ export function SessionInfoArea(props: { rpc: RpcFn; sessionId: string }) {
   if (rc.enabled === false) {
     rcVal = '停用';
     rcLabel = '召回命中';
-    rcTitle = '召回已停用（开关关闭 / 档位关闭 / 部署未启用）';
+    // 停用原因由 host 短路判定带出（#38 起含「会话只写」）；旧宿主无 reason 回退枚举文案
+    const reasonText: Partial<Record<RecallDisabledReason, string>> = {
+      deploy: '部署未启用',
+      global: '全局开关关闭',
+      session: '会话只写',
+      mode: '档位关闭',
+    };
+    rcTitle = rc.reason
+      ? '召回已停用（' + (reasonText[rc.reason] ?? rc.reason) + '）'
+      : '召回已停用（开关关闭 / 档位关闭 / 部署未启用）';
   } else {
     rcVal = (rc.hitTurns || 0) + '/' + (rc.injectedTurns || 0);
     rcLabel = '召回命中 · ' + (rc.totalHits || 0) + ' 条';
