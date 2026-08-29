@@ -220,6 +220,19 @@ export function ensureThemeStyle() {
     '.dsh-mem-pill-off:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }',
     // 流光态焦点环（同一物理按钮的两态焦点反馈对称，配方同 .dsh-mem-btn）
     '.dsh-mem-flow:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }',
+    // ── 触屏隐形热区（手机端适配）：触点目标补足 44px 标准（iOS HIG）。
+    // 伪元素不参与布局（浮层/输入栏几何零变化），指针事件落在宿主元素上。
+    // 全端统一不做 pointer:coarse 分端（桌面点中目标变大是纯收益）。
+    // pill：视觉高 24px，::after 上下各外扩 10px；只上下不左右——左右是宿主输入栏
+    // 邻位控件（模式选择器），外扩制造误触重叠带。
+    // 滑轨：视觉轨 22px，::before 上下各外扩 11px；touch-action:none 已随轨声明，
+    // 伪元素区的触摸同样命中轨元素。两处 px 值改须与注释口径同步 ──
+    '.dsh-mem-pill-hit::after {',
+    "  content: ''; position: absolute; left: 0; right: 0; top: -10px; bottom: -10px;",
+    '}',
+    '.dsh-mem-hitband::before {',
+    "  content: ''; position: absolute; left: 0; right: 0; top: -11px; bottom: -11px;",
+    '}',
     // ── 浮层（dsh 原生菜单同配方：不透明实底 + inverted 描边（浅色不可见）+ lv3 阴影） ──
     '.dsh-mem-popover {',
     '  border-radius: 12px;',

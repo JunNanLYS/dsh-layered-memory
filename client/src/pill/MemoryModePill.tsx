@@ -68,16 +68,18 @@ export function MemoryModePill(props: {
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
+    // pointerdown 而非 mousedown（手机端适配）：iOS 触点纯文本区不合成 mouse 事件，
+    // mousedown 会漏关浮层；pointerdown 三类指针通吃，桌面语义不变
+    const onDown = (e: PointerEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
     };
-    document.addEventListener('mousedown', onDown);
+    document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
     return () => {
-      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
@@ -149,6 +151,7 @@ export function MemoryModePill(props: {
   ensureThemeStyle();
 
   const pillStyle = {
+    position: 'relative', // dsh-mem-pill-hit 的 ::after 隐形热区以此为定位基准
     display: 'inline-flex',
     alignItems: 'center',
     gap: 4,
@@ -177,7 +180,7 @@ export function MemoryModePill(props: {
           if (error) load();
           setOpen(!open);
         }}
-        className={isFlow ? 'dsh-mem-flow' : 'dsh-mem-pill-off'}
+        className={(isFlow ? 'dsh-mem-flow' : 'dsh-mem-pill-off') + ' dsh-mem-pill-hit'}
         style={pillStyle}
       >
         记忆 · <span>{faceLabel}</span>
