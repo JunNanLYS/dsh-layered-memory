@@ -417,6 +417,19 @@ var __defProp = Object.defineProperty;
 		    ".dsh-mem-pill-off:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
 		    // 流光态焦点环（同一物理按钮的两态焦点反馈对称，配方同 .dsh-mem-btn）
 		    ".dsh-mem-flow:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
+		    // ── 触屏隐形热区（手机端适配）：触点目标补足 44px 标准（iOS HIG）。
+		    // 伪元素不参与布局（浮层/输入栏几何零变化），指针事件落在宿主元素上。
+		    // 全端统一不做 pointer:coarse 分端（桌面点中目标变大是纯收益）。
+		    // pill：视觉高 24px，::after 上下各外扩 10px；只上下不左右——左右是宿主输入栏
+		    // 邻位控件（模式选择器），外扩制造误触重叠带。
+		    // 滑轨：视觉轨 22px，::before 上下各外扩 11px；touch-action:none 已随轨声明，
+		    // 伪元素区的触摸同样命中轨元素。两处 px 值改须与注释口径同步 ──
+		    ".dsh-mem-pill-hit::after {",
+		    "  content: ''; position: absolute; left: 0; right: 0; top: -10px; bottom: -10px;",
+		    "}",
+		    ".dsh-mem-hitband::before {",
+		    "  content: ''; position: absolute; left: 0; right: 0; top: -11px; bottom: -11px;",
+		    "}",
 		    // ── 浮层（dsh 原生菜单同配方：不透明实底 + inverted 描边（浅色不可见）+ lv3 阴影） ──
 		    ".dsh-mem-popover {",
 		    "  border-radius: 12px;",
@@ -3272,6 +3285,35 @@ var __defProp = Object.defineProperty;
 		      themeObs.disconnect();
 		    };
 		  }, []);
+		  const popRef = (0, import_react16.useRef)(null);
+		  const shiftRef = (0, import_react16.useRef)(0);
+		  const [shiftX, setShiftX] = (0, import_react16.useState)(0);
+		  (0, import_react16.useLayoutEffect)(() => {
+		    const clamp = () => {
+		      const el = popRef.current;
+		      if (!el) return;
+		      const r = el.getBoundingClientRect();
+		      if (r.width === 0) return;
+		      const left = r.left - shiftRef.current;
+		      const edge = 8;
+		      let next = 0;
+		      if (left < edge) next = edge - left;
+		      else if (left + r.width > window.innerWidth - edge) {
+		        next = window.innerWidth - edge - (left + r.width);
+		      }
+		      if (next !== shiftRef.current) {
+		        shiftRef.current = next;
+		        setShiftX(next);
+		      }
+		    };
+		    clamp();
+		    window.addEventListener("resize", clamp);
+		    const iv = window.setInterval(clamp, 100);
+		    return () => {
+		      window.removeEventListener("resize", clamp);
+		      window.clearInterval(iv);
+		    };
+		  }, []);
 		  const stops = [];
 		  for (let i = 0; i < MODES.length; i++) {
 		    const stopLeft = i / (MODES.length - 1) * INNER_W + THUMB / 2;
@@ -3298,11 +3340,12 @@ var __defProp = Object.defineProperty;
 		  return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
 		    "div",
 		    {
+		      ref: popRef,
 		      style: {
 		        position: "absolute",
 		        bottom: "calc(100% + 8px)",
 		        left: "50%",
-		        transform: "translateX(-50%)",
+		        transform: "translateX(calc(-50% + " + shiftX + "px))",
 		        zIndex: 1e3
 		      },
 		      children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(
@@ -3315,6 +3358,7 @@ var __defProp = Object.defineProperty;
 		              "div",
 		              {
 		                ref: trackRef,
+		                className: "dsh-mem-hitband",
 		                style: {
 		                  position: "relative",
 		                  // 容器宽 = thumb 活动范围（0..INNER_W + THUMB），点击映射与视觉两端严格对齐
@@ -3477,10 +3521,10 @@ var __defProp = Object.defineProperty;
 		    const onKey = (e) => {
 		      if (e.key === "Escape") setOpen(false);
 		    };
-		    document.addEventListener("mousedown", onDown);
+		    document.addEventListener("pointerdown", onDown);
 		    document.addEventListener("keydown", onKey);
 		    return () => {
-		      document.removeEventListener("mousedown", onDown);
+		      document.removeEventListener("pointerdown", onDown);
 		      document.removeEventListener("keydown", onKey);
 		    };
 		  }, [open]);
@@ -3535,6 +3579,8 @@ var __defProp = Object.defineProperty;
 		  const faceLabel = !loaded ? error ? "⚠" : "…" : isOff ? info.label : !recallResolved ? "只写" : info.label;
 		  ensureThemeStyle();
 		  const pillStyle = {
+		    position: "relative",
+		    // dsh-mem-pill-hit 的 ::after 隐形热区以此为定位基准
 		    display: "inline-flex",
 		    alignItems: "center",
 		    gap: 4,
@@ -3563,7 +3609,7 @@ var __defProp = Object.defineProperty;
 		          if (error) load();
 		          setOpen(!open);
 		        },
-		        className: isFlow ? "dsh-mem-flow" : "dsh-mem-pill-off",
+		        className: (isFlow ? "dsh-mem-flow" : "dsh-mem-pill-off") + " dsh-mem-pill-hit",
 		        style: pillStyle,
 		        children: [
 		          "记忆 · ",

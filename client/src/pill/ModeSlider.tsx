@@ -1,5 +1,5 @@
 /** 滑动选择器浮层（参考 macOS 滑动器：拖拽圆头 1:1 连续跟手，松手按动量投影吸附最近档）。 */
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Segmented } from '../ui/controls.js';
 import type { RpcFn } from '../rpc.js';
 import { ensureThemeStyle } from '../theme.js';
@@ -229,6 +229,47 @@ export function ModeSlider(props: {
     };
   }, []);
 
+  // ── 水平视口夹持（手机端适配）：浮层以 pill 中心为轴悬浮，而 pill 在输入栏左侧，
+  // 窄视口（手机）下浮层左半会出屏。挂载即量一次，超界平移贴边（边距 8px），
+  // 窗口 resize/旋转重算；桌面浮层天然在界内，shiftX 恒 0 零行为变化。
+  // 垂直不夹：浮层只向上弹，点 pill 顺带收起软键盘，上方空间恒充裕（grilling 定案）。
+  // ModeSlider 只在展开期间挂载，挂载即打开；useLayoutEffect 保证首帧前量完不闪位。
+  // shift 参与变换，测量时须抵掉旧值还原理想中轴位置。
+  const popRef = useRef<HTMLDivElement | null>(null);
+  const shiftRef = useRef(0);
+  const [shiftX, setShiftX] = useState(0);
+  useLayoutEffect(() => {
+    const clamp = () => {
+      const el = popRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0) return;
+      const left = r.left - shiftRef.current;
+      const edge = 8;
+      let next = 0;
+      if (left < edge) next = edge - left;
+      else if (left + r.width > window.innerWidth - edge) {
+        next = window.innerWidth - edge - (left + r.width);
+      }
+      if (next !== shiftRef.current) {
+        shiftRef.current = next;
+        setShiftX(next);
+      }
+    };
+    clamp();
+    window.addEventListener('resize', clamp);
+    // 布局位移不都伴随 resize（侧边栏开合、软键盘、宿主动画）：浮层「开着即挂载」
+    // 是短命表面，挂载期间 100ms 周期重夹——一次 getBoundingClientRect + 几次数值
+    // 比较，与打开期间本来就在跑的粒子层 rAF 循环同级开销。不用 Intersection-
+    // Observer：其回调依赖渲染帧派发，页面被遮挡/后台时整体停摆（连 observe 后
+    // 必发的初始回调都不来，IAB 实测踩坑）；定时器后台只是节流到 1s、仍会跑。
+    const iv = window.setInterval(clamp, 100);
+    return () => {
+      window.removeEventListener('resize', clamp);
+      window.clearInterval(iv);
+    };
+  }, []);
+
   // 停点刻度：轨道上的 4 个小点提示可吸附位置；档位名改由拖动气泡显示
   const stops = [];
   for (let i = 0; i < MODES.length; i++) {
@@ -253,12 +294,14 @@ export function ModeSlider(props: {
 
   return (
     <div
-      // 外壳只负责定位（带 transform 居中悬浮在按钮上方，水平中轴对齐 pill 中心）
+      // 外壳只负责定位（带 transform 居中悬浮在按钮上方，水平中轴对齐 pill 中心）；
+      // shiftX = 水平视口夹持的贴边平移量（桌面恒 0）
+      ref={popRef}
       style={{
         position: 'absolute',
         bottom: 'calc(100% + 8px)',
         left: '50%',
-        transform: 'translateX(-50%)',
+        transform: 'translateX(calc(-50% + ' + shiftX + 'px))',
         zIndex: 1000,
       }}
     >
@@ -270,6 +313,7 @@ export function ModeSlider(props: {
       >
         <div
           ref={trackRef}
+          className="dsh-mem-hitband"
           style={{
             position: 'relative',
             // 容器宽 = thumb 活动范围（0..INNER_W + THUMB），点击映射与视觉两端严格对齐
