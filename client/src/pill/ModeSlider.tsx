@@ -245,6 +245,8 @@ export function ModeSlider(props: {
       const r = el.getBoundingClientRect();
       if (r.width === 0) return;
       const left = r.left - shiftRef.current;
+      // 取舍（审查 P2-1）：视口窄于浮层+双边距（<250px，dsh web 现实下限 320px 不会到）
+      // 时 if/else 左缘优先，右半浮层不可达——不做居中回退，保持定点稳定不振荡
       const edge = 8;
       let next = 0;
       if (left < edge) next = edge - left;
