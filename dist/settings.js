@@ -1,5 +1,4 @@
 import Schema from '@deepseek-ai/schemastery';
-import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 import { EFFORT_CHOICES } from './config.js';
 /**
  * 运行时统一路由链条目：[0] = 主路由（provider/model 双空 = 跟随默认模型），
@@ -63,7 +62,9 @@ export function validateDistillChain(chain, opts) {
     }
     return null;
 }
-const NS = settingsNamespace('dsh-memory');
+// 0.1.2-alpha 起 dsh-settings 不再导出 settingsNamespace 品牌 helper：
+// register 改为泛型字面量签名（编译期校验 kebab-case，品牌在服务内部解析）。
+const NS = 'dsh-memory';
 const ALWAYS_ON = {
     enabled: true,
     capture: true,

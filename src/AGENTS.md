@@ -48,7 +48,7 @@
     `bm25.ts`（仅 L2 场景摘要选上下文用）+ `io.ts`（原子写等文件原语）。
 - `tools/index.ts` — 模型工具：memory_search / conversation_search / memory_read_scene
   （execute 的 `exec.agent.id === sessionId` 用于按会话档位过滤）。
-- `stats.ts` — 通用 RPC 端点 `dsh-memory/*`（authority=loopback），供 client 状态页与输入栏控件拉数据。
+- `stats.ts` — 通用 RPC 端点 `dsh-memory/*`，供 client 状态页与输入栏控件拉数据。
 - `llm.ts` / `config.ts`（Schemastery schema + MemoryConfig）/ `types.ts` / `util/`。
 - `smoke.ts` — 冒烟测试（不依赖 DSH 运行时，纯 assert；第 21 节对 dist/client.js 产物断言）。
 
@@ -223,8 +223,10 @@
 - **事件**：`session/event (session, event)` emit 模式；`agent/pre-step (payload, next)` waterfall
   必须调 next；`SessionEventMap` 中 `user/message` 的 data 就是 UserMessage，
   `assistant/message` 的 data 是 `{ turn, step, message, usage? }`。
-- **Host↔Client RPC**：Host `ctx.connection.rpc.handle('/rpc', handler, { authority: 'loopback' })`
-  返回**同步**的异步 disposer（`() => Promise<void>`，不能 .then 链）；Client
+- **Host↔Client RPC**：Host `ctx.connection.rpc.handle('/rpc', handler)`（0.1.2-alpha 起
+  两参——第三参 `{authority:'loopback'}` 已删，回环约束改由宿主侧 Host/Origin fence +
+  浏览器 token 鉴权统一承担）返回**同步**的异步 disposer（`() => Promise<void>`，不能
+  .then 链）；Client
   `ctx.connection.rpc.call('/rpc', endpoint, payload)` 返回 `RpcResult`（`{ok,value}|{ok,error}`）。
   connection 是可选服务且可能晚于插件就绪：探测 + 监听 `internal/service` 事件补注册。
 - **Context 声明合并要靠 import 拉进来**：`ctx.get('connection')` 想拿到类型，必须

@@ -6,6 +6,49 @@
 > **UI 截图约定**：带界面变化的条目在 `assets/changelog/<版本号>/<两位编号>-<简述>.png`
 > 存真机截图，并在条目内以相对路径引用，读者可在更新日志里直接看到新版本 UI 的样子。
 
+## [0.8.12] — 2026-08-31
+
+### 破坏性变更
+
+- **宿主最低版本提升至 DeepSeek Harness 0.1.2-alpha.1（此后仅支持 0.1.2-alpha.x 宿主线）**：
+  宿主 [v0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1)
+  / [alpha.2](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.2)
+  是破坏性更新（组件包移除/迁移大量导出、npm peer 依赖重排、client RPC 错误码并入
+  `gateway/*` 命名空间、会话视图工程拆分），0.8.12 起本插件不再支持 0.1.1-rc.x 及更早
+  宿主（旧宿主请继续用 0.8.11）。注意 npm 上宿主 `latest` 标签仍指向 0.1.1-rc.2，
+  安装命令须显式带 alpha 版本号：
+
+  ```bash
+  npx -y @deepseek-ai/dsh@0.1.2-alpha.2 plugin --profile web add dsh-layered-memory
+  ```
+
+  已装 dsh CLI 的用户先 `npm i -g @deepseek-ai/dsh@0.1.2-alpha.2` 并重启，再升级插件。
+  README（中英文）已同步改为仅声明 0.1.2-alpha.x 支持。
+
+### 变更（宿主 API 迁移）
+
+- **settings 命名空间**：宿主 dsh-settings 不再导出 `settingsNamespace()` 品牌 helper
+  （`register` 改为泛型字面量签名，kebab-case 形状编译期校验、品牌在服务内部解析）——
+  `dsh-memory` 命名空间改为直接传字符串字面量，运行时行为不变。
+- **RPC 通道注册**：宿主 `connection.rpc.handle` 由三参删至两参——`{authority:'loopback'}`
+  选项随宿主移除（回环约束改由宿主侧 Host/Origin fence 与浏览器 token 鉴权统一承担），
+  `/rpc` 通道注册去掉第三参；client 侧调用面不受影响（错误码按不透明字符串处理，
+  宿主侧 `internal → gateway/internal` 改名无感）。
+- **依赖面同步**：peerDependencies 升至 `^0.1.2-alpha.1`（同一范围覆盖 alpha.1/alpha.2
+  与后续 0.1.2 正式版），devDependencies 钉 `0.1.2-alpha.2`（cordis 4.0.2、
+  schemastery 3.18.2，lockfile 相应重生成）；`dsh.client.inject` 清掉宿主已删除的
+  `@deepseek-ai/dsh-client-runtime` 死条目（loader 对缺行本就静默跳过，纯卫生）。
+  宿主的 `@deepseek-ai/dsh-client-ui-primitives` 经核实为 web 平台 seed 模块
+  （boot 时静态内联进模块表），client 侧 `hostRequire` 天然确定性可达，无需声明
+  `dsh.client.external`。
+
+### 验证
+
+- 宿主 0.1.2-alpha.2 真机全链路通过：boot 零错误、蒸馏管线在真实会话触发跑轮、
+  输入栏记忆 pill（四档滑轨展开/外部点击关闭）与设置 → 插件 → 记忆浏览器六 Tab
+  面板（含 L1 数据 RPC 加载）全部正常。typecheck×2 / build / smoke（33 节）/
+  verify-catalog / cordis Config 校验全绿。
+
 ## [0.8.11] — 2026-08-29
 
 ### 修复

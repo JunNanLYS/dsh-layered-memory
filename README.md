@@ -10,20 +10,23 @@
 [English](README.en.md) · [最新发行版](https://github.com/JunNanLYS/dsh-layered-memory/releases/latest) · [反馈问题](https://github.com/JunNanLYS/dsh-layered-memory/issues)
 
 [![npm version](https://img.shields.io/npm/v/dsh-layered-memory?color=6f83ff&style=flat-square&label=npm)](https://www.npmjs.com/package/dsh-layered-memory)
-[![DSH 0.1.1-rc.2](https://img.shields.io/badge/DSH-0.1.1--rc.2-8b5cf6?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
+[![DSH 0.1.2-alpha.x](https://img.shields.io/badge/DSH-0.1.2--alpha.x-8b5cf6?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
 [![MIT License](https://img.shields.io/badge/license-MIT-536990?style=flat-square)](LICENSE)
 
 </div>
 
 ## 快速开始
 
-需要 Node ≥ 22.16。两种调用方式任选（`npx` 前缀可替换下面任何 `dsh` 命令）：
+需要 Node ≥ 22.16 与 DeepSeek Harness ≥ **0.1.2-alpha.1**（0.8.12 起仅支持
+0.1.2-alpha.x 宿主线；旧版插件请看 [历史版本](https://github.com/JunNanLYS/dsh-layered-memory/releases)）。
+两种调用方式任选（`npx` 前缀可替换下面任何 `dsh` 命令）：
 
 ```bash
-# 方式一：npx 直接跑官方 CLI（无需预装 dsh；可 pin 版本，如 dsh-layered-memory@0.8.4）
-npx -y @deepseek-ai/dsh plugin --profile web add dsh-layered-memory
+# 方式一：npx 直接跑官方 CLI（无需预装 dsh；宿主须带 alpha 版本号——npm latest 仍指向 0.1.1-rc.x）
+npx -y @deepseek-ai/dsh@0.1.2-alpha.2 plugin --profile web add dsh-layered-memory
 
-# 方式二：已装 dsh CLI（dsh 是 pnpm 转发器，未装 pnpm 时先 npm i -g pnpm）
+# 方式二：已装 dsh CLI（先升级到 alpha 线：npm i -g @deepseek-ai/dsh@0.1.2-alpha.2 并重启；
+# dsh 是 pnpm 转发器，未装 pnpm 时先 npm i -g pnpm）
 dsh plugin --profile web add dsh-layered-memory
 
 # 包源备选：GitHub 仓库 / 本地路径（开发调试，link: 指向仓库，npm run build + 重启 dsh 即生效）

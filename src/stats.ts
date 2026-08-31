@@ -157,7 +157,6 @@ export function registerMemoryRpc(
           };
         }
       },
-      { authority: 'loopback' },
     );
     registeredImpl = connection;
     if (!active) {
