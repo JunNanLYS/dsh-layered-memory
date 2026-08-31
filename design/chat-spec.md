@@ -15,16 +15,24 @@
 
 ## 记忆芯片（.dsh-mem-mchip）
 
-- 官方 composer chip 语法：无边框、28px 高、label-secondary、hover/展开淡底、`▾`。
+- 官方 composer chip 语法，**数值逐项对齐原生访问模式触发钮（Sh0Q9G_trigger 真机实测
+  2026-08-31）**：高 28 / 字号 13 / **字重 500** / **圆角 24px** / padding 左 8 右 4 /
+  gap 4 / label-secondary 色；hover/展开淡底（bg-hover）。
+- chevron = **原生 SVG 逐字复刻**（Sh0Q9G_chevron 14×14 path，fill currentColor；
+  图标色令牌 `--dsh-mem-chev`：浅 #ADB2B8 / 暗 #81858C，双主题实测值）。
 - 文案 = 解析真值（live）：`记忆 · {智能|日常|工作}`（注入生效）/ `记忆 · 只写`
   （recallResolved=false）/ `记忆 · 暂停`（off 档，前置灰点）/ `记忆 · 降级`（warn 点）。
 - 暂停档显示的档位 = host 暂停快照 `resume.scope`（暂停前范围），无快照回退默认档。
 
 ## 级联菜单（.dsh-mem-menu）
 
-- 点击芯片向上展开（`bottom: calc(100% + 6px)`，左缘对齐芯片），dsh 原生菜单同配方
-  浮层（menu 底 + inverted 描边 + lv3 阴影 + 12px 圆角），行复用 `.dsh-mem-pop-opt`。
-- 两行：`记忆范围 {值} ›` / `数据流 {值} ›`（行尾当前值 `.dsh-mem-subval`）。
+- 点击芯片向上展开（`bottom: calc(100% + 4px)`，左缘对齐芯片），dsh 原生菜单同配方
+  浮层（menu 底 + inverted 描边 + lv3 阴影 + 12px 圆角 + 4px 内衬 + min-width 218），
+  行复用 `.dsh-mem-pop-opt`。
+- **行尺寸对齐原生菜单条目（_item 实测）**：字号 **14px** / 行高 22 / **min-height 40px** /
+  padding 8px 10px / 圆角 10 / label-primary 色。作用域限定 `.dsh-mem-menu` /
+  `.dsh-mem-sub` 内——settings 页 NSel 下拉保持 13/32 紧凑档不受影响。
+- 两行：`记忆范围 {值} ›` / `数据流 {值} ›`（行尾当前值 `.dsh-mem-subval`，13px text-3）。
 - **范围行点击** = 原地展开内联滑条（见下）；再点收起。展开期间数据流行 `hidden`。
 - **数据流行** hover 二级子面板（`.dsh-mem-sub`，右浮）：跟随全局✓/读写/只写/暂停。
   仅 hover 揭示、点击不固定（用户裁定）；`::before` 10px 桥接热区保证慢速移动不断链。

@@ -41,6 +41,8 @@ export function ensureThemeStyle() {
     '  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #d0403f);',
     '  --dsh-mem-warn: #a8821c;',
     '  --dsh-mem-ok: #1f9d55;',
+    // 原生芯片 chevron 图标色（Sh0Q9G_chevron 真机实测：浅 #ADB2B8 / 暗 #81858C）
+    '  --dsh-mem-chev: #adb2b8;',
     // 图表系列（成本折线图）：8 档固定色，PALETTE 只引用 var()；1 档锚品牌蓝，8 档中性"其他"
     '  --dsh-mem-chart-1: #4d6bfe;',
     '  --dsh-mem-chart-2: #0e9c8f;',
@@ -83,6 +85,7 @@ export function ensureThemeStyle() {
     '  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #f4707b);',
     '  --dsh-mem-warn: #d9b23c;',
     '  --dsh-mem-ok: #52c98d;',
+    '  --dsh-mem-chev: #81858c;',
     '  --dsh-mem-chart-1: #6e85ff;',
     '  --dsh-mem-chart-2: #35c4b5;',
     '  --dsh-mem-chart-3: #52c98d;',
@@ -328,24 +331,32 @@ export function ensureThemeStyle() {
     // ── 粒子层（点阵场）：浅色 multiply 混合——深蓝点乘在浅蓝填充上沉显对比 ──
     'body:not([data-ds-dark-theme]) .dsh-mem-particles { mix-blend-mode: multiply; opacity: 0.82; }',
     // ── 会话记忆芯片（分散式，spec v2 §4.1）：官方 composer chip 同款语法——
-    //    无边框、label-secondary、hover/展开淡底；语义点只在暂停（灰）/降级（琥珀）时出现 ──
+    //    无边框、label-secondary、hover/展开淡底；语义点只在暂停（灰）/降级（琥珀）时出现。
+    //    数值逐项对齐原生访问模式触发钮（Sh0Q9G_trigger 真机实测 2026-08-31）：
+    //    字重 500 / 圆角 24 / padding 左8右4 / gap 4 / chevron 14×14 SVG #81858C（双主题同值） ──
     '.dsh-mem-mchip {',
-    '  display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px;',
-    '  border: none; background: transparent; border-radius: 8px; cursor: pointer;',
-    '  color: var(--dsh-mem-text-2); font: inherit; font-size: 13px; line-height: 20px; white-space: nowrap;',
+    '  display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px 0 8px;',
+    '  border: none; background: transparent; border-radius: 24px; cursor: pointer;',
+    '  color: var(--dsh-mem-text-2); font: inherit; font-size: 13px; font-weight: 500; line-height: 20px; white-space: nowrap;',
     '}',
     '.dsh-mem-mchip:hover, .dsh-mem-mchip[aria-expanded="true"] { background: var(--dsh-mem-bg-hover); }',
     '.dsh-mem-mchip:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }',
-    '.dsh-mem-mchip-chev { color: var(--dsh-mem-text-3); font-size: 10px; }',
+    '.dsh-mem-mchip-chev { display: flex; flex: none; color: var(--dsh-mem-chev); }',
     '.dsh-mem-mchip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dsh-mem-track); flex: none; }',
     '.dsh-mem-mchip-dot.warn { background: var(--dsh-mem-warn); }',
     // ── 级联菜单（芯片点击展开，向上、左缘对齐芯片）：dsh 原生菜单同配方浮层；
-    //    行复用 .dsh-mem-pop-opt；行尾当前值 + › 展开指示 ──
+    //    行复用 .dsh-mem-pop-opt；行尾当前值 + › 展开指示。
+    //    间距 4px / min-width 218 对齐原生下拉实测；行尺寸 14px·40px·padding 8/10·
+    //    圆角 10（原生菜单条目实测，settings 页 NSel 下拉不受影响——作用域限定在菜单内） ──
     '.dsh-mem-menu {',
-    '  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 1000; min-width: 200px; padding: 4px;',
+    '  position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 1000; min-width: 218px; padding: 4px;',
     '  background: var(--dsh-mem-bg-pop); border: 1px solid var(--dsh-mem-border-pop);',
     '  border-radius: 12px; box-shadow: var(--dsh-mem-shadow-pop); color: var(--dsh-mem-text-1);',
     '}',
+    '.dsh-mem-menu .dsh-mem-pop-opt, .dsh-mem-sub .dsh-mem-pop-opt {',
+    '  font-size: 14px; line-height: 22px; min-height: 40px; padding: 8px 10px;',
+    '}',
+    '.dsh-mem-menu .dsh-mem-pop-opt-label, .dsh-mem-sub .dsh-mem-pop-opt-label { line-height: 22px; }',
     '.dsh-mem-subval { margin-left: auto; color: var(--dsh-mem-text-3); margin-right: 8px; font-variant-numeric: tabular-nums; }',
     '.dsh-mem-subchev { color: var(--dsh-mem-text-3); font-size: 10px; transition: transform .15s ease; display: inline-block; }',
     '.dsh-mem-sl-row.on .dsh-mem-subchev { transform: rotate(90deg); }',
@@ -353,7 +364,7 @@ export function ensureThemeStyle() {
     //    行与子卡片之间的空隙，慢速移动不断悬停链（10px 宽 > 6px 间隙 + 2px 重叠） ──
     '.dsh-mem-subwrap { position: relative; }',
     '.dsh-mem-sub {',
-    '  position: absolute; display: none; top: -5px; left: calc(100% + 6px); min-width: 130px; z-index: 5; padding: 4px;',
+    '  position: absolute; display: none; top: -5px; left: calc(100% + 6px); min-width: 150px; z-index: 5; padding: 4px;',
     '  background: var(--dsh-mem-bg-pop); border: 1px solid var(--dsh-mem-border-pop);',
     '  border-radius: 12px; box-shadow: var(--dsh-mem-shadow-pop);',
     '}',

@@ -2793,15 +2793,16 @@ async function main(): Promise<void> {
     );
     // 侧边栏 icon 补丁（书本）
     assert(clientSrc.includes('patchSidebarIcon') && clientSrc.includes('BOOK_ICON_SVG'), '侧边栏书本 icon 补丁');
-    // 圆角体系锁定：inline borderRadius 与 CSS border-radius 只允许 {4,8,10,12,999,50%}
-    //（4px 仅限重建进度条内轨，8=控件，10=卡片，12=浮层，999=胶囊）
+    // 圆角体系锁定：inline borderRadius 与 CSS border-radius 只允许 {4,8,10,12,24,999,50%}
+    //（4px 仅限重建进度条内轨，8=控件，10=卡片/菜单条目，12=浮层，24=原生芯片触发钮
+    //  实测值——与宿主 Sh0Q9G_trigger 对齐，999=胶囊）
     const inlineR = [...clientSrc.matchAll(/borderRadius: ([^,}]+)/g)].map((m) => m[1].trim().replace(/^"|"$/g, ''));
     assert(inlineR.length > 0, '圆角断言取样非空');
     for (const r of inlineR) {
-      assert(r === '50%' || ['4', '8', '10', '12', '999'].includes(r), `inline 圆角合规：${r}`);
+      assert(r === '50%' || ['4', '8', '10', '12', '24', '999'].includes(r), `inline 圆角合规：${r}`);
     }
     const cssR = [...clientSrc.matchAll(/border-radius: (\d+)px/g)].map((m) => m[1]);
-    for (const r of cssR) assert(['4', '8', '10', '12', '999'].includes(r), `CSS 圆角合规：${r}px`);
+    for (const r of cssR) assert(['4', '8', '10', '12', '24', '999'].includes(r), `CSS 圆角合规：${r}px`);
     // 可见文案零 em-dash（design-taste 铁律；代码注释除外）
     const emDashInString = clientSrc.match(/"[^"\n]*—[^"\n]*"/);
     assert(!emDashInString, `字符串内出现 em-dash：${emDashInString?.[0] ?? ''}`);
