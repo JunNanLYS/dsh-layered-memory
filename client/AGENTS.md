@@ -54,6 +54,28 @@
 - client bundle 的 slots 注册形状：设置页
   `ctx.slots.inject("settings.section", () => ctx.slots.register({name, id, order, label, inject: fn}, Component))`。
 
+## 宿主 UI 对齐（原生复刻）规则
+
+"与 dsh 原生一致"的组件（芯片/菜单/箭头/图标等）按以下纪律做，**方法规则在此，
+对齐后的具体数值是组件事实、记在 design/ 对应 spec**：
+
+- **源码是权威，实测只作复核**。宿主前端源码就在本机安装目录的
+  `@deepseek-ai/dsh/node_modules/@deepseek-ai/` 下各包（全局安装则在 npm 全局前缀下）：
+  会话面组件在 `dsh-client-ui-conversation/lib/client.js`（如芯片 Sh0Q9G_*），
+  菜单/设置面在 `dsh-web-frontend/dist/assets/index-*.css`（CSS modules 哈希类），
+  图标与通用原语是 `dsh-client-ui-primitives` 的具名导出（IconChevron*Outline14、
+  Button、Modal 等——client 侧优先经 guarded require 复用，回退内联同款）。
+- **grep 源码规则时字符类必须含 `()`**：宿主选择器常带 `:not(:disabled)` 等伪类括号，
+  `[a-zA-Z:]` 这类字符类会整条漏配，得出"源码里没有"的假结论（0.9.0 hover 误删
+  事故：`.Sh0Q9G_trigger:hover:not(:disabled)` 被 `[a-zA-Z:]*` 漏掉）。保险做法是
+  按属性名反查（如 grep `background:`）或宽松匹配类名前缀后人工看选择器全文。
+- **读运行态样式当心两个假象**：① 带过渡元素的 computed transform 同步读常返回
+  过渡起点的 identity 矩阵（等 ~300ms 或临时 `transition:none` 再读，identity ≠
+  规则未生效）；② `:hover` 态验证须真实指针（CUA move），合成事件不触发 CSS hover，
+  且可趁悬停态扫 `document.styleSheets` 反查命中规则拿出处。
+- dsw 令牌优先于实测色值：宿主写 `var(--dsw-alias-*)` 的地方我们同令牌映射
+  （fallback 放实测值），如 chevron 色=label-caption、hover 底=interactive-bg-hover。
+
 ## 构建与验证
 
 - `npm run build` 产出 `dist/client.js`（esbuild 细节与产物形状约定见 `scripts/AGENTS.md`）。

@@ -16,14 +16,12 @@
 ## 记忆芯片（.dsh-mem-mchip）
 
 - 官方 composer chip 语法，**逐字对齐宿主源码**（`dsh-client-ui-conversation` 的
-  `.Sh0Q9G_trigger`——**宿主 UI 对齐以源码为权威**，本机
-  `~/.npm-global/.../dsh-client-ui-conversation/lib/client.js` 可直接 grep；
-  getComputedStyle 实测只作复核）：高 28 / 字号 13 / **字重 500** / **圆角 24px** /
+  `.Sh0Q9G_trigger`；对齐方法规则见 `client/AGENTS.md`「宿主 UI 对齐」）：高 28 /
+  字号 13 / **字重 500** / **圆角 24px** /
   padding 左 8 右 4 / gap 4 / label-secondary / 透明底 / min-width 0 / max-width 220；
   label ellipsis（`.mc-label` 同 `.Sh0Q9G_triggerLabel`）。hover =
   `.Sh0Q9G_trigger:hover:not(:disabled)` 的 **interactive-bg-hover 淡底**；打开态无
   持续底色（仅 chevron 旋转反馈）；focus-visible 环是键盘无障碍超集、保留。
-  （注：`:not(:disabled)` 带括号，grep 源码时字符类必须含 `()` 否则漏配——实测翻车记录）
 - chevron = **原生 SVG 逐字复刻**（Sh0Q9G_chevron 14×14 path，fill currentColor）；
   图标色 = **`var(--dsw-alias-label-caption)`**（源码原令牌；fallback 浅 #ADB2B8 /
   暗 #81858C 为实测值）；**展开态旋转 180°**，过渡 `transform .12s`（默认 ease）——
