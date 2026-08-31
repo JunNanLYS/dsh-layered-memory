@@ -38,7 +38,10 @@
 - **行尺寸对齐原生菜单条目（_item 实测）**：字号 **14px** / 行高 22 / **min-height 40px** /
   padding 8px 10px / 圆角 10 / label-primary 色。作用域限定 `.dsh-mem-menu` /
   `.dsh-mem-sub` 内——settings 页 NSel 下拉保持 13/32 紧凑档不受影响。
-- 两行：`记忆范围 {值} ›` / `数据流 {值} ›`（行尾当前值 `.dsh-mem-subval`，13px text-3）。
+- 两行：`记忆范围 {值} ›` / `数据流 {值} ›`（行尾当前值 `.dsh-mem-subval`，13px text-3；
+  `›` = **原生右向 chevron 图标** IconChevronRightOutline14（primitives 具名导出，
+  guarded require + 内联同款 path 回退），色 label-caption，展开旋转 90° 向下、
+  过渡 transform .12s——插件内不再有文字箭头符号）。
 - **范围行点击** = 原地展开内联滑条（见下）；再点收起。展开期间数据流行 `hidden`。
 - **数据流行** hover 二级子面板（`.dsh-mem-sub`，右浮）：跟随全局✓/读写/只写/暂停。
   仅 hover 揭示、点击不固定（用户裁定）；`::before` 10px 桥接热区保证慢速移动不断链。
@@ -69,6 +72,6 @@
 
 ## 交互事实（真机验证 2026-08-31）
 
-- 芯片位置 = `＋` / Read Only / 记忆（原生顺序）；菜单两行 + 值 + › 均正常；
+- 芯片位置 = `＋` / Read Only / 记忆（原生顺序）；菜单两行 + 值 + 图标箭头均正常；
 - 滑条键盘切档芯片文字实时联动；数据流 hover 子面板四态 + ✓ 当前项；
 - 全部文案走字典（宿主语言切换生效）；reduced-motion 压制全部过渡。

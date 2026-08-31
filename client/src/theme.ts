@@ -196,7 +196,7 @@ export function ensureThemeStyle() {
     '.dsh-mem-feed-head:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: -2px; border-radius: 8px; }',
     '.dsh-mem-feed-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }',
     '.dsh-mem-feed-time { color: var(--dsh-mem-text-3); font-size: 11px; flex: none; font-variant-numeric: tabular-nums; }',
-    '.dsh-mem-feed-chev { color: var(--dsh-mem-text-3); flex: none; transition: transform .15s ease; display: inline-block; }',
+    '.dsh-mem-feed-chev { display: inline-flex; flex: none; color: var(--dsh-mem-text-3); transition: transform .12s ease; }',
     '.dsh-mem-feed-row.open .dsh-mem-feed-chev { transform: rotate(90deg); }',
     // 动词/类型/族小标（4px 小圆角刻度感；tint 底不描边）
     '.dsh-mem-vtag {',
@@ -218,7 +218,7 @@ export function ensureThemeStyle() {
     '}',
     '.dsh-mem-disc:hover { color: var(--dsh-mem-accent-text); }',
     '.dsh-mem-disc:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 2px; border-radius: 8px; }',
-    '.dsh-mem-disc-chev { color: var(--dsh-mem-text-3); transition: transform .15s ease; display: inline-block; }',
+    '.dsh-mem-disc-chev { display: inline-flex; flex: none; color: var(--dsh-mem-text-3); transition: transform .12s ease; }',
     '.dsh-mem-disc[aria-expanded="true"] .dsh-mem-disc-chev { transform: rotate(90deg); }',
     // ── 维护危险区（error 色淡描边容器） ──
     '.dsh-mem-danger { border-color: color-mix(in srgb, var(--dsh-mem-danger) 35%, transparent); }',
@@ -362,7 +362,8 @@ export function ensureThemeStyle() {
     '}',
     '.dsh-mem-menu .dsh-mem-pop-opt-label, .dsh-mem-sub .dsh-mem-pop-opt-label { line-height: 22px; }',
     '.dsh-mem-subval { margin-left: auto; color: var(--dsh-mem-text-3); margin-right: 8px; font-variant-numeric: tabular-nums; }',
-    '.dsh-mem-subchev { color: var(--dsh-mem-text-3); font-size: 10px; transition: transform .15s ease; display: inline-block; }',
+    // 行尾箭头 = 原生右向 chevron 图标（IconChevronRightOutline14）；展开时旋转 90° 向下
+    '.dsh-mem-subchev { display: inline-flex; flex: none; color: var(--dsh-mem-chev); transition: transform .12s ease; }',
     '.dsh-mem-sl-row.on .dsh-mem-subchev { transform: rotate(90deg); }',
     // ── hover 二级子面板：仅 hover 展开（点击不固定）；::before 桥接热区盖住
     //    行与子卡片之间的空隙，慢速移动不断悬停链（10px 宽 > 6px 间隙 + 2px 重叠） ──

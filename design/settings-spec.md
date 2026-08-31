@@ -30,7 +30,7 @@
   分段器（自绘 Segmented）。
 - 行（`.dsh-mem-feed-*`）：动词标签（`.dsh-mem-vtag-new/-upd`：新增=ok 色 / 更新=
   accent 色，4px 圆角 tint）+ 层标签（`.dsh-mem-typetag`，inset 底）+ 标题（ellipsis）+
-  相对时间 + `›`（展开旋转 90°，进 reduced-motion 名单）。
+  相对时间 + 原生右向 chevron 图标（IconChevronRightOutline14，展开旋转 90°，过渡 .12s，进 reduced-motion 名单）。
 - 原位展开：完整内容框（max-height 320 滚动）+ 元信息 dl（情境/类型/创建/更新/版本/
   来源会话）+ 复制按钮（`已复制` 2s 态）。游标分页（`nextCursor`，opaque base64url
   offset）「加载更多」；检索触达 200 上限显示 truncated 提示。

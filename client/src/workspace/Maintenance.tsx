@@ -11,6 +11,7 @@ import { S } from '../styles.js';
 import { LogTab } from '../tabs/LogTab.js';
 import { RebuildPanel } from '../tabs/RebuildPanel.js';
 import { ErrorBlock, SectionTitle } from './common.js';
+import { NIconChevronRight14 } from '../ui/primitives.js';
 
 const POLL_MS = 15_000;
 
@@ -95,7 +96,9 @@ export function Maintenance(props: { rpc: RpcFn }) {
       {error ? <div style={S.error}>{error}</div> : null}
 
       <button className="dsh-mem-disc" aria-expanded={logOpen} onClick={() => { setLogOpen(!logOpen); }} style={{ marginTop: 14 }}>
-        <span className="dsh-mem-disc-chev" aria-hidden="true">›</span>
+        <span className="dsh-mem-disc-chev" aria-hidden="true">
+          <NIconChevronRight14 />
+        </span>
         {t('mt.log')}
       </button>
       {logOpen ? (

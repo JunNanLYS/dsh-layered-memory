@@ -12,6 +12,7 @@ import { SwitchRow } from '../ui/controls.js';
 import { DistillSettings } from '../tabs/DistillSettings.js';
 import { EmbeddingSection } from '../tabs/EmbeddingSection.js';
 import { Chevron, ErrorBlock, SectionTitle } from './common.js';
+import { NIconChevronRight14 } from '../ui/primitives.js';
 
 type ToggleKey = 'enabled' | 'capture' | 'distill' | 'recall';
 
@@ -177,7 +178,9 @@ export function Automation(props: { rpc: RpcFn }) {
       )}
 
       <button className="dsh-mem-disc" aria-expanded={advOpen} onClick={() => { setAdvOpen(!advOpen); }} style={{ marginTop: 14 }}>
-        <span className="dsh-mem-disc-chev" aria-hidden="true">›</span>
+        <span className="dsh-mem-disc-chev" aria-hidden="true">
+          <NIconChevronRight14 />
+        </span>
         {t('au.advTitle')}
         <span style={{ ...S.hint, marginLeft: 'auto', fontWeight: 400 }}>{t('au.advHint')}</span>
       </button>
@@ -186,7 +189,9 @@ export function Automation(props: { rpc: RpcFn }) {
       ) : null}
 
       <button className="dsh-mem-disc" aria-expanded={embOpen} onClick={() => { setEmbOpen(!embOpen); }} style={{ marginTop: 12 }}>
-        <span className="dsh-mem-disc-chev" aria-hidden="true">›</span>
+        <span className="dsh-mem-disc-chev" aria-hidden="true">
+          <NIconChevronRight14 />
+        </span>
         {t('au.embTitle')}
       </button>
       {embOpen ? <EmbeddingSection rpc={rpc} /> : null}

@@ -2,7 +2,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { t } from '../i18n.js';
 import { S } from '../styles.js';
-import { NButton } from '../ui/primitives.js';
+import { NButton, NIconChevronRight14 } from '../ui/primitives.js';
 
 const TITLE_BASE: CSSProperties = {
   fontSize: 15,
@@ -66,11 +66,11 @@ export function FamilyTag(props: { family: string }) {
   return <span className="dsh-mem-typetag">{t('scope.' + props.family)}</span>;
 }
 
-/** 展开箭头（统一字符 ›，随 .open 旋转）。 */
+/** 展开箭头（原生右向 chevron 图标，随 .open 旋转 90° 向下）。 */
 export function Chevron() {
   return (
     <span className="dsh-mem-feed-chev" aria-hidden="true">
-      ›
+      <NIconChevronRight14 />
     </span>
   );
 }

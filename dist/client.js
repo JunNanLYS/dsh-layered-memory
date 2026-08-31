@@ -31,7 +31,7 @@ var __defProp = Object.defineProperty;
 		module.exports = __toCommonJS(entry_exports);
 		
 		// client/src/chat/MemoryChip.tsx
-		var import_react = require("react");
+		var import_react2 = require("react");
 		
 		// src/util/context-occupancy.ts
 		var RADIUS_EPSILON = 1e-6;
@@ -902,7 +902,7 @@ var __defProp = Object.defineProperty;
 		    ".dsh-mem-feed-head:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: -2px; border-radius: 8px; }",
 		    ".dsh-mem-feed-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }",
 		    ".dsh-mem-feed-time { color: var(--dsh-mem-text-3); font-size: 11px; flex: none; font-variant-numeric: tabular-nums; }",
-		    ".dsh-mem-feed-chev { color: var(--dsh-mem-text-3); flex: none; transition: transform .15s ease; display: inline-block; }",
+		    ".dsh-mem-feed-chev { display: inline-flex; flex: none; color: var(--dsh-mem-text-3); transition: transform .12s ease; }",
 		    ".dsh-mem-feed-row.open .dsh-mem-feed-chev { transform: rotate(90deg); }",
 		    // 动词/类型/族小标（4px 小圆角刻度感；tint 底不描边）
 		    ".dsh-mem-vtag {",
@@ -924,7 +924,7 @@ var __defProp = Object.defineProperty;
 		    "}",
 		    ".dsh-mem-disc:hover { color: var(--dsh-mem-accent-text); }",
 		    ".dsh-mem-disc:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 2px; border-radius: 8px; }",
-		    ".dsh-mem-disc-chev { color: var(--dsh-mem-text-3); transition: transform .15s ease; display: inline-block; }",
+		    ".dsh-mem-disc-chev { display: inline-flex; flex: none; color: var(--dsh-mem-text-3); transition: transform .12s ease; }",
 		    '.dsh-mem-disc[aria-expanded="true"] .dsh-mem-disc-chev { transform: rotate(90deg); }',
 		    // ── 维护危险区（error 色淡描边容器） ──
 		    ".dsh-mem-danger { border-color: color-mix(in srgb, var(--dsh-mem-danger) 35%, transparent); }",
@@ -1068,7 +1068,8 @@ var __defProp = Object.defineProperty;
 		    "}",
 		    ".dsh-mem-menu .dsh-mem-pop-opt-label, .dsh-mem-sub .dsh-mem-pop-opt-label { line-height: 22px; }",
 		    ".dsh-mem-subval { margin-left: auto; color: var(--dsh-mem-text-3); margin-right: 8px; font-variant-numeric: tabular-nums; }",
-		    ".dsh-mem-subchev { color: var(--dsh-mem-text-3); font-size: 10px; transition: transform .15s ease; display: inline-block; }",
+		    // 行尾箭头 = 原生右向 chevron 图标（IconChevronRightOutline14）；展开时旋转 90° 向下
+		    ".dsh-mem-subchev { display: inline-flex; flex: none; color: var(--dsh-mem-chev); transition: transform .12s ease; }",
 		    ".dsh-mem-sl-row.on .dsh-mem-subchev { transform: rotate(90deg); }",
 		    // ── hover 二级子面板：仅 hover 展开（点击不固定）；::before 桥接热区盖住
 		    //    行与子卡片之间的空隙，慢速移动不断悬停链（10px 宽 > 6px 间隙 + 2px 重叠） ──
@@ -1136,6 +1137,75 @@ var __defProp = Object.defineProperty;
 		  return require(id);
 		}
 		
+		// client/src/ui/primitives.tsx
+		var import_react = require("react");
+		var P = null;
+		try {
+		  P = hostRequire("@deepseek-ai/dsh-client-ui-primitives");
+		} catch {
+		  P = null;
+		}
+		function NButton(props) {
+		  if (P && P.Button) return (0, import_react.createElement)(P.Button, { size: "sm", ...props });
+		  const rest = { ...props };
+		  delete rest.variant;
+		  delete rest.icon;
+		  rest.className = "dsh-mem-btn" + (rest.className ? " " + rest.className : "");
+		  return (0, import_react.createElement)("button", rest);
+		}
+		function NInput(props) {
+		  if (P && P.Input) {
+		    const inner = { ...props };
+		    const layoutStyle = inner.style;
+		    delete inner.style;
+		    return (0, import_react.createElement)("span", { style: layoutStyle }, (0, import_react.createElement)(P.Input, inner));
+		  }
+		  const rest = { ...props };
+		  rest.className = "dsh-mem-input" + (rest.className ? " " + rest.className : "");
+		  return (0, import_react.createElement)("input", rest);
+		}
+		function NModal(props) {
+		  if (props.open === false) return null;
+		  if (P && P.Modal) return (0, import_react.createElement)(P.Modal, { closeLabel: "关闭", ...props });
+		  return (0, import_react.createElement)(
+		    "div",
+		    {
+		      className: "dsh-mem-rb-overlay",
+		      onClick: (e) => {
+		        if (e.target === e.currentTarget && props.onClose) props.onClose();
+		      }
+		    },
+		    (0, import_react.createElement)(
+		      "div",
+		      { className: "dsh-mem-rb-modal" },
+		      props.title ? (0, import_react.createElement)("div", { style: { fontSize: 15, fontWeight: 600, marginBottom: 10 } }, props.title) : null,
+		      props.children,
+		      props.footer ? (0, import_react.createElement)(
+		        "div",
+		        { style: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 } },
+		        props.footer
+		      ) : null
+		    )
+		  );
+		}
+		var CHEVRON_DOWN_14 = "M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z";
+		var CHEVRON_RIGHT_14 = "M5.5 2.15137L5.92383 2.57617L8.65137 5.30273C8.90706 5.55843 9.13382 5.78438 9.29785 5.98828C9.46883 6.20088 9.61756 6.44405 9.66602 6.75C9.69222 6.91565 9.69222 7.08435 9.66602 7.25C9.61756 7.55595 9.46883 7.79912 9.29785 8.01172C9.13382 8.21561 8.90706 8.44157 8.65137 8.69727L5.92383 11.4238L5.5 11.8486L4.65137 11L5.07617 10.5762L7.80273 7.84863C8.07732 7.57405 8.24849 7.40124 8.3623 7.25977C8.46904 7.12709 8.47813 7.07728 8.48047 7.0625C8.48703 7.02105 8.48703 6.97895 8.48047 6.9375C8.47813 6.92272 8.46904 6.87291 8.3623 6.74023C8.24848 6.59876 8.07732 6.42595 7.80273 6.15137L5.07617 3.42383L4.65137 3L5.5 2.15137Z";
+		function iconFallback(d, props) {
+		  return (0, import_react.createElement)(
+		    "svg",
+		    { width: 14, height: 14, viewBox: "0 0 14 14", fill: "none", xmlns: "http://www.w3.org/2000/svg", ...props },
+		    (0, import_react.createElement)("path", { d, fill: "currentColor" })
+		  );
+		}
+		function NIconChevronDown14(props) {
+		  if (P && P.IconChevronDownOutline14) return (0, import_react.createElement)(P.IconChevronDownOutline14, { size: 14, ...props });
+		  return iconFallback(CHEVRON_DOWN_14, props);
+		}
+		function NIconChevronRight14(props) {
+		  if (P && P.IconChevronRightOutline14) return (0, import_react.createElement)(P.IconChevronRightOutline14, { size: 14, ...props });
+		  return iconFallback(CHEVRON_RIGHT_14, props);
+		}
+		
 		// client/src/chat/MemoryChip.tsx
 		var import_jsx_runtime = require("react/jsx-runtime");
 		var PRIMS = (() => {
@@ -1150,8 +1220,8 @@ var __defProp = Object.defineProperty;
 		var scopeLabel = (k) => t("scope." + k);
 		var flowLabel = (k) => t("flow." + k);
 		function useMaxHeightFallback(ref, cap, signal) {
-		  const [mh, setMh] = (0, import_react.useState)(cap);
-		  (0, import_react.useLayoutEffect)(() => {
+		  const [mh, setMh] = (0, import_react2.useState)(cap);
+		  (0, import_react2.useLayoutEffect)(() => {
 		    const fit = () => {
 		      const el = ref.current;
 		      if (!el) return;
@@ -1171,18 +1241,18 @@ var __defProp = Object.defineProperty;
 		function MemoryChip(props) {
 		  const rpc = props.rpc;
 		  const sessionId = props.sessionId || props.session && props.session.sessionId;
-		  const [mode, setMode] = (0, import_react.useState)(null);
-		  const [recall, setRecall] = (0, import_react.useState)(null);
-		  const [recallResolved, setRecallResolved] = (0, import_react.useState)(true);
-		  const [resumeScope, setResumeScope] = (0, import_react.useState)(null);
-		  const [error, setError] = (0, import_react.useState)(null);
-		  const [menuOpen, setMenuOpen] = (0, import_react.useState)(false);
-		  const [sliderOpen, setSliderOpen] = (0, import_react.useState)(false);
-		  const [previewScope, setPreviewScope] = (0, import_react.useState)(null);
-		  const wrapRef = (0, import_react.useRef)(null);
-		  const menuRef = (0, import_react.useRef)(null);
-		  const seqRef = (0, import_react.useRef)(0);
-		  const load = (0, import_react.useCallback)(() => {
+		  const [mode, setMode] = (0, import_react2.useState)(null);
+		  const [recall, setRecall] = (0, import_react2.useState)(null);
+		  const [recallResolved, setRecallResolved] = (0, import_react2.useState)(true);
+		  const [resumeScope, setResumeScope] = (0, import_react2.useState)(null);
+		  const [error, setError] = (0, import_react2.useState)(null);
+		  const [menuOpen, setMenuOpen] = (0, import_react2.useState)(false);
+		  const [sliderOpen, setSliderOpen] = (0, import_react2.useState)(false);
+		  const [previewScope, setPreviewScope] = (0, import_react2.useState)(null);
+		  const wrapRef = (0, import_react2.useRef)(null);
+		  const menuRef = (0, import_react2.useRef)(null);
+		  const seqRef = (0, import_react2.useRef)(0);
+		  const load = (0, import_react2.useCallback)(() => {
 		    if (!sessionId || !rpc) return;
 		    const token = ++seqRef.current;
 		    setError(null);
@@ -1200,13 +1270,13 @@ var __defProp = Object.defineProperty;
 		      setError(String(e && e.message || e));
 		    });
 		  }, [sessionId, rpc]);
-		  (0, import_react.useEffect)(() => {
+		  (0, import_react2.useEffect)(() => {
 		    load();
 		  }, [load]);
-		  (0, import_react.useEffect)(() => {
+		  (0, import_react2.useEffect)(() => {
 		    watchSidebarIcon();
 		  }, []);
-		  (0, import_react.useEffect)(() => {
+		  (0, import_react2.useEffect)(() => {
 		    initOccupancyIndicator(
 		      (endpoint, payload) => rpc(endpoint, payload)
 		    );
@@ -1214,7 +1284,7 @@ var __defProp = Object.defineProperty;
 		    watchContextMeter();
 		    noteOccupancySession(sessionId ?? null);
 		  }, [sessionId, rpc]);
-		  (0, import_react.useEffect)(() => {
+		  (0, import_react2.useEffect)(() => {
 		    if (!menuOpen) return;
 		    const onDown = (e) => {
 		      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
@@ -1318,13 +1388,7 @@ var __defProp = Object.defineProperty;
 		        children: [
 		          paused ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-mchip-dot", "aria-hidden": true }) : null,
 		          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "mc-label", children: label }),
-		          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-mchip-chev", "aria-hidden": true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("svg", { width: "14", height: "14", viewBox: "0 0 14 14", fill: "none", xmlns: "http://www.w3.org/2000/svg", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-		            "path",
-		            {
-		              d: "M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z",
-		              fill: "currentColor"
-		            }
-		          ) }) })
+		          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-mchip-chev", "aria-hidden": true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NIconChevronDown14, {}) })
 		        ]
 		      }
 		    ),
@@ -1340,7 +1404,7 @@ var __defProp = Object.defineProperty;
 		          children: [
 		            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-pop-opt-label", children: t("row.scope") }),
 		            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subval", children: scopeLabel(shownScope) }),
-		            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subchev", "aria-hidden": true, children: "›" })
+		            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subchev", "aria-hidden": true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NIconChevronRight14, {}) })
 		          ]
 		        }
 		      ),
@@ -1377,7 +1441,7 @@ var __defProp = Object.defineProperty;
 		            children: [
 		              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-pop-opt-label", children: t("row.flow") }),
 		              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subval", children: flowLabel(flow) }),
-		              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subchev", "aria-hidden": "true", children: "›" })
+		              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subchev", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NIconChevronRight14, {}) })
 		            ]
 		          }
 		        ),
@@ -1407,17 +1471,17 @@ var __defProp = Object.defineProperty;
 		}
 		function ScopeSlider(props) {
 		  ensureThemeStyle();
-		  const trackRef = (0, import_react.useRef)(null);
-		  const thumbRef = (0, import_react.useRef)(null);
-		  const fillRef = (0, import_react.useRef)(null);
-		  const [dragging, setDragging] = (0, import_react.useState)(false);
+		  const trackRef = (0, import_react2.useRef)(null);
+		  const thumbRef = (0, import_react2.useRef)(null);
+		  const fillRef = (0, import_react2.useRef)(null);
+		  const [dragging, setDragging] = (0, import_react2.useState)(false);
 		  const idx = Math.max(0, SLIDER_SCOPES.indexOf(props.scope));
 		  const place = (i) => {
 		    const f = i / (SLIDER_SCOPES.length - 1);
 		    if (thumbRef.current) thumbRef.current.style.left = `calc((100% - 22px) * ${f} + 11px)`;
 		    if (fillRef.current) fillRef.current.style.width = `calc((100% - 22px) * ${f} + 22px)`;
 		  };
-		  (0, import_react.useLayoutEffect)(() => {
+		  (0, import_react2.useLayoutEffect)(() => {
 		    if (!dragging) place(idx);
 		  });
 		  const startDrag = (e) => {
@@ -1500,14 +1564,14 @@ var __defProp = Object.defineProperty;
 		}
 		
 		// client/src/chat/stats-segment.tsx
-		var import_react2 = require("react");
+		var import_react3 = require("react");
 		var import_jsx_runtime2 = require("react/jsx-runtime");
 		function StatsSegment(props) {
 		  const rpc = props.rpc;
 		  const sessionId = props.sessionId;
-		  const [stats, setStats] = (0, import_react2.useState)(null);
-		  const busyRef = (0, import_react2.useRef)(false);
-		  (0, import_react2.useEffect)(() => {
+		  const [stats, setStats] = (0, import_react3.useState)(null);
+		  const busyRef = (0, import_react3.useRef)(false);
+		  (0, import_react3.useEffect)(() => {
 		    if (!rpc || !sessionId) return void 0;
 		    let alive = true;
 		    let timer = null;
@@ -1759,60 +1823,6 @@ var __defProp = Object.defineProperty;
 		
 		// client/src/tabs/BudgetInputs.tsx
 		var import_react4 = require("react");
-		
-		// client/src/ui/primitives.tsx
-		var import_react3 = require("react");
-		var P = null;
-		try {
-		  P = hostRequire("@deepseek-ai/dsh-client-ui-primitives");
-		} catch {
-		  P = null;
-		}
-		function NButton(props) {
-		  if (P && P.Button) return (0, import_react3.createElement)(P.Button, { size: "sm", ...props });
-		  const rest = { ...props };
-		  delete rest.variant;
-		  delete rest.icon;
-		  rest.className = "dsh-mem-btn" + (rest.className ? " " + rest.className : "");
-		  return (0, import_react3.createElement)("button", rest);
-		}
-		function NInput(props) {
-		  if (P && P.Input) {
-		    const inner = { ...props };
-		    const layoutStyle = inner.style;
-		    delete inner.style;
-		    return (0, import_react3.createElement)("span", { style: layoutStyle }, (0, import_react3.createElement)(P.Input, inner));
-		  }
-		  const rest = { ...props };
-		  rest.className = "dsh-mem-input" + (rest.className ? " " + rest.className : "");
-		  return (0, import_react3.createElement)("input", rest);
-		}
-		function NModal(props) {
-		  if (props.open === false) return null;
-		  if (P && P.Modal) return (0, import_react3.createElement)(P.Modal, { closeLabel: "关闭", ...props });
-		  return (0, import_react3.createElement)(
-		    "div",
-		    {
-		      className: "dsh-mem-rb-overlay",
-		      onClick: (e) => {
-		        if (e.target === e.currentTarget && props.onClose) props.onClose();
-		      }
-		    },
-		    (0, import_react3.createElement)(
-		      "div",
-		      { className: "dsh-mem-rb-modal" },
-		      props.title ? (0, import_react3.createElement)("div", { style: { fontSize: 15, fontWeight: 600, marginBottom: 10 } }, props.title) : null,
-		      props.children,
-		      props.footer ? (0, import_react3.createElement)(
-		        "div",
-		        { style: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 } },
-		        props.footer
-		      ) : null
-		    )
-		  );
-		}
-		
-		// client/src/tabs/BudgetInputs.tsx
 		var import_jsx_runtime4 = require("react/jsx-runtime");
 		var LAYERS = [
 		  ["extract", "抽取"],
@@ -2983,7 +2993,7 @@ var __defProp = Object.defineProperty;
 		  return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "dsh-mem-typetag", children: t("scope." + props.family) });
 		}
 		function Chevron() {
-		  return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "dsh-mem-feed-chev", "aria-hidden": "true", children: "›" });
+		  return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "dsh-mem-feed-chev", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(NIconChevronRight14, {}) });
 		}
 		
 		// client/src/workspace/Automation.tsx
@@ -3134,7 +3144,7 @@ var __defProp = Object.defineProperty;
 		    /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("button", { className: "dsh-mem-disc", "aria-expanded": advOpen, onClick: () => {
 		      setAdvOpen(!advOpen);
 		    }, style: { marginTop: 14 }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "dsh-mem-disc-chev", "aria-hidden": "true", children: "›" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "dsh-mem-disc-chev", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(NIconChevronRight14, {}) }),
 		      t("au.advTitle"),
 		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { style: { ...S.hint, marginLeft: "auto", fontWeight: 400 }, children: t("au.advHint") })
 		    ] }),
@@ -3142,7 +3152,7 @@ var __defProp = Object.defineProperty;
 		    /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("button", { className: "dsh-mem-disc", "aria-expanded": embOpen, onClick: () => {
 		      setEmbOpen(!embOpen);
 		    }, style: { marginTop: 12 }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "dsh-mem-disc-chev", "aria-hidden": "true", children: "›" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "dsh-mem-disc-chev", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(NIconChevronRight14, {}) }),
 		      t("au.embTitle")
 		    ] }),
 		    embOpen ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(EmbeddingSection, { rpc }) : null
@@ -4055,7 +4065,7 @@ var __defProp = Object.defineProperty;
 		    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("button", { className: "dsh-mem-disc", "aria-expanded": logOpen, onClick: () => {
 		      setLogOpen(!logOpen);
 		    }, style: { marginTop: 14 }, children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "dsh-mem-disc-chev", "aria-hidden": "true", children: "›" }),
+		      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "dsh-mem-disc-chev", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(NIconChevronRight14, {}) }),
 		      t("mt.log")
 		    ] }),
 		    logOpen ? /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { style: { marginTop: 4 }, children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(LogTab, { rpc }) }) : null,
