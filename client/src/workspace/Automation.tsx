@@ -3,7 +3,7 @@
  * 高级披露（路由链与预算 = DistillSettings 内含 RouteChainEditor/BudgetInputs；
  * 嵌入模型 = EmbeddingSection）。开关逻辑自旧概览迁移（乐观更新 + 失败回滚）。
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LlmProvidersResponse, SettingsGetResponse, SettingsSetRequest, EmbeddingStateResponse } from '../../../src/contract.js';
 import { t, tpl } from '../i18n.js';
 import type { RpcFn } from '../rpc.js';
@@ -11,7 +11,7 @@ import { S } from '../styles.js';
 import { SwitchRow } from '../ui/controls.js';
 import { DistillSettings } from '../tabs/DistillSettings.js';
 import { EmbeddingSection } from '../tabs/EmbeddingSection.js';
-import { Chevron, SectionTitle } from './common.js';
+import { Chevron, ErrorBlock, SectionTitle } from './common.js';
 
 type ToggleKey = 'enabled' | 'capture' | 'distill' | 'recall';
 
@@ -25,13 +25,23 @@ export function Automation(props: { rpc: RpcFn }) {
   const [emb, setEmb] = useState<EmbeddingStateResponse | null>(null);
   const [advOpen, setAdvOpen] = useState(false);
   const [embOpen, setEmbOpen] = useState(false);
+  /** 写入期标志：乐观更新在途时丢弃轮询响应（防旧值闪回覆盖，审查 P2-6）。 */
+  const writeBusy = useRef(false);
 
   const load = useCallback(() => {
     rpc('dsh-memory/settings-get', {})
       .then((r) => {
-        if (r && r.ok) setSettingsData(r.value);
+        if (writeBusy.current) return;
+        if (r && r.ok) {
+          setSettingsData(r.value);
+          setError(null);
+        } else if (!r || !r.ok) {
+          setError(r && r.error ? r.error.message : 'RPC error');
+        }
       })
-      .catch(() => {});
+      .catch((e: unknown) => {
+        setError(String((e && (e as Error).message) || e));
+      });
     rpc('dsh-memory/llm-providers', {})
       .then((r) => {
         if (r && r.ok) setRouteInfo(r.value);
@@ -57,8 +67,10 @@ export function Automation(props: { rpc: RpcFn }) {
     const prev = settingsData;
     const patch = { [key]: value } as SettingsSetRequest;
     setSettingsData({ ...prev, settings: { ...prev.settings, [key]: value } });
+    writeBusy.current = true;
     rpc('dsh-memory/settings-set', patch)
       .then((r) => {
+        writeBusy.current = false;
         if (!r || !r.ok) {
           setSettingsData(prev);
           setError(r && r.error ? r.error.message : 'settings-set failed');
@@ -67,6 +79,7 @@ export function Automation(props: { rpc: RpcFn }) {
         }
       })
       .catch((e: unknown) => {
+        writeBusy.current = false;
         setSettingsData(prev);
         setError(String((e && (e as Error).message) || e));
       });
@@ -125,8 +138,7 @@ export function Automation(props: { rpc: RpcFn }) {
             onChange={(v) => {
               toggle('enabled', v);
             }}
-          />
-          <SwitchRow
+          /><SwitchRow
             label={t('au.sw.capture')}
             desc={t('au.sw.captureD')}
             checked={settingsData.settings.capture}
@@ -158,6 +170,8 @@ export function Automation(props: { rpc: RpcFn }) {
           {ceilingNote ? <p style={S.hint}>{ceilingNote}</p> : null}
           {error ? <div style={S.error}>{error}</div> : null}
         </div>
+      ) : error ? (
+        <ErrorBlock msg={error} onRetry={load} />
       ) : (
         <p style={S.intro}>{t('ws.loading')}</p>
       )}

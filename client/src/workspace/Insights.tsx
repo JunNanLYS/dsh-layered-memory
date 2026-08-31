@@ -72,6 +72,7 @@ export function Insights(props: { rpc: RpcFn }) {
   return (
     <div>
       <InsightTabs sub={sub} setSub={setSub} />
+      {error ? <div style={{ ...S.error, marginTop: 8 }}>{error}</div> : null}
       {sub === 'activity' ? <ActivityView data={data} /> : <RecallView data={data} />}
     </div>
   );

@@ -1231,6 +1231,8 @@ var __defProp = Object.defineProperty;
 		      if (!r || !r.ok) {
 		        setMode(prev);
 		        setError((r && r.error ? r.error.message : "") || "mode set failed");
+		      } else {
+		        setResumeScope(r.value.resume ? r.value.resume.scope : null);
 		      }
 		    }).catch((e) => {
 		      if (token !== seqRef.current) return;
@@ -1347,6 +1349,7 @@ var __defProp = Object.defineProperty;
 		            type: "button",
 		            className: "dsh-mem-pop-opt",
 		            tabIndex: 0,
+		            "aria-haspopup": "menu",
 		            onMouseDown: (e) => {
 		              e.preventDefault();
 		            },
@@ -2973,10 +2976,18 @@ var __defProp = Object.defineProperty;
 		  const [emb, setEmb] = (0, import_react9.useState)(null);
 		  const [advOpen, setAdvOpen] = (0, import_react9.useState)(false);
 		  const [embOpen, setEmbOpen] = (0, import_react9.useState)(false);
+		  const writeBusy = (0, import_react9.useRef)(false);
 		  const load = (0, import_react9.useCallback)(() => {
 		    rpc("dsh-memory/settings-get", {}).then((r) => {
-		      if (r && r.ok) setSettingsData(r.value);
-		    }).catch(() => {
+		      if (writeBusy.current) return;
+		      if (r && r.ok) {
+		        setSettingsData(r.value);
+		        setError(null);
+		      } else if (!r || !r.ok) {
+		        setError(r && r.error ? r.error.message : "RPC error");
+		      }
+		    }).catch((e) => {
+		      setError(String(e && e.message || e));
 		    });
 		    rpc("dsh-memory/llm-providers", {}).then((r) => {
 		      if (r && r.ok) setRouteInfo(r.value);
@@ -2999,7 +3010,9 @@ var __defProp = Object.defineProperty;
 		    const prev = settingsData;
 		    const patch = { [key]: value };
 		    setSettingsData({ ...prev, settings: { ...prev.settings, [key]: value } });
+		    writeBusy.current = true;
 		    rpc("dsh-memory/settings-set", patch).then((r) => {
+		      writeBusy.current = false;
 		      if (!r || !r.ok) {
 		        setSettingsData(prev);
 		        setError(r && r.error ? r.error.message : "settings-set failed");
@@ -3007,6 +3020,7 @@ var __defProp = Object.defineProperty;
 		        setError(null);
 		      }
 		    }).catch((e) => {
+		      writeBusy.current = false;
 		      setSettingsData(prev);
 		      setError(String(e && e.message || e));
 		    });
@@ -3095,7 +3109,7 @@ var __defProp = Object.defineProperty;
 		      summaryRow(t("au.route"), routeSummary),
 		      ceilingNote ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: S.hint, children: ceilingNote }) : null,
 		      error ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { style: S.error, children: error }) : null
-		    ] }) : /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: S.intro, children: t("ws.loading") }),
+		    ] }) : error ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(ErrorBlock, { msg: error, onRetry: load }) : /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { style: S.intro, children: t("ws.loading") }),
 		    /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("button", { className: "dsh-mem-disc", "aria-expanded": advOpen, onClick: () => {
 		      setAdvOpen(!advOpen);
 		    }, style: { marginTop: 14 }, children: [
@@ -3446,6 +3460,7 @@ var __defProp = Object.defineProperty;
 		  }
 		  return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { children: [
 		    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(InsightTabs, { sub, setSub }),
+		    error ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { style: { ...S.error, marginTop: 8 }, children: error }) : null,
 		    sub === "activity" ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(ActivityView, { data }) : /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(RecallView, { data })
 		  ] });
 		}
@@ -3754,9 +3769,18 @@ var __defProp = Object.defineProperty;
 		      )
 		    ] }),
 		    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: { ...S.flexRow, marginBottom: 8 }, children: /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: S.muted, children: loading ? t("ws.loading") : tpl(filtered ? "lib.countFiltered" : "lib.count", { n: items.length }) }) }),
-		    error && items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(ErrorBlock, { msg: error, onRetry: () => {
-		      fetchPage(false, null);
-		    } }) : null,
+		    error ? /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { style: { ...S.flexRow, justifyContent: "space-between", marginTop: 0, marginBottom: 8 }, children: [
+		      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { style: { color: "var(--dsh-mem-danger)", fontSize: 13 }, children: error }),
+		      items.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(
+		        NButton,
+		        {
+		          onClick: () => {
+		            fetchPage(false, null);
+		          },
+		          children: t("ws.retry")
+		        }
+		      ) : null
+		    ] }) : null,
 		    truncated ? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { style: { ...S.hint, marginTop: 0 }, children: t("lib.truncated") }) : null,
 		    items.length === 0 && !loading && !error ? /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "dsh-mem-card", style: { ...S.card, padding: "30px 10px", textAlign: "center" }, children: [
 		      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h3", { style: { fontSize: 14, fontWeight: 600, marginBottom: 4, color: "var(--dsh-mem-text-1)" }, children: t("lib.empty") }),

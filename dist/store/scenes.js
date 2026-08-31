@@ -10,8 +10,9 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { atomicWriteText, ensureDir, readTextIfExists } from './io.js';
 import { NAV_HEADER } from './persona.js';
-const META_START = '-----META-START-----';
-const META_END = '-----META-END-----';
+/** 场景文件 META 块标记（工作台活动流剥正文复用，保持单一事实源）。 */
+export const META_START = '-----META-START-----';
+export const META_END = '-----META-END-----';
 const DELETED_MARKER = '[DELETED]';
 export class SceneStore {
     logger;

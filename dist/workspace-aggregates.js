@@ -1,6 +1,10 @@
 import { snapshotDistillUsage } from './llm-usage.js';
+import { META_END } from './store/scenes.js';
 /** 检索路径单次上限（与 list-records 同值：检索缝的硬上限，触达即 truncated）。 */
 const SEARCH_CAP = 200;
+/** 单源取数窗口上限：活动流是「最近的资产」视角，深翻页封顶 500（防深 offset
+ *  探测窗放大成全表扫描）；超出后 hasMore 自然为假，翻页止步。 */
+const WINDOW_CAP = 500;
 /** L1 标题截断长度（内容首行；完整内容在 content 字段）。 */
 const TITLE_MAX = 60;
 const FAMILIES = ['chat', 'work'];
@@ -35,19 +39,18 @@ function l1ToItem(r) {
         createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
         updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : null,
         version: r.version ?? 0,
-        sourceSession: r.sessionId ?? 'default',
+        sourceSession: r.sessionId ?? null,
         scene: r.scene_name || null,
         l1Type: r.type || null,
     };
 }
-/** 剥离 L2 场景文件头 frontmatter（--- … --- 块），活动流正文只留自然内容。 */
-function stripFrontmatter(raw) {
-    if (!raw.startsWith('---'))
-        return raw;
-    const end = raw.indexOf('\n---', 3);
+/** 剥离 L2 场景文件头 META 块（-----META-START----- … -----META-END-----，标记与
+ *  SceneStore 同源），活动流正文只留自然内容；无完整 META 块原样返回。 */
+function stripSceneMeta(raw) {
+    const end = raw.indexOf(META_END);
     if (end === -1)
         return raw;
-    return raw.slice(end + 4).replace(/^\s*\n/, '');
+    return raw.slice(end + META_END.length).replace(/^\s*\n/, '');
 }
 const ts = (iso) => (iso ? Date.parse(iso) || 0 : 0);
 /**
@@ -56,7 +59,10 @@ const ts = (iso) => (iso ? Date.parse(iso) || 0 : 0);
  */
 export async function collectAssetActivity(stores, q) {
     const pool = [];
-    const window = q.offset + q.limit; // 每源取满窗口后混排切片（偏移分页的合并语义）
+    // 每源取 offset+limit+1 条做下一页探测：任一源还有数据，池就比窗口长 1 条，
+    // nextCursor 才能为真（只取满窗口会让 pool.length ≤ offset+limit 恒成立——
+    // 纯 L1 数据源翻页结构性失效，审查 P0-1）；窗口封顶 WINDOW_CAP 防深翻页放大
+    const window = Math.min(q.offset + q.limit + 1, WINDOW_CAP);
     const sinceIso = q.sinceMs > 0 ? new Date(q.sinceMs).toISOString() : undefined;
     const familyOpt = q.family || undefined;
     let truncated = false;
@@ -64,7 +70,9 @@ export async function collectAssetActivity(stores, q) {
         let items;
         if (q.query) {
             // 检索唯一缝（与召回同源）：ranked hits 再经 getByIds 索引点查补全
-            // 时间戳/版本（L1Hit 投影不含 updatedAt，混排排序需要），此后统一按时间排序
+            // 时间戳/版本（L1Hit 投影不含 updatedAt，混排排序需要），此后统一按时间排序。
+            // 已知取舍：检索按相关度截 200 后才做 since 后置过滤——窗口外的更新匹配可能
+            // 被更相关但更早的命中挤掉（小数据设置页场景接受；精确时间过滤走列表路径）
             const hits = await stores.l1.search(q.query, Math.min(window, SEARCH_CAP), { family: familyOpt });
             items = stores.l1.getByIds(hits.map((h) => h.id));
             truncated = window > SEARCH_CAP;
@@ -145,7 +153,7 @@ export async function collectAssetActivity(stores, q) {
         if (it.kind !== 'l2')
             return;
         const raw = await stores.scenes[it.family].read(it.id.slice(`l2:${it.family}:`.length));
-        const body = raw ? stripFrontmatter(raw).trim() : '';
+        const body = raw ? stripSceneMeta(raw).trim() : '';
         if (body)
             it.content = body;
     }));

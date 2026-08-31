@@ -10,7 +10,7 @@ import type { RpcFn } from '../rpc.js';
 import { S } from '../styles.js';
 import { NButton, NInput } from '../ui/primitives.js';
 import { Segmented } from '../ui/controls.js';
-import { Chevron, ErrorBlock, FamilyTag, KindTag, VerbTag } from './common.js';
+import { Chevron, FamilyTag, KindTag, VerbTag } from './common.js';
 
 const PAGE_LIMIT = 30;
 const DEBOUNCE_MS = 300;
@@ -234,7 +234,20 @@ export function Library(props: { rpc: RpcFn }) {
           {loading ? t('ws.loading') : tpl(filtered ? 'lib.countFiltered' : 'lib.count', { n: items.length })}
         </span>
       </div>
-      {error && items.length === 0 ? <ErrorBlock msg={error} onRetry={() => { fetchPage(false, null); }} /> : null}
+      {error ? (
+        <div style={{ ...S.flexRow, justifyContent: 'space-between', marginTop: 0, marginBottom: 8 }}>
+          <span style={{ color: 'var(--dsh-mem-danger)', fontSize: 13 }}>{error}</span>
+          {items.length > 0 ? (
+            <NButton
+              onClick={() => {
+                fetchPage(false, null);
+              }}
+            >
+              {t('ws.retry')}
+            </NButton>
+          ) : null}
+        </div>
+      ) : null}
       {truncated ? <div style={{ ...S.hint, marginTop: 0 }}>{t('lib.truncated')}</div> : null}
       {items.length === 0 && !loading && !error ? (
         <div className="dsh-mem-card" style={{ ...S.card, padding: '30px 10px', textAlign: 'center' }}>

@@ -877,7 +877,7 @@ export class MemoryDb {
         action === 'delete'
           ? this.db.prepare(`DELETE FROM ${table} WHERE record_id IN (${ph})`)
           : this.db.prepare(
-              `SELECT record_id, content, type, priority, scene_name, version, timestamp_str, created_time, updated_time, metadata_json, family FROM ${table} WHERE record_id IN (${ph})`,
+              `SELECT record_id, content, type, priority, scene_name, session_id, version, timestamp_str, created_time, updated_time, metadata_json, family FROM ${table} WHERE record_id IN (${ph})`,
             );
       this.inStmts.set(key, stmt);
     }
@@ -939,7 +939,7 @@ export class MemoryDb {
     if (this.degraded) return [];
     const rows = this.db
       .prepare(
-        'SELECT record_id, content, type, priority, scene_name, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records',
+        'SELECT record_id, content, type, priority, scene_name, session_id, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records',
       )
       .all() as unknown as L1MetaRow[];
     return rows.map(rowToRecord);
@@ -981,7 +981,7 @@ export class MemoryDb {
       const totalRow = this.db.prepare(`SELECT COUNT(*) AS n FROM l1_records${whereSql}`).get(...params) as { n: number };
       const rows = this.db
         .prepare(
-          `SELECT record_id, content, type, priority, scene_name, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records${whereSql} ORDER BY updated_time DESC LIMIT ? OFFSET ?`,
+          `SELECT record_id, content, type, priority, scene_name, session_id, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records${whereSql} ORDER BY updated_time DESC LIMIT ? OFFSET ?`,
         )
         .all(...params, opts.limit, opts.offset) as unknown as L1MetaRow[];
       return { items: rows.map(rowToRecord), total: totalRow?.n ?? 0 };
@@ -1583,6 +1583,7 @@ interface L1MetaRow {
   type: string;
   priority: number;
   scene_name: string;
+  session_id?: string;
   version: number;
   timestamp_str: string;
   created_time: string;
@@ -1604,6 +1605,7 @@ function rowToRecord(row: L1MetaRow): MemoryRecord {
     type: row.type,
     priority: row.priority,
     scene_name: row.scene_name,
+    sessionId: row.session_id || undefined,
     timestamps: dbToTimestamps(row.timestamp_str),
     createdAt: Date.parse(row.created_time) || 0,
     updatedAt: Date.parse(row.updated_time) || 0,

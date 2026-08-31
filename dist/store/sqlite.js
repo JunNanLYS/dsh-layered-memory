@@ -754,7 +754,7 @@ export class MemoryDb {
             stmt =
                 action === 'delete'
                     ? this.db.prepare(`DELETE FROM ${table} WHERE record_id IN (${ph})`)
-                    : this.db.prepare(`SELECT record_id, content, type, priority, scene_name, version, timestamp_str, created_time, updated_time, metadata_json, family FROM ${table} WHERE record_id IN (${ph})`);
+                    : this.db.prepare(`SELECT record_id, content, type, priority, scene_name, session_id, version, timestamp_str, created_time, updated_time, metadata_json, family FROM ${table} WHERE record_id IN (${ph})`);
             this.inStmts.set(key, stmt);
         }
         return stmt;
@@ -819,7 +819,7 @@ export class MemoryDb {
         if (this.degraded)
             return [];
         const rows = this.db
-            .prepare('SELECT record_id, content, type, priority, scene_name, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records')
+            .prepare('SELECT record_id, content, type, priority, scene_name, session_id, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records')
             .all();
         return rows.map(rowToRecord);
     }
@@ -859,7 +859,7 @@ export class MemoryDb {
             const whereSql = where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '';
             const totalRow = this.db.prepare(`SELECT COUNT(*) AS n FROM l1_records${whereSql}`).get(...params);
             const rows = this.db
-                .prepare(`SELECT record_id, content, type, priority, scene_name, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records${whereSql} ORDER BY updated_time DESC LIMIT ? OFFSET ?`)
+                .prepare(`SELECT record_id, content, type, priority, scene_name, session_id, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records${whereSql} ORDER BY updated_time DESC LIMIT ? OFFSET ?`)
                 .all(...params, opts.limit, opts.offset);
             return { items: rows.map(rowToRecord), total: totalRow?.n ?? 0 };
         }
@@ -1456,6 +1456,7 @@ function rowToRecord(row) {
         type: row.type,
         priority: row.priority,
         scene_name: row.scene_name,
+        sessionId: row.session_id || undefined,
         timestamps: dbToTimestamps(row.timestamp_str),
         createdAt: Date.parse(row.created_time) || 0,
         updatedAt: Date.parse(row.updated_time) || 0,

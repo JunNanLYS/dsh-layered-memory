@@ -148,6 +148,10 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
         if (!r || !r.ok) {
           setMode(prev);
           setError((r && r.error ? r.error.message : '') || 'mode set failed');
+        } else {
+          // 暂停快照跟随权威响应：进 off 带出暂停前范围，恢复非 off 清空
+          // （滑条/菜单的显示值与 applyFlow 的恢复目标都依赖这份本地态，审查 P1-3）
+          setResumeScope(r.value.resume ? r.value.resume.scope : null);
         }
       })
       .catch((e: unknown) => {
@@ -270,6 +274,7 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
               type="button"
               className="dsh-mem-pop-opt"
               tabIndex={0}
+              aria-haspopup="menu"
               onMouseDown={(e) => {
                 e.preventDefault();
               }}

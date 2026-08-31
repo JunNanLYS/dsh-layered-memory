@@ -173,7 +173,9 @@ async function handleEndpoint(endpoint, payload, deps) {
                 throw new Error('query 过长（≤4096 字符）');
             const kind = p.kind === 'l1' || p.kind === 'l2' || p.kind === 'l3' ? p.kind : '';
             const family = p.family === 'chat' || p.family === 'work' ? p.family : '';
-            const since = Number(p.since) > 0 ? Number(p.since) : 0;
+            // 钳到 Date 可表示范围（超 8.64e15ms 会令 toISOString 抛 RangeError，回退=不过滤）
+            const sinceNum = Number(p.since);
+            const since = Number.isFinite(sinceNum) && sinceNum > 0 && sinceNum <= 8.64e15 ? sinceNum : 0;
             const limit = Math.min(Math.max(Number(p.limit) || 30, 1), 100);
             const offset = Math.min(decodeCursor(typeof p.cursor === 'string' ? p.cursor : null), 1_000_000);
             return collectAssetActivity(stores, {
