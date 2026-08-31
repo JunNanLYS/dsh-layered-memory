@@ -41,8 +41,9 @@ export function ensureThemeStyle() {
     '  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #d0403f);',
     '  --dsh-mem-warn: #a8821c;',
     '  --dsh-mem-ok: #1f9d55;',
-    // 原生芯片 chevron 图标色（Sh0Q9G_chevron 真机实测：浅 #ADB2B8 / 暗 #81858C）
-    '  --dsh-mem-chev: #adb2b8;',
+    // 原生芯片 chevron 图标色（Sh0Q9G_chevron 源码：var(--dsw-alias-label-caption)；
+    // fallback 为双主题真机实测值：浅 #ADB2B8 / 暗 #81858C）
+    '  --dsh-mem-chev: var(--dsw-alias-label-caption, #adb2b8);',
     // 图表系列（成本折线图）：8 档固定色，PALETTE 只引用 var()；1 档锚品牌蓝，8 档中性"其他"
     '  --dsh-mem-chart-1: #4d6bfe;',
     '  --dsh-mem-chart-2: #0e9c8f;',
@@ -85,7 +86,7 @@ export function ensureThemeStyle() {
     '  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #f4707b);',
     '  --dsh-mem-warn: #d9b23c;',
     '  --dsh-mem-ok: #52c98d;',
-    '  --dsh-mem-chev: #81858c;',
+    '  --dsh-mem-chev: var(--dsw-alias-label-caption, #81858c);',
     '  --dsh-mem-chart-1: #6e85ff;',
     '  --dsh-mem-chart-2: #35c4b5;',
     '  --dsh-mem-chart-3: #52c98d;',
@@ -330,18 +331,21 @@ export function ensureThemeStyle() {
     '}',
     // ── 粒子层（点阵场）：浅色 multiply 混合——深蓝点乘在浅蓝填充上沉显对比 ──
     'body:not([data-ds-dark-theme]) .dsh-mem-particles { mix-blend-mode: multiply; opacity: 0.82; }',
-    // ── 会话记忆芯片（分散式，spec v2 §4.1）：官方 composer chip 同款语法——
-    //    无边框、label-secondary、hover/展开淡底；语义点只在暂停（灰）/降级（琥珀）时出现。
-    //    数值逐项对齐原生访问模式触发钮（Sh0Q9G_trigger 真机实测 2026-08-31）：
-    //    字重 500 / 圆角 24 / padding 左8右4 / gap 4 / chevron 14×14 SVG #81858C（双主题同值） ──
+    // ── 会话记忆芯片（分散式，spec v2 §4.1）：逐字对齐原生访问模式触发钮
+    //    （dsh-client-ui-conversation 源码 .Sh0Q9G_trigger）：13px/500/r24/padding 8·4/
+    //    gap4/label-secondary/透明底/min-width 0/max-width 220；原生无 hover 与展开底色
+    //    （仅 chevron 旋转反馈），故此处同样不加；focus-visible 环是键盘无障碍超集，保留 ──
     '.dsh-mem-mchip {',
     '  display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px 0 8px;',
+    '  min-width: 0; max-width: 220px;',
     '  border: none; background: transparent; border-radius: 24px; cursor: pointer;',
     '  color: var(--dsh-mem-text-2); font: inherit; font-size: 13px; font-weight: 500; line-height: 20px; white-space: nowrap;',
     '}',
-    '.dsh-mem-mchip:hover, .dsh-mem-mchip[aria-expanded="true"] { background: var(--dsh-mem-bg-hover); }',
+    '.dsh-mem-mchip .mc-label { text-overflow: ellipsis; white-space: nowrap; min-width: 0; overflow: hidden; }',
     '.dsh-mem-mchip:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }',
-    '.dsh-mem-mchip-chev { display: flex; flex: none; color: var(--dsh-mem-chev); }',
+    '.dsh-mem-mchip-chev { display: inline-flex; flex: none; color: var(--dsh-mem-chev); transition: transform .12s ease; }',
+    // 展开态箭头翻转 180°（原生 .Sh0Q9G_chevronOpen 源码：rotate(180deg)，transition transform .12s）
+    '.dsh-mem-mchip[aria-expanded="true"] .dsh-mem-mchip-chev { transform: rotate(180deg); }',
     '.dsh-mem-mchip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dsh-mem-track); flex: none; }',
     '.dsh-mem-mchip-dot.warn { background: var(--dsh-mem-warn); }',
     // ── 级联菜单（芯片点击展开，向上、左缘对齐芯片）：dsh 原生菜单同配方浮层；
@@ -349,7 +353,7 @@ export function ensureThemeStyle() {
     //    间距 4px / min-width 218 对齐原生下拉实测；行尺寸 14px·40px·padding 8/10·
     //    圆角 10（原生菜单条目实测，settings 页 NSel 下拉不受影响——作用域限定在菜单内） ──
     '.dsh-mem-menu {',
-    '  position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 1000; min-width: 218px; padding: 4px;',
+    '  position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 1000; min-width: 218px; max-width: 360px; padding: 4px;',
     '  background: var(--dsh-mem-bg-pop); border: 1px solid var(--dsh-mem-border-pop);',
     '  border-radius: 12px; box-shadow: var(--dsh-mem-shadow-pop); color: var(--dsh-mem-text-1);',
     '}',
@@ -414,7 +418,7 @@ export function ensureThemeStyle() {
     '.dsh-mem-sinfo-sum { font-size: 11px; color: var(--dsh-mem-text-3); line-height: 16px; margin-top: 8px; }',
     // reduced-motion 兜底放样式表末尾：同特异性下后置声明才能压过上面的组件类
     '@media (prefers-reduced-motion: reduce) {',
-    '  .dsh-mem-root, .dsh-mem-root *, .dsh-mem-btn, .dsh-mem-input, .dsh-mem-select, .dsh-mem-rb-fill, .dsh-mem-sel-chev, .dsh-mem-sl-reveal, .dsh-mem-sl-fill, .dsh-mem-sl-thumb, .dsh-mem-subchev, .dsh-mem-feed-chev, .dsh-mem-disc-chev { transition: none; }',
+    '  .dsh-mem-root, .dsh-mem-root *, .dsh-mem-btn, .dsh-mem-input, .dsh-mem-select, .dsh-mem-rb-fill, .dsh-mem-sel-chev, .dsh-mem-sl-reveal, .dsh-mem-sl-fill, .dsh-mem-sl-thumb, .dsh-mem-subchev, .dsh-mem-feed-chev, .dsh-mem-disc-chev, .dsh-mem-mchip-chev { transition: none; }',
     '  .dsh-mem-flow { animation: none; }',
     '}',
   ].join('\n');

@@ -15,20 +15,26 @@
 
 ## 记忆芯片（.dsh-mem-mchip）
 
-- 官方 composer chip 语法，**数值逐项对齐原生访问模式触发钮（Sh0Q9G_trigger 真机实测
-  2026-08-31）**：高 28 / 字号 13 / **字重 500** / **圆角 24px** / padding 左 8 右 4 /
-  gap 4 / label-secondary 色；hover/展开淡底（bg-hover）。
-- chevron = **原生 SVG 逐字复刻**（Sh0Q9G_chevron 14×14 path，fill currentColor；
-  图标色令牌 `--dsh-mem-chev`：浅 #ADB2B8 / 暗 #81858C，双主题实测值）。
+- 官方 composer chip 语法，**逐字对齐宿主源码**（`dsh-client-ui-conversation` 的
+  `.Sh0Q9G_trigger`——**宿主 UI 对齐以源码为权威**，本机
+  `~/.npm-global/.../dsh-client-ui-conversation/lib/client.js` 可直接 grep；
+  getComputedStyle 实测只作复核）：高 28 / 字号 13 / **字重 500** / **圆角 24px** /
+  padding 左 8 右 4 / gap 4 / label-secondary / 透明底 / min-width 0 / max-width 220；
+  label ellipsis（`.mc-label` 同 `.Sh0Q9G_triggerLabel`）。**原生无 hover 与展开底色**
+  （仅 chevron 旋转作反馈），focus-visible 环是键盘无障碍超集、保留。
+- chevron = **原生 SVG 逐字复刻**（Sh0Q9G_chevron 14×14 path，fill currentColor）；
+  图标色 = **`var(--dsw-alias-label-caption)`**（源码原令牌；fallback 浅 #ADB2B8 /
+  暗 #81858C 为实测值）；**展开态旋转 180°**，过渡 `transform .12s`（默认 ease）——
+  与 `.Sh0Q9G_chevronOpen` 逐字一致。
 - 文案 = 解析真值（live）：`记忆 · {智能|日常|工作}`（注入生效）/ `记忆 · 只写`
   （recallResolved=false）/ `记忆 · 暂停`（off 档，前置灰点）/ `记忆 · 降级`（warn 点）。
 - 暂停档显示的档位 = host 暂停快照 `resume.scope`（暂停前范围），无快照回退默认档。
 
 ## 级联菜单（.dsh-mem-menu）
 
-- 点击芯片向上展开（`bottom: calc(100% + 4px)`，左缘对齐芯片），dsh 原生菜单同配方
-  浮层（menu 底 + inverted 描边 + lv3 阴影 + 12px 圆角 + 4px 内衬 + min-width 218），
-  行复用 `.dsh-mem-pop-opt`。
+- 点击芯片向上展开（`bottom: calc(100% + 4px)`，左缘对齐芯片；原生 `_list` 为
+  `top: calc(100% + 4px)` 下挂 + min-width 218 / max-width 360，此处镜像为上弹），
+  dsh 原生菜单同配方浮层（menu 底 + inverted 描边 + lv3 阴影 + 12px 圆角 + 4px 内衬）。
 - **行尺寸对齐原生菜单条目（_item 实测）**：字号 **14px** / 行高 22 / **min-height 40px** /
   padding 8px 10px / 圆角 10 / label-primary 色。作用域限定 `.dsh-mem-menu` /
   `.dsh-mem-sub` 内——settings 页 NSel 下拉保持 13/32 紧凑档不受影响。
