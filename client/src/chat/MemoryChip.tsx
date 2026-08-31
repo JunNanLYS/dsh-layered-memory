@@ -157,29 +157,43 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
       });
   };
 
-  /** 注入覆盖提交：null = 清除（跟随全局）；清除后的解析值由 set 响应回填。 */
-  const commitRecall = (next: boolean | null) => {
-    if (!rpc || !sessionId || mode === null || next === recall) return;
+  /** 数据流四态应用：暂停 = 切 off（host 记录恢复快照）；从暂停恢复 = 恢复范围 +
+   *  该数据流态合并提交（单 RPC 无部分提交）。 */
+  const applyFlow = (k: FlowKey) => {
+    if (!rpc || !sessionId || mode === null) return;
+    if (k === 'paused') {
+      commitMode('off');
+      return;
+    }
+    const targetScope = paused ? (resumeScope ?? 'auto') : (mode as string);
+    const recallVal: boolean | null = k === 'rw' ? true : k === 'wo' ? false : null;
+    if (!paused && recallVal === recall) return; // 无变化
+    const prevMode = mode;
     const prevRecall = recall;
     const prevResolved = recallResolved;
     const token = seqRef.current;
-    setRecall(next);
-    if (next !== null) setRecallResolved(next);
+    setMode(targetScope);
+    setRecall(recallVal);
+    if (recallVal !== null) setRecallResolved(recallVal);
     setError(null);
-    rpc('dsh-memory/session-mode-set', { sessionId, mode: mode as 'auto', recall: next })
+    rpc('dsh-memory/session-mode-set', { sessionId, mode: targetScope as 'auto', recall: recallVal })
       .then((r) => {
         if (token !== seqRef.current) return;
         if (!r || !r.ok) {
+          setMode(prevMode);
           setRecall(prevRecall);
           setRecallResolved(prevResolved);
-          setError((r && r.error ? r.error.message : '') || 'recall set failed');
+          setError((r && r.error ? r.error.message : '') || 'flow set failed');
         } else {
           setRecall(r.value.recall);
           setRecallResolved(r.value.recallResolved);
+          const resume = (r.value as { resume?: { scope: string } | null }).resume;
+          setResumeScope(resume ? resume.scope : null);
         }
       })
       .catch((e: unknown) => {
         if (token !== seqRef.current) return;
+        setMode(prevMode);
         setRecall(prevRecall);
         setRecallResolved(prevResolved);
         setError(String((e && (e as Error).message) || e));
@@ -264,10 +278,7 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
                   aria-checked={flow === k}
                   className={'dsh-mem-pop-opt' + (flow === k ? ' on' : '')}
                   onClick={() => {
-                    if (k === 'follow') commitRecall(null);
-                    else if (k === 'rw') commitRecall(true);
-                    else if (k === 'wo') commitRecall(false);
-                    else commitMode('off'); // 暂停
+                    applyFlow(k);
                     setMenuOpen(false);
                     setSliderOpen(false);
                   }}

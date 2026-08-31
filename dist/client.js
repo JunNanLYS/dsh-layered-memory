@@ -875,26 +875,39 @@ var __defProp = Object.defineProperty;
 		      setError(String(e && e.message || e));
 		    });
 		  };
-		  const commitRecall = (next) => {
-		    if (!rpc || !sessionId || mode === null || next === recall) return;
+		  const applyFlow = (k) => {
+		    if (!rpc || !sessionId || mode === null) return;
+		    if (k === "paused") {
+		      commitMode("off");
+		      return;
+		    }
+		    const targetScope = paused ? resumeScope ?? "auto" : mode;
+		    const recallVal = k === "rw" ? true : k === "wo" ? false : null;
+		    if (!paused && recallVal === recall) return;
+		    const prevMode = mode;
 		    const prevRecall = recall;
 		    const prevResolved = recallResolved;
 		    const token = seqRef.current;
-		    setRecall(next);
-		    if (next !== null) setRecallResolved(next);
+		    setMode(targetScope);
+		    setRecall(recallVal);
+		    if (recallVal !== null) setRecallResolved(recallVal);
 		    setError(null);
-		    rpc("dsh-memory/session-mode-set", { sessionId, mode, recall: next }).then((r) => {
+		    rpc("dsh-memory/session-mode-set", { sessionId, mode: targetScope, recall: recallVal }).then((r) => {
 		      if (token !== seqRef.current) return;
 		      if (!r || !r.ok) {
+		        setMode(prevMode);
 		        setRecall(prevRecall);
 		        setRecallResolved(prevResolved);
-		        setError((r && r.error ? r.error.message : "") || "recall set failed");
+		        setError((r && r.error ? r.error.message : "") || "flow set failed");
 		      } else {
 		        setRecall(r.value.recall);
 		        setRecallResolved(r.value.recallResolved);
+		        const resume = r.value.resume;
+		        setResumeScope(resume ? resume.scope : null);
 		      }
 		    }).catch((e) => {
 		      if (token !== seqRef.current) return;
+		      setMode(prevMode);
 		      setRecall(prevRecall);
 		      setRecallResolved(prevResolved);
 		      setError(String(e && e.message || e));
@@ -978,10 +991,7 @@ var __defProp = Object.defineProperty;
 		            "aria-checked": flow === k,
 		            className: "dsh-mem-pop-opt" + (flow === k ? " on" : ""),
 		            onClick: () => {
-		              if (k === "follow") commitRecall(null);
-		              else if (k === "rw") commitRecall(true);
-		              else if (k === "wo") commitRecall(false);
-		              else commitMode("off");
+		              applyFlow(k);
 		              setMenuOpen(false);
 		              setSliderOpen(false);
 		            },

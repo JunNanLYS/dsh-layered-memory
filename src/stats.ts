@@ -307,6 +307,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         defaultMode: modes.default,
         recall: modes.getRecall(sessionId) ?? null,
         recallResolved: modes.resolvedRecall(sessionId, globalRecall),
+        resume: modes.getResume(sessionId),
       };
       return v;
     }
@@ -340,6 +341,7 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
         mode: p.mode as MemoryMode,
         recall: modes.getRecall(sessionId) ?? null,
         recallResolved: modes.resolvedRecall(sessionId, s?.recall ?? true),
+        resume: modes.getResume(sessionId),
       };
       return v;
     }
