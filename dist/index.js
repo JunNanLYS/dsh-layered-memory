@@ -313,6 +313,8 @@ export async function apply(ctx, config) {
         runnerView: (sid, mode) => runner.sessionView(sid, mode),
         l0Count: (sid) => stores.l0.countBySession(sid),
         capabilities: () => db.getCapabilities(),
+        // 工作台洞察聚合（runtime-insights；进程内注册表读取，同样零文件 I/O）
+        recallStatsAll: () => recall.statsAll(),
     });
     // bench 控制服务（config.benchControl 门控，默认关）：仅基准/调试部署注册，
     // 供同进程的 bench-runner lifecycle 赛道触发 rebuild / 设置会话档位

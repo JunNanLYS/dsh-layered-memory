@@ -1,62 +1,70 @@
-/** 主面板：Tab 框架（设置 → 记忆 分节主体）。 */
-import { useEffect, useState } from 'react';
+/**
+ * 记忆工作台壳：设置 → 记忆 五区任务导航（总览/记忆库/自动化/洞察/维护，
+ * spec v2 §5-§10）。sticky tablist + 箭头键巡游（roving tabindex）；
+ * 重挂载自然回到总览（state 随挂载重置）。
+ */
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { t } from './i18n.js';
 import type { RpcFn } from './rpc.js';
 import { watchSidebarIcon } from './sidebar-icon.js';
 import { S } from './styles.js';
 import { ensureThemeStyle } from './theme.js';
-import { CostTab } from './tabs/CostTab.js';
-import { LogTab } from './tabs/LogTab.js';
-import { OverviewTab } from './tabs/OverviewTab.js';
-import { PersonaTab } from './tabs/PersonaTab.js';
-import { RecordsTab } from './tabs/RecordsTab.js';
-import { ScenesTab } from './tabs/ScenesTab.js';
+import { Automation } from './workspace/Automation.js';
+import { Insights } from './workspace/Insights.js';
+import { Library } from './workspace/Library.js';
+import { Maintenance } from './workspace/Maintenance.js';
+import { Overview } from './workspace/Overview.js';
 
-const TABS: Array<[string, string]> = [
-  ['overview', '概览'],
-  ['records', '记忆'],
-  ['scenes', '场景'],
-  ['persona', '画像'],
-  ['cost', '成本'],
-  ['log', '日志'],
-];
+const WS_TABS = ['overview', 'library', 'automation', 'insights', 'maintenance'] as const;
+type WsTab = (typeof WS_TABS)[number];
 
 export function MemoryPanel(props: { rpc: RpcFn }) {
   const rpc = props.rpc;
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState<WsTab>('overview');
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   ensureThemeStyle(); // 设置页挂载即注入主题令牌与组件样式
   useEffect(() => {
     watchSidebarIcon();
   }, []);
 
-  let body;
-  if (tab === 'overview') body = <OverviewTab rpc={rpc} />;
-  else if (tab === 'records') body = <RecordsTab rpc={rpc} />;
-  else if (tab === 'scenes') body = <ScenesTab rpc={rpc} />;
-  else if (tab === 'persona') body = <PersonaTab rpc={rpc} />;
-  else if (tab === 'cost') body = <CostTab rpc={rpc} />;
-  else body = <LogTab rpc={rpc} />;
+  // tablist 箭头键巡游：切换选中并移焦点（roving tabindex）
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    const idx = WS_TABS.indexOf(tab);
+    const next = e.key === 'ArrowRight' ? (idx + 1) % WS_TABS.length : (idx - 1 + WS_TABS.length) % WS_TABS.length;
+    setTab(WS_TABS[next]!);
+    tabRefs.current[next]?.focus();
+  };
 
   return (
     <div className="dsh-mem-root" style={S.section}>
-      <h2 style={S.heading}>记忆 (Memory)</h2>
-      <p style={S.intro}>L0~L3 分层蒸馏记忆：浏览被记住的内容，控制记忆模式开关。</p>
-      <div style={S.tabbar}>
-        {TABS.map((t) => {
-          return (
-            <button
-              key={t[0]}
-              className={tab === t[0] ? 'dsh-mem-tab dsh-mem-tab-on' : 'dsh-mem-tab'}
-              onClick={() => {
-                setTab(t[0]!);
-              }}
-            >
-              {t[1]}
-            </button>
-          );
-        })}
+      <h2 style={S.heading}>{t('ws.title')}</h2>
+      <div className="dsh-mem-ws-tabs" role="tablist" aria-label={t('ws.title')} onKeyDown={onKeyDown}>
+        {WS_TABS.map((k, i) => (
+          <button
+            key={k}
+            ref={(el) => {
+              tabRefs.current[i] = el;
+            }}
+            role="tab"
+            aria-selected={tab === k}
+            tabIndex={tab === k ? 0 : -1}
+            className="dsh-mem-ws-tab"
+            onClick={() => {
+              setTab(k);
+            }}
+          >
+            {t('ws.tab.' + k)}
+          </button>
+        ))}
       </div>
-      {body}
+      {tab === 'overview' ? <Overview rpc={rpc} onNavigate={setTab} /> : null}
+      {tab === 'library' ? <Library rpc={rpc} /> : null}
+      {tab === 'automation' ? <Automation rpc={rpc} /> : null}
+      {tab === 'insights' ? <Insights rpc={rpc} /> : null}
+      {tab === 'maintenance' ? <Maintenance rpc={rpc} /> : null}
     </div>
   );
 }

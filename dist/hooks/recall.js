@@ -362,6 +362,8 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
     return {
         invalidateProfile,
         stats: (id) => recallStats.get(id),
+        /** 全量会话召回统计（工作台洞察聚合；进程内注册表深拷贝，重启归零）。 */
+        statsAll: () => Array.from(recallStats.values(), (s) => ({ ...s })),
         /** 占用账本只读出口：内存优先，miss 时从流水复生（重启后历史会话）；从未注入返回 null。 */
         occupancy: (id) => {
             const led = occupancyByAgent.get(id) ?? occupancyStore.load(id);

@@ -49,6 +49,8 @@ export interface SessionInfoSource {
         ftsSearch: boolean;
         vectorSearch: boolean;
     };
+    /** 全量会话召回统计（工作台洞察聚合；缺省 = 装配未提供，洞察召回区隐藏计数）。 */
+    recallStatsAll?(): RecallSessionStats[];
 }
 import type { MemoryOccupancy } from './contract.js';
 export type { MemoryStats } from './contract.js';

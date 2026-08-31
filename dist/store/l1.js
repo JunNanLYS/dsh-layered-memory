@@ -184,9 +184,13 @@ export class L1Store {
         }
         return applyDecayWeight(hits, this.decayHalfLifeDays, (h) => updatedAtById.get(h.id));
     }
-    /** 浏览列表（UI 用）：无关键词时按更新时间倒序分页。 */
+    /** 浏览列表（UI 用）：无关键词时按更新时间倒序分页；since 为 ISO 时间下限（可选）。 */
     list(opts) {
         return this.db.listL1(opts);
+    }
+    /** 近 N 天逐日更新计数（工作台活动图；索引化 GROUP BY）。 */
+    countByDay(sinceIso) {
+        return this.db.countL1ByDay(sinceIso);
     }
     /** 场景名去重列表（UI 筛选器数据源）。 */
     distinctScenes() {

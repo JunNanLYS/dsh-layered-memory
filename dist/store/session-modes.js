@@ -94,6 +94,19 @@ export class SessionModeStore {
     getResume(sessionId) {
         return this.entries.get(sessionId)?.resume ?? null;
     }
+    /** 停用侧分布（工作台洞察，只读计数）：off = 档位暂停会话；wo = 注入覆盖只写
+     *  （recall=false 且档位未停——两态互斥计数，与召回四因子短路序对齐）。 */
+    countStates() {
+        let off = 0;
+        let wo = 0;
+        for (const e of this.entries.values()) {
+            if (e.mode === 'off')
+                off++;
+            else if (e.recall === false)
+                wo++;
+        }
+        return { off, wo };
+    }
     /** 设置会话档位（写穿持久化；持久化失败保持内存态生效）。
      *  暂停语义（UI 重构）：非 off → off 记录恢复快照（暂停前范围 + 当前注入覆盖）；
      *  off → 非 off 清空快照（恢复）。 */

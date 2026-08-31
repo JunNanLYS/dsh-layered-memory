@@ -2805,10 +2805,36 @@ async function main(): Promise<void> {
     // 可见文案零 em-dash（design-taste 铁律；代码注释除外）
     const emDashInString = clientSrc.match(/"[^"\n]*—[^"\n]*"/);
     assert(!emDashInString, `字符串内出现 em-dash：${emDashInString?.[0] ?? ''}`);
-    // 组件类接线：按钮/输入/Tab/卡片类在 JSX 侧被引用
-    for (const cls of ['dsh-mem-btn', 'dsh-mem-input', 'dsh-mem-select', 'dsh-mem-tab', 'dsh-mem-card', 'dsh-mem-root']) {
+    // 组件类接线：按钮/输入/下拉/卡片/根类在 JSX 侧被引用
+    for (const cls of ['dsh-mem-btn', 'dsh-mem-input', 'dsh-mem-select', 'dsh-mem-ws-tab', 'dsh-mem-card', 'dsh-mem-root']) {
       assert(clientSrc.includes(`"${cls}`), `组件类被引用：${cls}`);
     }
+    // ── 工作台五区（spec v2 §5-§10）：sticky tablist + 箭头键 + 五区词表 + 聚合端点 ──
+    assert(clientSrc.includes('role: "tablist"'), '工作台 tablist 角色');
+    assert(clientSrc.includes('position: sticky'), '任务导航 sticky');
+    assert(clientSrc.includes('ArrowRight') && clientSrc.includes('ArrowLeft'), 'tablist 箭头键巡游');
+    for (const [k, label] of [
+      ['overview', '总览'],
+      ['library', '记忆库'],
+      ['automation', '自动化'],
+      ['insights', '洞察'],
+      ['maintenance', '维护'],
+    ] as const) {
+      assert(clientSrc.includes(`"ws.tab.${k}": "${label}"`), `工作台区名（字典）：${label}`);
+    }
+    // 双语字典成对（EN 侧抽查，spec §11）
+    assert(clientSrc.includes('"ws.title": "Memory Workspace"'), '工作台标题 EN 词条');
+    assert(clientSrc.includes('"verb.new": "New"'), '活动流动词 EN 词条');
+    // 三个只读聚合端点接线（T4a）
+    for (const ep of ['dsh-memory/workspace-overview', 'dsh-memory/asset-activity', 'dsh-memory/runtime-insights']) {
+      assert(clientSrc.includes(`"${ep}"`), `聚合端点调用：${ep}`);
+    }
+    // 记忆库活动流 + 披露 + 危险区类接线
+    assert(clientSrc.includes('.dsh-mem-feed-head') && clientSrc.includes('.dsh-mem-feed-chev'), '活动流行类');
+    assert(clientSrc.includes('.dsh-mem-disc') && clientSrc.includes('.dsh-mem-disc-chev'), '披露头类');
+    assert(clientSrc.includes('.dsh-mem-danger'), '危险区容器类');
+    // 旧六 Tab 面板已删（旧下划线 tab 类不再定义）
+    assert(!clientSrc.includes('.dsh-mem-tab {'), '旧 tab 类已删（换 ws-tab 任务导航）');
     // 图表系列色接线（成本看板折线）：8 档令牌双主题定义 + PALETTE 只引用 var()
     for (let i = 1; i <= 8; i++) assert(clientSrc.includes(`--dsh-mem-chart-${i}: #`), `图表令牌定义：chart-${i}`);
     assert(clientSrc.includes('"var(--dsh-mem-chart-1)"'), 'PALETTE 引用 chart 令牌（非裸 hex）');

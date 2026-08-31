@@ -54,17 +54,23 @@ export declare class L1Store {
      * 回填（FTS 表无该列；候选池 ≤ limit×3 条主键查询，微秒级）。关闭时零开销。
      */
     private applyDecay;
-    /** 浏览列表（UI 用）：无关键词时按更新时间倒序分页。 */
+    /** 浏览列表（UI 用）：无关键词时按更新时间倒序分页；since 为 ISO 时间下限（可选）。 */
     list(opts: {
         type?: string;
         scene?: string;
         family?: string;
+        since?: string;
         limit: number;
         offset: number;
     }): {
         items: MemoryRecord[];
         total: number;
     };
+    /** 近 N 天逐日更新计数（工作台活动图；索引化 GROUP BY）。 */
+    countByDay(sinceIso: string): Array<{
+        day: string;
+        n: number;
+    }>;
     /** 场景名去重列表（UI 筛选器数据源）。 */
     distinctScenes(): string[];
     /**

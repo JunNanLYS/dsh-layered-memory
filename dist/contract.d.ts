@@ -2,7 +2,7 @@
  * RPC 契约单一事实源（types-only，零运行时代码）。
  *
  * 把 host（src/stats.ts 的 case 表）与 client（client/src，浏览器侧）共用的
- * 23 个 `dsh-memory/*` 端点请求/响应类型收敛到本模块——两端各自 `import type`，
+ * 26 个 `dsh-memory/*` 端点请求/响应类型收敛到本模块——两端各自 `import type`，
  * 契约漂移在编译期暴露，而不是等 UI 渲染出 undefined 才发现。
  *
  * 铁律：
@@ -314,6 +314,105 @@ export interface EmbeddingStateView {
     } | null;
     reindex: ReindexProgressState;
     activeNote?: string;
+}
+/** 资产活动条目：L1 记忆 / L2 场景 / L3 画像按更新时间混排（资产视图，非变更审计）。 */
+export interface AssetActivityItem {
+    /** 稳定 id：l1:<recordId> / l2:<family>:<path> / l3:<family>。 */
+    id: string;
+    kind: 'l1' | 'l2' | 'l3';
+    /** new = 首次形成；upd = 蒸馏演进（L1 version>1 / L2 updated>created / L3 恒 upd）。 */
+    verb: 'new' | 'upd';
+    family: MemoryFamily;
+    /** 标题：L1 内容首行截断 / L2 场景名 / L3 画像文件名（本地化装饰在 client 侧）。 */
+    title: string;
+    /** 完整内容（L1 原文 / L2 摘要 + 正文 / L3 画像正文）。 */
+    content: string;
+    createdAt: string | null;
+    updatedAt: string | null;
+    version: number | null;
+    /** L1 来源会话（缺省 default）；L2/L3 恒 null。 */
+    sourceSession: string | null;
+    /** L1 情境名；L2/L3 null。 */
+    scene: string | null;
+    /** L1 的 7 类类型键（persona/episodic/…）；L2/L3 null。 */
+    l1Type: string | null;
+}
+/** dsh-memory/asset-activity（记忆库活动流；游标分页 + 筛选，只读）。 */
+export interface AssetActivityRequest {
+    /** 关键词：L1 走 FTS 索引检索缝（与召回同源）；L2/L3 小数据内存子串匹配。 */
+    query?: string;
+    /** 空/缺省 = 全部类型。 */
+    kind?: '' | 'l1' | 'l2' | 'l3';
+    /** 空/缺省 = 两族混排。 */
+    family?: '' | 'chat' | 'work';
+    /** 时间下限（epoch ms；0/缺省 = 全部）。 */
+    since?: number;
+    /** 1~100，默认 30。 */
+    limit?: number;
+    /** 上一页返回的 opaque 游标；null/缺省 = 第一页。 */
+    cursor?: string | null;
+}
+export interface AssetActivityResponse {
+    items: AssetActivityItem[];
+    /** 还有下一页时非 null（opaque，原样回传）。 */
+    nextCursor: string | null;
+    /** 检索路径触达上限（200），结果可能不完整。 */
+    truncated: boolean;
+}
+/** dsh-memory/workspace-overview（总览单发聚合，免去 client N+1 拉取）。 */
+export interface WorkspaceOverviewResponse {
+    ok: true;
+    degraded: boolean;
+    /** 检索能力位（sessionInfo 缺席时 null = 未知，不渲染该行）。 */
+    retrieval: 'hybrid' | 'vector' | 'keyword' | 'none' | null;
+    pendingExtract: number;
+    l0Today: number;
+    l1Count: number;
+    sceneCount: number;
+    personaChars: number;
+    /** 全部派生层为空（引导式空状态判据）。 */
+    empty: boolean;
+    lastExtractAt: string | null;
+    lastL2At: string | null;
+    lastL3At: string | null;
+    /** 本周蒸馏成本（token-cost 周窗口；无调用 null）。 */
+    week: {
+        calls: number;
+        outputTokens: number;
+        reasoningTokens: number;
+    } | null;
+    /** 最近活动（asset-activity 同口径前 5 条）。 */
+    recent: AssetActivityItem[];
+}
+/** dsh-memory/runtime-insights（洞察：活动/召回只读聚合；成本子页直接用 token-cost）。 */
+export interface RuntimeInsightsResponse {
+    ok: true;
+    /** 近 7 天（含当日）逐日资产活动，day 为 ISO 日期 YYYY-MM-DD（与 L1 SQL 口径一致）。 */
+    activityDays: Array<{
+        day: string;
+        l1: number;
+        l2: number;
+        l3: number;
+    }>;
+    /** 蒸馏调用与失败（进程生命周期累计计数器，llm-usage 口径）。 */
+    distill: Array<{
+        layer: string;
+        calls: number;
+        failures: number;
+    }>;
+    recall: {
+        /** 有过检索的会话数 + 全量累计（进程内召回注册表；重启归零）。 */
+        sessions: number;
+        injectedTurns: number;
+        hitTurns: number;
+        totalHits: number;
+        timeouts: number;
+        suppressedRecalls: number;
+        /** 停用侧写：全局注入开关当前态 + 持久化会话分布。 */
+        globalRecall: boolean;
+        sessionsModeOff: number;
+        sessionsWriteOnly: number;
+    };
 }
 /** dsh-memory/stats */
 export interface StatsResponse extends MemoryStats {
@@ -630,6 +729,9 @@ export interface EmbeddingModelDeleteResponse {
 }
 export interface DshMemoryRequestMap {
     'dsh-memory/stats': Record<string, never>;
+    'dsh-memory/workspace-overview': Record<string, never>;
+    'dsh-memory/asset-activity': AssetActivityRequest;
+    'dsh-memory/runtime-insights': Record<string, never>;
     'dsh-memory/token-cost': TokenCostRequest;
     'dsh-memory/session-mode-get': SessionModeGetRequest;
     'dsh-memory/session-mode-set': SessionModeSetRequest;
@@ -655,6 +757,9 @@ export interface DshMemoryRequestMap {
 }
 export interface DshMemoryResponseMap {
     'dsh-memory/stats': StatsResponse;
+    'dsh-memory/workspace-overview': WorkspaceOverviewResponse;
+    'dsh-memory/asset-activity': AssetActivityResponse;
+    'dsh-memory/runtime-insights': RuntimeInsightsResponse;
     'dsh-memory/token-cost': TokenCostResponse;
     'dsh-memory/session-mode-get': SessionModeGetResponse;
     'dsh-memory/session-mode-set': SessionModeSetResponse;

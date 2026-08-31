@@ -360,6 +360,8 @@ export interface AssetActivityItem {
   sourceSession: string | null;
   /** L1 情境名；L2/L3 null。 */
   scene: string | null;
+  /** L1 的 7 类类型键（persona/episodic/…）；L2/L3 null。 */
+  l1Type: string | null;
 }
 
 /** dsh-memory/asset-activity（记忆库活动流；游标分页 + 筛选，只读）。 */

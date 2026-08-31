@@ -1,14 +1,4 @@
-/** 通用格式化与标签词表（跨 Tab 共用）。 */
-
-export const TYPE_LABELS: Record<string, string> = {
-  persona: '画像偏好',
-  episodic: '客观事件',
-  instruction: '全局指令',
-  work_fact: '工作事实',
-  work_task: '工作任务',
-  work_method: '工作方法',
-  work_artifact: '工作资产',
-};
+/** 通用格式化与标签词表（跨区共用；记忆类型显示名已迁 i18n 字典 typeLabel）。 */
 
 export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '-';

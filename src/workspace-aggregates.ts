@@ -81,6 +81,7 @@ function l1ToItem(r: MemoryRecord): AssetActivityItem {
     version: r.version ?? 0,
     sourceSession: r.sessionId ?? 'default',
     scene: r.scene_name || null,
+    l1Type: r.type || null,
   };
 }
 
@@ -146,6 +147,7 @@ export async function collectAssetActivity(stores: WorkspaceStores, q: ActivityQ
           version: null,
           sourceSession: null,
           scene: null,
+          l1Type: null,
         });
       }
     }
@@ -171,6 +173,7 @@ export async function collectAssetActivity(stores: WorkspaceStores, q: ActivityQ
         version: null,
         sourceSession: null,
         scene: null,
+        l1Type: null,
       });
     }
   }

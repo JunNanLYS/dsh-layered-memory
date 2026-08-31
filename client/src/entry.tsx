@@ -2,10 +2,11 @@
  * dsh-layered-memory — browser half（TS/TSX 源，scripts/build-client.mjs 经
  * esbuild 打包为 dist/client.js 单文件 bundle）。
  *
- * 1. 输入栏（conversation.input.left，模式选择器右侧）：会话记忆档位 pill
- *    （关闭/日常/工作/智能 四态，配置键 off/chat/work/auto），点击展开滑动选择器；
- * 2. 设置 → 记忆：多 Tab 记忆浏览器（概览+开关 / L1 记忆 / L2 场景 / L3 画像 /
- *    成本 / 运行日志，两族混合视图）。
+ * 1. 输入栏（conversation.input.left，权限预设芯片右侧）：会话记忆芯片——
+ *    级联菜单（记忆范围滑条 + 数据流 hover 子面板）；
+ * 2. 输入框下方统计行（conversation.composer.dock）：待蒸馏遥测段；
+ * 3. 设置 → 记忆：记忆工作台五区（总览 / 记忆库 / 自动化 / 洞察 / 维护，
+ *    两族混合视图；spec 见 .scratch/ui-rework/ui-spec.md v2）。
  * 数据通道：ctx.connection.rpc.call('/rpc', 'dsh-memory/*', payload) → Host 侧 RPC 端点
  * （类型契约见 src/contract.ts，两端共享同一事实源）。
  *
