@@ -31,14 +31,14 @@ pill 文本格式：`记忆 · 档位名`（全角间隔两侧各一空格）。
 **只写面文（#38，方案 A 面文换字）**：非 off 档且会话注入生效值为否（host 下发
 `recallResolved=false`，即会话覆盖关或全局关+会话未强制开）时，面文整词换作
 `记忆 · 只写`——族名收进浮层滑轨，注入态优先上脸（复合状态一控件的官方语法，
-同输入栏「模型名 + effort ▾」先例）。流光形态、档位色与光晕不变（词承载状态，
+同输入栏「模型名 + effort ▾」语法)。流光形态、档位色与光晕不变（词承载状态，
 色仍随底层档位弱暗示）；off 档维持「关闭」灰态优先（完全隐身不含只写）。
 解析权威在 host（`session-mode-get/set` 响应的 `recallResolved`），client 不另知全局开关。
 
 **关闭 / 未加载（`mode === null`）= dsh 透明按钮**：
 
 - `.dsh-mem-pill-off`：`border: none; background: transparent`——裸 `<button>` 会露出
-  浏览器 UA 默认灰底+描边（实测事故），必须显式压掉；
+  浏览器 UA 默认灰底+描边，必须显式压掉；
 - hover 才出 `--dsh-mem-bg-hover` 淡底（dsh 透明按钮同款交互）；
 - `:focus-visible` 品牌蓝 2px 环；文字 text-2，无光晕无流光。
 
@@ -48,7 +48,7 @@ pill 文本格式：`记忆 · 档位名`（全角间隔两侧各一空格）。
   `rgba(77,107,254,0.95)` / `rgba(147,168,255,1)` / `rgba(110,133,255,0.9)`，
   `dshMemFlow 3s linear infinite`，`@property --dsh-mem-angle` 注册角度插值）；
 - 内层必须**不透明**底色盖住光带（半透明内层会让 conic 透进按钮内部，文字被光斑
-  干扰——实测事故）：`color-mix(in srgb, var(--dsh-mem-bg-card) 97%, var(--dsh-mem-pill-tint) 3%)`，
+  干扰）：`color-mix(in srgb, var(--dsh-mem-bg-card) 97%, var(--dsh-mem-pill-tint) 3%)`，
   `--dsh-mem-pill-tint` 由 pill inline 按档位给定；
 - 光晕：`box-shadow: 0 0 12px color-mix(in srgb, <档位色> 30%, transparent)`；
 - 档位区分靠蓝阶文字色（inline `color: var(--dsh-mem-mode-*)`）与流光内底混色深度；

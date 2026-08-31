@@ -89,7 +89,7 @@ primitives 里**没有** Switch/Tabs/Card/Badge/Select（官方消费方同样�
 - **选项行** `.dsh-mem-pop-opt`（**button**，dsh 同款）：10px 圆角、hover/键盘活动
   （`data-active`）底色 `--dsh-mem-bg-hover`，选中项右侧打勾（✓，text-1）；
   选项 mousedown `preventDefault`（焦点留在触发钮——否则触发钮 blur → 包装层关面板
-  → click 落空，修过的事故）；
+  → click 落空）；
 - **键盘**：↑↓ 移动（wrap）、回车/空格开面板并落到当前值、Enter 选定、Esc/外点/
   焦点离开收起并还焦触发钮；aria：trigger `haspopup=listbox` + `aria-expanded`，
   面板 `role=listbox`、选项 `role=option` + `aria-selected`。

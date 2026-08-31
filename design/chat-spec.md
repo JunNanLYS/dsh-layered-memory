@@ -44,18 +44,18 @@
   过渡 transform .12s——插件内不再有文字箭头符号）。
 - **范围行点击** = 原地展开内联滑条（见下）；再点收起。展开期间数据流行 `hidden`。
 - **数据流行** hover 二级子面板（`.dsh-mem-sub`，右浮）：跟随全局✓/读写/只写/暂停。
-  仅 hover 揭示、点击不固定（用户裁定）；`::before` 10px 桥接热区保证慢速移动不断链。
+  仅 hover 揭示、点击不固定；`::before` 10px 桥接热区保证慢速移动不断链。
   键盘通路：触发行 tabbable（`tabIndex=0`），`:focus-within` 同样揭示子面板；
   鼠标 `mousedown` 被 `preventDefault`（点击不夺焦 = 不固定）。子项 `menuitemradio`。
-- **子卡片视口适配**（2026-09-01）：默认 `top:-5px` 下挂；菜单打开时量行 rect，
+- **子卡片视口适配**：默认 `top:-5px` 下挂；菜单打开时量行 rect，
   行下方（`innerHeight-8` 内）放不下整卡（≈4×40+10）即加 `.flip` 翻转为
-  `bottom:-5px` 上翻（宿主 tooltip 浮层同款判定），并按可用侧夹持 `maxHeight`
+  `bottom:-5px` 上翻，并按可用侧夹持 `maxHeight`
   （`overflow-y:auto`）。滚动(capture)/resize 重算。输入栏贴视口底的结构下
   行下方恒 ≈120px < 170px，**上翻是常态路径**；桥接热区横跨卡片全高，
   纵向翻转不影响 hover 链。菜单整体另有 `useAnchoredMaxHeight` 限高（cap 480，
   上弹底锚语义），宿主原语缺失时本地回退（`rect.bottom - 12` 同式）；**仅当限高
   真正收紧（< cap，矮窗口）才开 `overflow-y:auto`**——菜单是子卡片的裁剪祖先，
-  常态开滚动会把横向外浮的绝对定位子卡片整个裁掉（2026-09-01 回归事故）。
+  常态开滚动会把横向外浮的绝对定位子卡片整个裁掉。
 - wire 映射：follow→`recall:null`、rw→`recall:true`、wo→`recall:false`、
   paused→`mode:'off'`（host 侧写入暂停快照 `{scope, recall}`；恢复 = 单次 RPC
   `{mode: resume.scope, recall: resume.recall}` 合并提交）。
@@ -77,17 +77,11 @@
 - `待蒸馏 {N}`（N = `session-stats.distill.pendingSlice + parkedSlices`，>0 才显示），
   text-3 居中（无自有类名，纯 inline）；轮询忙 2s / 静 5s，关闭即停。
   检索降级时附内联提示。
-- composer 区**无任何占用 UI**（用户裁定：占用只住官方上下文环面板）。
+- composer 区**无任何占用 UI**（占用只住官方上下文环面板）。
 
-## 交互事实（真机验证 2026-08-31）
+## 交互事实
 
 - 芯片位置 = `＋` / Read Only / 记忆（原生顺序）；菜单两行 + 值 + 图标箭头均正常；
 - 滑条键盘切档芯片文字实时联动；数据流 hover 子面板四态 + ✓ 当前项；
+- 子卡片上翻后四选项全可见，`maxHeight` 夹持与 resize 重算生效；
 - 全部文案走字典（宿主语言切换生效）；reduced-motion 压制全部过渡。
-
-## 交互事实（真机验证 2026-09-01，子卡片视口适配）
-
-- 1280×720：数据流行 rect 602–642，未翻转会超底 47px；加 `.flip` 后子卡片
-  top 469 / bottom 639 完全在界内，四选项全可见（截图复核）；
-- 1280×1080：行下方仍仅 ~123px，同样翻转（输入栏贴底的结构性常态）；
-- `maxHeight` 170px 夹持 + `overflow-y:auto` 生效；视口缩放后 resize 监听重算正常。
