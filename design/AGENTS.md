@@ -8,10 +8,13 @@ spec 是**已落地实现的事实记录**，不是愿望文档：与代码冲�
 - `global-spec.md` — 全局规范：主题机制两层令牌 / `--dsh-mem-*` 中性·强调·档位令牌表 /
   DeepSeek 品牌蓝三档强调色 / 圆角集合 / 排版间距 / 动效 / 无障碍（AA 对比度依据）/
   已知限制 / 贡献者守则。
-- `settings-spec.md` — 设置页记忆浏览器（多 Tab）。
-- `pill-spec.md` — 输入栏记忆 pill + 侧边栏 icon 补丁。
-- `slider-spec.md` — 悬浮板滑动选择器 + 粒子层。
-- `memory-meter-spec.md` — 上下文占用指示器（官方环外圈记忆光晕弧 + 明细面板分项小节）。
+- `chat-spec.md` — 分散式会话记忆面（记忆芯片 + 级联菜单 + 内联滑条 + 统计行遥测）。
+- `settings-spec.md` — 记忆工作台（设置 → 记忆 五区：总览/记忆库/自动化/洞察/维护）。
+- `memory-meter-spec.md` — 上下文占用指示器（官方环面板「记忆」分项小节；外圈光晕弧
+  0.9.0 已移除）。
+- `pill-spec.md` — 【已废弃·历史归档】输入栏记忆 pill + 侧边栏 icon 补丁（icon 补丁存活）。
+- `slider-spec.md` — 【已废弃·历史归档】悬浮板滑动选择器 + 粒子层（滑条以内联形态
+  复活在 chat-spec）。
 
 ## spec 循环（改 client/src 的 UI 时执行）
 

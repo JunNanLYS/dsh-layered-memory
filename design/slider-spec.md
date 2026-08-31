@@ -1,5 +1,11 @@
 # slider-spec — 悬浮板滑动选择器
 
+> **已废弃（0.9.0 UI 重构）**：独立悬浮板随分散式会话记忆面（`chat-spec.md`）移除。
+> 滑条本体以 **Codex 式内联滑条**形态复活在记忆芯片级联菜单内（`grid-rows` 原地长高、
+> 三停点 日常/工作/智能、键盘方向键/Home/End + aria-valuetext），会话信息区拆解为
+> 官方上下文环面板记忆分项（`memory-meter-spec.md`）与统计行 `待蒸馏 N` 遥测。
+> 本文件仅作历史事实归档；改滑条行为请读 `chat-spec.md`。
+
 组件：`ModeSlider`（点击记忆 pill 展开的档位滑动选择浮层，macOS 滑动器交互参考）
 及其下半部的 `SessionInfoArea` 会话信息区。全局令牌与守则见 `global-spec.md`；
 档位定义见 `pill-spec.md`。

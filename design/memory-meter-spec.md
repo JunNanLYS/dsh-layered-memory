@@ -1,31 +1,27 @@
-# memory-meter-spec — 上下文占用指示器（外圈记忆光晕弧 + 面板分项小节）
+# memory-meter-spec — 上下文占用指示器（官方环面板「记忆」分项小节）
 
-> 已落地实现的**事实记录**（0.8.8 起，随票01–05 合入）。设计推演与工程契约全文见
-> 本地 `.scratch/memory-occupancy-feasibility/`（feasibility / spec-draft / component-design；
-> 该目录不入库）。冲突时以代码为准并回写本文件。
+> 已落地实现的**事实记录**（0.8.8 起光晕弧 + 面板分项；**0.9.0 UI 重构移除外圈
+> 光晕弧**——用户裁定占用只住官方上下文环面板，composer 区零占用 UI）。
+> 设计推演全文见本地 `.scratch/memory-occupancy-feasibility/`（不入库）。
+> 冲突时以代码为准并回写本文件。
 
 ## 组件组构成
 
-- `client/src/meter/occupancy-indicator.ts` — 寄生观察器单例：结构签名锚定官方 ContextMeter、
-  会话缓存、T2 时钟、光晕弧渲染；对外导出快照读出口与面板开合订阅。
-- `client/src/meter/panel-section.ts` — 明细面板底部的「记忆」分项小节。
-- 常驻 pill 的 init 链驱动启动（与 sidebar-icon 同款模式，body 级单例幂等）。
+- `client/src/meter/occupancy-indicator.ts` — 寄生观察器单例：结构签名锚定官方
+  ContextMeter、每会话缓存、T2 时钟（官方 fill dasharray 变化 ⇒ 节流重取权威账）、
+  面板开合检测与订阅分发；**0.9.0 起不再注入任何 SVG 节点**（外圈弧已删）。
+- `client/src/meter/panel-section.ts` — 官方明细面板底部的「记忆」分项小节
+  （**占用的唯一展示处**）。
+- 常驻记忆芯片的 init 链驱动启动（body 级单例幂等）。
 - 数据唯一来源：`session-stats.memoryOccupancy` + `contextWindowTokens`
   （host 权威账本；算术唯一来源 `src/util/context-occupancy.ts`，client 经 esbuild 内联同模块）。
 
-## 外圈记忆光晕弧
+## 外圈记忆光晕弧（0.9.0 已移除，历史归档）
 
-- 官方环 viewBox 14 双 r=5.5 圆；寄生第三圆 **r=6.4 / strokeWidth 0.85**，
-  `rotate(-90 7 7)` 同起点，弧长 `share × C`（C=34.55751918948772 周长常量）。
-  **最小可见弧长 2 单位**（2026-08-27 用户实测反馈：真实占比常低至 0.6% ≈ 0.2 单位
-  = 亚像素，弧"存在但看不见"）——有记忆即至少一道发光刻度（指示灯语义），
-  占比>0 才画、精确数字由面板分项承担。
-- 颜色/光晕全部令牌化：stroke 与 `drop-shadow(0 0 3px …)` 用 `--dsh-mem-accent`，
-  滤镜仅挂寄生圆自身（不插官方 `<defs>`）；aria-hidden、pointer-events none。
-- 外圈位置从结构上保证不遮盖官方弧；无脉冲等任何动效。
-- 锚点：`button[aria-haspopup="dialog"]` + viewBox/r 双圆结构签名（locale 无关），
-  aria-label 文案仅辅校验；失配静默退回原生外观。锚点存活期巡检走父链校验
-  （流式输出高频 mutation 不做全文档查询），失联才重扫。
+0.8.8–0.8.12 期间官方环外圈有寄生第三圆（r=6.4 / strokeWidth 0.85 / 最小可见弧长
+2 单位 / accent 光晕）。0.9.0 分散式重构中按用户裁定整体移除：官方环恢复逐比特原生，
+占用读数全部由面板分项承担。锚定与时钟机制保留（改为纯数据侧：官方 fill dasharray
+变化 ⇒ 节流 refetch + 面板刷新）。
 
 ## 面板分项小节
 

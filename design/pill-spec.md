@@ -1,5 +1,10 @@
 # pill-spec — 输入栏记忆 pill + 侧边栏 icon 补丁
 
+> **已废弃（0.9.0 UI 重构）**：独立 pill 形态随分散式会话记忆面（`chat-spec.md`）
+> 移除——档位入口改为 `conversation.input.left` 的**记忆芯片**（级联菜单 + 内联滑条），
+> 本文件仅作历史事实归档；侧边栏书本 icon 补丁仍存活（见文末）。改输入栏行为请读
+> `chat-spec.md`，勿依据本文。
+
 组件：`MemoryModePill`（`conversation.input.left` 槽位的会话档位按钮）及其驱动的
 侧边栏书本 icon 补丁。全局令牌与守则见 `global-spec.md`。
 

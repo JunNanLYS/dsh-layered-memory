@@ -264,10 +264,19 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
             </div>
           </div>
           <div className="dsh-mem-subwrap" hidden={sliderOpen}>
-            <button type="button" className="dsh-mem-pop-opt" tabIndex={-1} aria-hidden={true}>
+            {/* 触发行：键盘聚焦也揭示子面板（spec §12 键盘通路）；鼠标点击不夺焦——
+                保持"点击不固定子卡片"的既定裁定（hover 是鼠标唯一揭示方式） */}
+            <button
+              type="button"
+              className="dsh-mem-pop-opt"
+              tabIndex={0}
+              onMouseDown={(e) => {
+                e.preventDefault();
+              }}
+            >
               <span className="dsh-mem-pop-opt-label">{t('row.flow')}</span>
               <span className="dsh-mem-subval">{flowLabel(flow)}</span>
-              <span className="dsh-mem-subchev" aria-hidden={true}>›</span>
+              <span className="dsh-mem-subchev" aria-hidden="true">›</span>
             </button>
             <div className="dsh-mem-sub" role="menu" aria-label={t('row.flow')}>
               {FLOW_KEYS.map((k) => (
