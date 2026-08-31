@@ -16,6 +16,7 @@ import { buildRouteChain, decideSendableEffort, LAYER_DEFAULT_BUDGETS, layerChai
 import { projectDistillChain, validateDistillChain } from './settings.js';
 import { errDetail } from './util/filelog.js';
 import { snapshotTokenCost } from './token-cost.js';
+import { buildRuntimeInsights, buildWorkspaceOverview, collectAssetActivity, decodeCursor } from './workspace-aggregates.js';
 const require = createRequire(import.meta.url);
 export const PLUGIN_VERSION = require('../package.json').version;
 /** 注册状态 RPC（web 侧 connection 服务可选，缺失时跳过，不影响插件主体）。 */
@@ -150,6 +151,44 @@ async function handleEndpoint(endpoint, payload, deps) {
     switch (endpoint) {
         case 'dsh-memory/stats':
             return buildStats(cfg, stores, status);
+        // ── 工作台聚合（UI 重构分散式；只读，装配见 workspace-aggregates.ts） ──
+        case 'dsh-memory/workspace-overview': {
+            const base = await buildStats(cfg, stores, status);
+            const caps = sessionInfo?.capabilities();
+            const retrieval = caps
+                ? caps.vectorSearch
+                    ? caps.ftsSearch
+                        ? 'hybrid'
+                        : 'vector'
+                    : caps.ftsSearch
+                        ? 'keyword'
+                        : 'none'
+                : null;
+            const weekWin = snapshotTokenCost('day', 0).windows.find((w) => w.range === 'week');
+            return buildWorkspaceOverview(stores, base, weekWin && weekWin.calls > 0 ? weekWin : null, retrieval);
+        }
+        case 'dsh-memory/asset-activity': {
+            const p = (payload ?? {});
+            if (p.query !== undefined && p.query.length > 4096)
+                throw new Error('query 过长（≤4096 字符）');
+            const kind = p.kind === 'l1' || p.kind === 'l2' || p.kind === 'l3' ? p.kind : '';
+            const family = p.family === 'chat' || p.family === 'work' ? p.family : '';
+            // 钳到 Date 可表示范围（超 8.64e15ms 会令 toISOString 抛 RangeError，回退=不过滤）
+            const sinceNum = Number(p.since);
+            const since = Number.isFinite(sinceNum) && sinceNum > 0 && sinceNum <= 8.64e15 ? sinceNum : 0;
+            const limit = Math.min(Math.max(Number(p.limit) || 30, 1), 100);
+            const offset = Math.min(decodeCursor(typeof p.cursor === 'string' ? p.cursor : null), 1_000_000);
+            return collectAssetActivity(stores, {
+                query: (p.query ?? '').trim(),
+                kind,
+                family,
+                sinceMs: since,
+                limit,
+                offset,
+            });
+        }
+        case 'dsh-memory/runtime-insights':
+            return buildRuntimeInsights(stores, sessionInfo, modes, live);
         case 'dsh-memory/token-cost': {
             const p = (payload ?? {});
             const granularity = p.granularity === 'week' || p.granularity === 'month' ? p.granularity : 'day';
@@ -174,6 +213,7 @@ async function handleEndpoint(endpoint, payload, deps) {
                 defaultMode: modes.default,
                 recall: modes.getRecall(sessionId) ?? null,
                 recallResolved: modes.resolvedRecall(sessionId, globalRecall),
+                resume: modes.getResume(sessionId),
             };
             return v;
         }
@@ -206,6 +246,7 @@ async function handleEndpoint(endpoint, payload, deps) {
                 mode: p.mode,
                 recall: modes.getRecall(sessionId) ?? null,
                 recallResolved: modes.resolvedRecall(sessionId, s?.recall ?? true),
+                resume: modes.getResume(sessionId),
             };
             return v;
         }

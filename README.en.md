@@ -60,8 +60,8 @@ This package declares a `dsh.bundle` composition layer (`cordis.patch.yml`); aft
 installation the **plugin entry is mounted automatically** — no need to hand-edit
 `$DSH_HOME/profiles/web/cordis.patch.yml`. Then restart DeepSeek Harness and verify:
 the appearance of `conversations/ records/ scenes/` and `memory.db` under
-`~/.dsh/memory/` means the plugin applied successfully; the "Memory" page in settings
-and the mode pill in the input bar mean the client half is ready.
+`~/.dsh/memory/` means the plugin applied successfully; the "Memory" page in settings (the Memory Workspace with five zones)
+and the memory chip in the input bar (`Memory · Auto`) mean the client half is ready.
 
 > ⚠️ **Security note**: installing a plugin = running third-party code with your
 > privileges. This plugin reads session content, writes files in its data directory,
@@ -112,7 +112,7 @@ also registers three model-callable memory tools: `memory_search` /
 **Cost dashboard**: every distillation LLM call (extract / dedup / L2 / L3) writes its
 token cost to a SQLite detail table keyed by `provider/model` (configurable retention,
 default 365 days with rolling cleanup on write; accounting failures only log a warning
-and never block distillation). Visualize it under Settings → Memory → the **Cost** tab:
+and never block distillation). Visualize it under Settings → Memory → Insights → the **Cost** sub-page:
 per-model trend lines (day/week/month granularity + last-N-days window + L1/L2/L3 layer
 filter), a layer × time-window table (calls / output & reasoning tokens / mean / median),
 and per-model totals — distillation overhead at a glance. Input is counted in characters
@@ -146,44 +146,66 @@ trajectory view):
 ## Per-Session Memory Modes
 
 <p align="center">
-  <img src="./assets/img/Modes.png" width="100%"
-       alt="Per-session memory modes: a glass capsule track with four stops (日常 · 工作 · 智能 · 关闭), the glowing orb resting on 智能 (default); a vignette above each — personal chat bubbles for 日常, code/document panes for 工作, two streams merging brightest for 智能, a dim dashed ghost bubble for 关闭">
+  <img src="./assets/img/MemoryChip.png" width="72%"
+       alt="Session memory chip and cascade menu in dark theme: in the composer-left cluster, right of the Read Only chip sits the "Memory · Auto ▾" chip; clicking opens a rounded popover menu upward with two rows "Memory scope  Auto ›" / "Data flow  Follow global ›", and hovering the data-flow row reveals a secondary panel listing Follow global ✓ / Read & write / Write only / Paused">
 </p>
 
-- **Control**: the pill next to the mode selector in the input bar (`Memory · Auto`);
-  clicking opens a macOS-style sliding picker above — release to snap to the nearest
-  mode; adapts to light/dark themes;
-- The lower half of the popover is a **per-session info area**: recall hits
-  (hit/searched turns plus cumulative items), batching progress (this session's
-  slice x/effective threshold; the off mode shows parked slices instead), memories
-  produced for this session, and session message count — plus status lines for
-  anomalies (storage degraded / vector search unavailable) and a global summary
-  (pending distill count, last distill time). Data comes from the
-  `dsh-memory/session-stats` endpoint (in-memory registries + an indexed COUNT,
-  zero file I/O), adaptively polled while open (2s busy / 5s idle) and stopped on
-  close;
-- Each session's choice is persisted by sessionId to `session-modes.json`, surviving
-  restarts/session restore; stacks with the global switches (global is the master gate);
-  L2/L3 are fully family-isolated — content never leaks across families.
-- **Write-only sessions (#38)**: a three-state "injection" switch inside the popover
-  (follow global / on / off) — set to "off" for a **write-only session**: capture and
-  distillation continue as usual (conversation still settles into L0→L1→L2/L3), but
-  nothing is injected into this session (recall injection, the persona/navigation
-  stable section and the tools guide all stop; `memory_search` and the other read
-  tools return a write-only notice). The pill face changes to `Memory · Write-only`;
-  the override persists per session, and switching back to "follow global" clears it
-  to the settings-page recall toggle. Ideal for debug/eval/sensitive sessions that
-  should absorb without interference. Orthogonal to the off mode: off remains full
-  stealth (capture off too), while write-only keeps the "in" and gates the "out".
+The conversation side is a **distributed memory surface** — each kind of information
+lives in the native host seat designed for it; the plugin no longer owns a strip:
+
+- **Memory chip** (composer-left cluster, right of the Read Only chip): a borderless
+  `Memory · {Auto|Personal|Work}` chip in official composer-chip grammar; the text is
+  the resolved truth — `Memory · write-only` (injection off), `Memory · paused`
+  (gray dot), `Memory · degraded` (amber dot); zh/en bilingual, following the host
+  language.
+- **Cascade menu** (click the chip, opens upward): two rows, `Memory scope {value} ›`
+  and `Data flow {value} ›`; data-flow options live in a **hover-only secondary
+  panel** (Follow global / Read & write / Write only / Paused) — no click-pinning,
+  with bridge hot-zones so slow mouse travel never breaks the hover chain; full
+  keyboard path (arrow-key roving + focus reveal).
+- **Inline slider** (click "Memory scope", grows in place): three stops
+  Personal / Work / Auto; crossing a stop updates the chip text **live** while
+  dragging; keyboard arrows/Home/End + `aria-valuetext`.
+- **Pause-resume snapshot**: switching the data flow to "Paused" enters the off mode
+  and persists the pre-pause scope and injection override; resuming restores them
+  as-is. Per-session choices persist to `session-modes.json` (stacked with the
+  global switches — global is the master gate); L2/L3 are fully family-isolated.
+- **Memory occupancy lives only in the official context meter panel**: opening the
+  official ring shows the "Memory" section (recall snippets / memory stable zone);
+  the composer area has zero occupancy UI — only a `N pending distill` telemetry
+  segment appended to the official stats line.
+- **Write-only sessions (#38)**: pick "Write only" in the data-flow panel for a
+  **write-only session** — capture and distillation continue as usual (conversation
+  still settles into L0→L1→L2/L3), but nothing is injected into this session (recall
+  injection, the persona/navigation stable section and the tools guide all stop;
+  `memory_search` and the other read tools return a write-only notice). The override
+  persists per session; switching back to "Follow global" clears it to the recall
+  toggle in Automation. Ideal for debug/eval/sensitive sessions that should absorb
+  without interference. Orthogonal to Paused: paused is full stealth (capture off
+  too), while write-only keeps the "in" and gates the "out".
 
 ## UI Preview
 
 <p align="center">
-  <img src="./assets/img/ui-dark.jpg" width="49.5%"
-       alt="Settings memory browser overview in dark theme: status card (plugin version, capture/distill/recall switch states, FTS and vector capabilities, L1 memory count, distillation model) and stat tiles, glassy controls with a cold-blue accent">
-  <img src="./assets/img/ui-light.jpg" width="49.5%"
-       alt="The same settings memory browser overview in light theme: identical layout and information on light card backgrounds with the same accent family, theme switch without reload">
+  <img src="./assets/img/ui-dark.png" width="49.5%"
+       alt="Memory Workspace overview in dark theme: five-zone task nav (Overview selected), health summary card (running normally + storage/vector/distill-queue subsystem chips + a pending-distill attention chip), recent-activity list (New/Updated verb tags + Memory/Scene kind tags + relative times), key-number tiles (memories / scenes / weekly distill output / last distill) and jump buttons to the other zones">
+  <img src="./assets/img/ui-light.png" width="49.5%"
+       alt="The same Memory Workspace overview in light theme: identical five-zone nav and health/activity/numbers layout on light card backgrounds with the same accent family, theme switch without reload">
 </p>
+
+Settings → Memory is the **Memory Workspace** (five-zone task nav, sticky tabs +
+arrow-key roving):
+
+- **Overview**: health summary + recent activity + key numbers + a guided empty state;
+- **Library**: a **read-only asset activity feed** with L1 memories / L2 scenes /
+  L3 personas mixed by update time (search + type/scope/time filters + in-place
+  expansion + copy);
+- **Automation**: basic switches + advanced disclosure (distill route chains and
+  budgets) + embedding-model disclosure;
+- **Insights**: Cost / Activity (7-day asset activity + distill calls & failures) /
+  Recall (cumulative totals + disabled distribution);
+- **Maintenance**: runtime health + diagnostic log + the danger-zone full rebuild
+  (confirm modal + progress + cancellable).
 
 ## Measured Comparison (DSH-MemBench: Automated Benchmark)
 
@@ -288,13 +310,13 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 | `embedding.allowLocalModels` | `true` | Allow the local embedding tier (deployment ceiling; when off, no model downloads and no local tier in settings) |
 | `embedding.mirror` | `https://hf-mirror.com` | Download mirror root for local models (can be changed back to `https://huggingface.co`) |
 | `embedding.proxy` | `''` | Three-state download proxy: `''` (default) = auto-detect proxy env vars (`HTTPS_PROXY`/`ALL_PROXY` etc., honoring `NO_PROXY`); `none` = disable, always direct; any other value = proxy URL (e.g. `http://127.0.0.1:7890`). Direct connections to the mirror are intermittently unreachable on some networks (connect timeouts and poisoned bytes have both been observed) — keep the default auto-detection on machines with a proxy |
-| `llm.provider/model` | empty | Static distillation route (deployment pin): when **both** fields are set the route is locked, outranking the settings-page runtime route chain and the default model (deployments can force distillation onto a specific route); when empty the route follows "settings-page route-chain primary → default model". At runtime, configure the primary route and fallback chain in the **route-chain editor** under Settings → Memory → Overview → distillation parameters (pick from **configured providers**, including custom ones added in dsh Settings → Models; the primary row may stay empty to follow the default model) — a non-empty chain takes over this static config wholesale, effective immediately with no restart |
+| `llm.provider/model` | empty | Static distillation route (deployment pin): when **both** fields are set the route is locked, outranking the settings-page runtime route chain and the default model (deployments can force distillation onto a specific route); when empty the route follows "settings-page route-chain primary → default model". At runtime, configure the primary route and fallback chain in the **route-chain editor** under Settings → Memory → Automation → Advanced routing and budgets (pick from **configured providers**, including custom ones added in dsh Settings → Models; the primary row may stay empty to follow the default model) — a non-empty chain takes over this static config wholesale, effective immediately with no restart |
 | `llm.fallbacks` | `[]` | Distillation fallback chain: an ordered list of backup routes tried one by one when the primary route fails (error / cut-off / network error / **empty output**); each entry is `{provider, model, reasoningEffort?}` (a non-empty effort overrides the global `llm.reasoningEffort`, still clamped by model capability); entries identical to the primary route are skipped; **each route gets the full `timeoutMs`**; when all routes fail, the existing per-session backoff takes over. Empty list (default) = single-route behavior unchanged (see [Distillation fallback chain & slow-TTFT models](#distillation-fallback-chain--slow-ttft-models) below); a non-empty settings-page runtime chain (`distillChain`) takes over **both** the primary route and the fallback chain (a single-row chain = explicitly no fallbacks), empty = follow this config |
 | `llm.layerRoutes` | `{}` | **Per-layer distillation routing** (#34): keys `l1`/`l2`/`l3`, each holding a **complete chain** (entries like `llm.fallbacks`, **head row must have both provider+model explicitly**). A non-empty chain **fully replaces** that layer's resolution (its primary and fallbacks all come from the layer chain; the global chain no longer participates); empty/missing = the layer follows the global chain. `l1` covers both extraction and dedup call sites. Layers can also be edited at runtime in the segmented panel under distillation parameters on the settings page (takes priority over this static config); a deployment pin does not disable static layer chains (same deployer-owned config as the fallback-chain precedent). Orthogonal to and composable with the fallback chain — one complete chain per layer (ADR-0005) |
-| `llm.maxTokens` | `65536` | Fallback output cap for non-layered calls. Each distillation stage has its own budget (extraction 16k / dedup 8k / L2 32k / L3 16k; auto ×4 when the reasoning effort is high/xhigh/max, so thinking can't starve the text budget); the per-layer budgets are runtime-adjustable in Settings → Memory → Overview → distillation parameters (empty/0 = built-in defaults) |
+| `llm.maxTokens` | `65536` | Fallback output cap for non-layered calls. Each distillation stage has its own budget (extraction 16k / dedup 8k / L2 32k / L3 16k; auto ×4 when the reasoning effort is high/xhigh/max, so thinking can't starve the text budget); the per-layer budgets are runtime-adjustable in Settings → Memory → Automation → Advanced routing and budgets (empty/0 = built-in defaults) |
 | `llm.reasoningEffort` | empty | Distillation reasoning effort: empty = **auto** (resolved from model capability: the model's default tier, else `high`); an explicit value (`off`/`none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`) is only sent when the model declares support — effort vocabularies differ across providers (deepseek accepts `off`, OpenAI-style APIs use `none`, models that declare no tiers get nothing), and unsupported tiers degrade to not-sending with a one-time warning; output budgets auto-×4 at high/xhigh/max. At runtime, override the effort **per route** in the settings-page route-chain editor (per-row dropdown; the tier list follows each model's declared capability live, defaulting to this value) |
 | `llm.temperature` | `0.3` | Distillation temperature |
-| `llm.maxInputChars` | `700000` | Input character budget per distillation call (over-budget L1 inputs are chunked automatically); runtime-adjustable in Settings → distillation parameters → input budget (empty/0 = follow this value) |
+| `llm.maxInputChars` | `700000` | Input character budget per distillation call (over-budget L1 inputs are chunked automatically); runtime-adjustable in Settings → Memory → Automation → Advanced routing and budgets → input budget (empty/0 = follow this value) |
 | `llm.timeoutMs` | `120000` | Per-call distillation timeout (ms) |
 | `tokenCost.retentionDays` | `365` | Retention (days) for distillation cost details (the `token_cost` table); rows older than this are rolled away on write. `0` = keep forever. Also the upper bound of the cost dashboard's "last N days" window |
 | `tools` | `true` | Whether to register model-callable memory tools |
@@ -304,7 +326,7 @@ the bundle layer appends and causes `duplicate loader entry id` startup failure)
 
 Free/slow tiers of some inference providers have **first-token latencies (TTFT) upwards of 20 seconds**, while some upstream gateways cut a silent connection at ~20s — distillation calls then fail at a fixed ~20s (`llm aborted`) long before the plugin's 120s timeout could ever matter (the scenario measured in [#31](https://github.com/JunNanLYS/dsh-layered-memory/issues/31)). Three mitigations, pick as needed:
 
-1. **Switch route** (most direct): change the primary route live in the route-chain editor under Settings → Memory → Overview → distillation parameters (or move a fast route to the head of the chain), or pin `llm.provider`/`llm.model` statically.
+1. **Switch route** (most direct): change the primary route live in the route-chain editor under Settings → Memory → Automation → Advanced routing and budgets (or move a fast route to the head of the chain), or pin `llm.provider`/`llm.model` statically.
 2. **Fallback chain** (automatic demotion): when the primary route fails, backup routes are tried in order with no manual intervention:
 
    ```yaml
@@ -336,9 +358,9 @@ Free/slow tiers of some inference providers have **first-token latencies (TTFT) 
            reasoningEffort: high
    ```
 
-   Layers can also be edited at runtime in the **segmented panel** (global default / L1 / L2 / L3) under Settings → Memory → Overview → distillation parameters. In-layer priority: runtime layer chain > this static YAML layer chain > global default chain, falling back level by level.
+   Layers can also be edited at runtime in the **segmented panel** (global default / L1 / L2 / L3) under Settings → Memory → Automation → Advanced routing and budgets. In-layer priority: runtime layer chain > this static YAML layer chain > global default chain, falling back level by level.
 
-   Failure = error / cut-off / network error / **empty output** (stream ends normally with 0 characters — worthless for distillation since parsing always fails, so it is treated as a route failure rather than an empty return); caller-initiated cancellation does not demote; each route gets the **full** `llm.timeoutMs` (a shared budget would give a slow-TTFT fallback route less time than its real first-packet needs, defeating the chain); token costs are recorded per attempt (failed attempts get a row too, with whatever tokens arrived before the stream broke), and successful calls are attributed to the route that actually served. The route chain can also be adjusted at runtime in the route-chain editor under Settings → Memory → Overview → distillation parameters (no config edit or restart needed); the YAML below suits deployments that want to pin the static chain.
+   Failure = error / cut-off / network error / **empty output** (stream ends normally with 0 characters — worthless for distillation since parsing always fails, so it is treated as a route failure rather than an empty return); caller-initiated cancellation does not demote; each route gets the **full** `llm.timeoutMs` (a shared budget would give a slow-TTFT fallback route less time than its real first-packet needs, defeating the chain); token costs are recorded per attempt (failed attempts get a row too, with whatever tokens arrived before the stream broke), and successful calls are attributed to the route that actually served. The route chain can also be adjusted at runtime in the route-chain editor under Settings → Memory → Automation → Advanced routing and budgets (no config edit or restart needed); the YAML below suits deployments that want to pin the static chain.
 4. **Raise the timeout**: `llm.timeoutMs` only helps when the route is genuinely slow but the gateway doesn't cut; if the gateway kills at 20s, raising the plugin timeout is futile — use the first two layers.
 
 ## Storage Layout
@@ -354,7 +376,7 @@ local), switchable at runtime in the settings page — see the next section.
 
 ## Semantic Retrieval (Embedding Source)
 
-Pick the embedding source in Settings → Memory → Overview → Semantic Retrieval;
+Pick the embedding source in Settings → Memory → Automation → embedding models;
 it takes effect immediately, no config edit or restart:
 
 <p align="center">

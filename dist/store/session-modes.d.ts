@@ -26,7 +26,20 @@ export declare class SessionModeStore {
     setRecall(sessionId: string, recall: boolean | undefined): void;
     /** 注册档位切换回调（同步调用；回调异常只记日志不阻断写穿）。 */
     setModeChangeHandler(cb: (sessionId: string, oldMode: MemoryMode, newMode: MemoryMode) => void): void;
-    /** 设置会话档位（写穿持久化；持久化失败保持内存态生效）。 */
+    /** 暂停恢复快照（无则 null）。 */
+    getResume(sessionId: string): {
+        scope: 'auto' | 'chat' | 'work';
+        recall: boolean | null;
+    } | null;
+    /** 停用侧分布（工作台洞察，只读计数）：off = 档位暂停会话；wo = 注入覆盖只写
+     *  （recall=false 且档位未停——两态互斥计数，与召回四因子短路序对齐）。 */
+    countStates(): {
+        off: number;
+        wo: number;
+    };
+    /** 设置会话档位（写穿持久化；持久化失败保持内存态生效）。
+     *  暂停语义（UI 重构）：非 off → off 记录恢复快照（暂停前范围 + 当前注入覆盖）；
+     *  off → 非 off 清空快照（恢复）。 */
     set(sessionId: string, mode: MemoryMode): void;
     /** 等待在途持久化写完成（测试/停机用）。 */
     flush(): Promise<void>;

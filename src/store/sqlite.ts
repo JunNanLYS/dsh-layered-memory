@@ -877,7 +877,7 @@ export class MemoryDb {
         action === 'delete'
           ? this.db.prepare(`DELETE FROM ${table} WHERE record_id IN (${ph})`)
           : this.db.prepare(
-              `SELECT record_id, content, type, priority, scene_name, version, timestamp_str, created_time, updated_time, metadata_json, family FROM ${table} WHERE record_id IN (${ph})`,
+              `SELECT record_id, content, type, priority, scene_name, session_id, version, timestamp_str, created_time, updated_time, metadata_json, family FROM ${table} WHERE record_id IN (${ph})`,
             );
       this.inStmts.set(key, stmt);
     }
@@ -939,7 +939,7 @@ export class MemoryDb {
     if (this.degraded) return [];
     const rows = this.db
       .prepare(
-        'SELECT record_id, content, type, priority, scene_name, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records',
+        'SELECT record_id, content, type, priority, scene_name, session_id, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records',
       )
       .all() as unknown as L1MetaRow[];
     return rows.map(rowToRecord);
@@ -954,8 +954,8 @@ export class MemoryDb {
     return rows.map(rowToRecord);
   }
 
-  /** 浏览列表（UI 用）：按更新时间倒序，支持类型/场景/族过滤与分页。失败返回空。 */
-  listL1(opts: { type?: string; scene?: string; family?: string; limit: number; offset: number }): { items: MemoryRecord[]; total: number } {
+  /** 浏览列表（UI 用）：按更新时间倒序，支持类型/场景/族/时间下限过滤与分页。失败返回空。 */
+  listL1(opts: { type?: string; scene?: string; family?: string; since?: string; limit: number; offset: number }): { items: MemoryRecord[]; total: number } {
     if (this.degraded) return { items: [], total: 0 };
     try {
       const where: string[] = [];
@@ -972,17 +972,37 @@ export class MemoryDb {
         where.push('family = ?');
         params.push(opts.family);
       }
+      // 时间下限（ISO 字符串；updated_time 存同格式，字典序 = 时间序，走 idx_l1_updated）
+      if (opts.since) {
+        where.push('updated_time >= ?');
+        params.push(opts.since);
+      }
       const whereSql = where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '';
       const totalRow = this.db.prepare(`SELECT COUNT(*) AS n FROM l1_records${whereSql}`).get(...params) as { n: number };
       const rows = this.db
         .prepare(
-          `SELECT record_id, content, type, priority, scene_name, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records${whereSql} ORDER BY updated_time DESC LIMIT ? OFFSET ?`,
+          `SELECT record_id, content, type, priority, scene_name, session_id, version, timestamp_str, created_time, updated_time, metadata_json, family FROM l1_records${whereSql} ORDER BY updated_time DESC LIMIT ? OFFSET ?`,
         )
         .all(...params, opts.limit, opts.offset) as unknown as L1MetaRow[];
       return { items: rows.map(rowToRecord), total: totalRow?.n ?? 0 };
     } catch (err) {
       this.logger?.warn(`${TAG} L1 浏览列表查询失败（返回空）: ${err instanceof Error ? err.message : String(err)}`);
       return { items: [], total: 0 };
+    }
+  }
+
+  /** 近 N 天逐日 L1 更新计数（工作台活动图；idx_l1_updated 范围扫描 + GROUP BY）。
+   *  day 为 ISO 日期前缀 YYYY-MM-DD（updated_time 存 ISO 文本，substr 即日期）。 */
+  countL1ByDay(sinceIso: string): Array<{ day: string; n: number }> {
+    if (this.degraded) return [];
+    try {
+      return this.db
+        .prepare(
+          "SELECT substr(updated_time, 1, 10) AS day, COUNT(*) AS n FROM l1_records WHERE updated_time >= ? AND updated_time <> '' GROUP BY day ORDER BY day",
+        )
+        .all(sinceIso) as Array<{ day: string; n: number }>;
+    } catch {
+      return [];
     }
   }
 
@@ -1563,6 +1583,7 @@ interface L1MetaRow {
   type: string;
   priority: number;
   scene_name: string;
+  session_id?: string;
   version: number;
   timestamp_str: string;
   created_time: string;
@@ -1584,6 +1605,7 @@ function rowToRecord(row: L1MetaRow): MemoryRecord {
     type: row.type,
     priority: row.priority,
     scene_name: row.scene_name,
+    sessionId: row.session_id || undefined,
     timestamps: dbToTimestamps(row.timestamp_str),
     createdAt: Date.parse(row.created_time) || 0,
     updatedAt: Date.parse(row.updated_time) || 0,

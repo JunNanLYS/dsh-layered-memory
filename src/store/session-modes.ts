@@ -18,6 +18,9 @@ interface ModeEntry {
   /** 会话级注入覆盖（#38 只写不读）：true/false = 强制开/关；缺省 = 跟随全局。
    *  只影响读侧三闸门（pre-step / 稳定区 / 工具），捕获与蒸馏零感知。 */
   recall?: boolean;
+  /** 暂停恢复快照（UI 重构分散式）：进入 off 档时记录的暂停前范围与注入覆盖；
+   *  恢复非 off 档即清空。芯片据此显示"恢复后回到的范围"。 */
+  resume?: { scope: 'auto' | 'chat' | 'work'; recall: boolean | null };
   updatedAt: number;
 }
 
@@ -62,6 +65,13 @@ export class SessionModeStore {
         mode: entry.mode,
         // 非布尔视为损坏丢弃（= 跟随全局）；旧文件无此键同款兼容
         recall: typeof entry.recall === 'boolean' ? entry.recall : undefined,
+        // 恢复快照：scope 必须是非 off 档、recall 必须是布尔或 null，否则整块丢弃
+        resume:
+          entry.resume &&
+          (['auto', 'chat', 'work'] as const).includes(entry.resume.scope) &&
+          (typeof entry.resume.recall === 'boolean' || entry.resume.recall === null)
+            ? { scope: entry.resume.scope, recall: entry.resume.recall }
+            : undefined,
         updatedAt: entry.updatedAt ?? now,
       });
       count++;
@@ -95,6 +105,7 @@ export class SessionModeStore {
     this.entries.set(sessionId, {
       mode: entry?.mode ?? this.loaded,
       recall,
+      resume: entry?.resume,
       updatedAt: Date.now(),
     });
     this.writeChain = this.writeChain.then(() => this.persist());
@@ -105,12 +116,38 @@ export class SessionModeStore {
     this.onModeChange = cb;
   }
 
-  /** 设置会话档位（写穿持久化；持久化失败保持内存态生效）。 */
+  /** 暂停恢复快照（无则 null）。 */
+  getResume(sessionId: string): { scope: 'auto' | 'chat' | 'work'; recall: boolean | null } | null {
+    return this.entries.get(sessionId)?.resume ?? null;
+  }
+
+  /** 停用侧分布（工作台洞察，只读计数）：off = 档位暂停会话；wo = 注入覆盖只写
+   *  （recall=false 且档位未停——两态互斥计数，与召回四因子短路序对齐）。 */
+  countStates(): { off: number; wo: number } {
+    let off = 0;
+    let wo = 0;
+    for (const e of this.entries.values()) {
+      if (e.mode === 'off') off++;
+      else if (e.recall === false) wo++;
+    }
+    return { off, wo };
+  }
+
+  /** 设置会话档位（写穿持久化；持久化失败保持内存态生效）。
+   *  暂停语义（UI 重构）：非 off → off 记录恢复快照（暂停前范围 + 当前注入覆盖）；
+   *  off → 非 off 清空快照（恢复）。 */
   set(sessionId: string, mode: MemoryMode): void {
     const old = this.get(sessionId);
     // 已有注入覆盖跨切档保留（#38：档位与注入正交，切档不动覆盖）
-    const recall = this.entries.get(sessionId)?.recall;
-    this.entries.set(sessionId, { mode, recall, updatedAt: Date.now() });
+    const prev = this.entries.get(sessionId);
+    const recall = prev?.recall;
+    let resume = prev?.resume;
+    if (mode === 'off' && old !== 'off') {
+      resume = { scope: old, recall: recall ?? null };
+    } else if (mode !== 'off' && old === 'off') {
+      resume = undefined;
+    }
+    this.entries.set(sessionId, { mode, recall, resume, updatedAt: Date.now() });
     this.writeChain = this.writeChain.then(() => this.persist());
     if (old !== mode && this.onModeChange) {
       try {

@@ -9,6 +9,8 @@ export declare class PersonaStore {
     init(): Promise<void>;
     /** 读取正文（剥离场景导航部分）。 */
     read(): Promise<string | undefined>;
+    /** 文件 mtime（epoch ms；无画像文件 null）——工作台资产活动流的 L3 时间源。 */
+    mtime(): Promise<number | null>;
     /** 写入正文（保留已有导航段则拼回尾部）。 */
     write(body: string): Promise<void>;
 }

@@ -359,6 +359,8 @@ export async function apply(ctx: Context, config: MemoryConfig): Promise<void> {
       runnerView: (sid, mode) => runner.sessionView(sid, mode),
       l0Count: (sid) => stores.l0.countBySession(sid),
       capabilities: () => db.getCapabilities(),
+      // 工作台洞察聚合（runtime-insights；进程内注册表读取，同样零文件 I/O）
+      recallStatsAll: () => recall.statsAll(),
     },
   );
 

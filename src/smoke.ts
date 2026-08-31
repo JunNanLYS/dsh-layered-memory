@@ -2757,61 +2757,34 @@ async function main(): Promise<void> {
     // 无障碍：reduced-motion / focus-visible（btn/tab 键盘焦点环；输入框用 :focus 即时环）
     assert(clientSrc.includes('prefers-reduced-motion'), 'reduced-motion 降级');
     assert((clientSrc.match(/:focus-visible/g) ?? []).length >= 3, 'focus-visible 焦点环（btn/tab/pill 两态）');
-    // 档位显示名中文化（配置键 off/chat/work/auto 保持英文——键值对并存断言）
-    for (const label of ['关闭', '日常', '工作', '智能']) {
-      assert(clientSrc.includes(`label: "${label}"`), `档位显示名：${label}`);
+    // ── 会话记忆芯片（分散式 spec v2 §4）：官方 composer chip 语法 + 解析真值文案 ──
+    assert(clientSrc.includes('"chip.base": "记忆"'), '芯片基础词（字典）');
+    assert(clientSrc.includes('.dsh-mem-mchip'), '芯片类接线');
+    assert(clientSrc.includes('dsh-mem-mchip-dot'), '暂停/降级语义点');
+    // 级联菜单：行尾当前值 + hover 二级子面板 + 桥接热区（慢速移动不断链）
+    assert(clientSrc.includes('.dsh-mem-menu'), '级联菜单浮层类');
+    assert(clientSrc.includes('.dsh-mem-subval'), '行尾当前值类');
+    assert(clientSrc.includes('.dsh-mem-sub::before'), '子面板桥接热区');
+    assert(clientSrc.includes(':hover .dsh-mem-sub'), '子面板仅 hover 展开（点击不固定）');
+    // 词表（i18n 字典键值并存）：数据流四态 + 范围三档
+    for (const label of ['跟随全局', '读写', '只写', '暂停']) {
+      assert(clientSrc.includes(`"${label}"`), `数据流显示名：${label}`);
     }
-    for (const key of ['"off"', '"chat"', '"work"', '"auto"']) {
-      assert(clientSrc.includes(`key: ${key}`), `档位配置键保留：${key}`);
+    for (const label of ['智能', '日常', '工作']) {
+      assert(clientSrc.includes(`"${label}"`), `范围显示名：${label}`);
     }
-    assert(clientSrc.includes('"记忆 · "'), 'pill 文本为"记忆 · 档位名"格式');
-    // 悬浮板：dsw 原生菜单同配方浮层 + 拖动气泡 + 粗滑轨包裹圆球
-    assert(clientSrc.includes('.dsh-mem-popover'), '浮层类（dsw 原生菜单配方）');
-    assert(clientSrc.includes('--dsh-mem-bg-pop: var(--dsw-specific-menu'), '浮层底链 dsw-specific-menu');
-    assert(clientSrc.includes('.dsh-mem-bubble'), '拖动气泡类');
-    // 气泡材质与尖角：浮层同材质（随主题翻转）+ 描边 + 双 clip-path 倒三角（外描边内填充）
-    assert(clientSrc.includes('background: var(--dsh-mem-bg-pop); color: var(--dsh-mem-text-1);'), '气泡浮层同材质（浅白深字/暗深浅字）');
-    assert(clientSrc.includes('width: 12px; height: 7px;'), '尖角外层描边三角（大内三角一圈）');
-    assert((clientSrc.match(/clip-path: polygon\(0 0, 100% 0, 50% 100%\)/g) ?? []).length >= 2, '气泡下尖角为双 clip-path 倒三角');
-    assert(clientSrc.includes('bottom: calc(100% + 8px)'), '气泡贴近圆球（悬停 8px）');
-    assert(!clientSrc.includes('--dsw-alias-tooltip-bg, #2c2c2e'), '不随主题的 tooltip-bg 硬底已弃用');
-    assert(clientSrc.includes('RAIL_H = 22') && clientSrc.includes('THUMB = 16'), '粗滑轨（RAIL_H 22 > THUMB 16）');
-    assert(clientSrc.includes('linear-gradient(90deg, var(--dsh-mem-fill-1), var(--dsh-mem-fill-2))'), '滑轨填充左浅右深渐变（球侧最深）');
-    assert(!clientSrc.includes('var(--dsh-mem-fill-2), var(--dsh-mem-fill-1)'), '渐变端色序未被反转');
-    // 填充：从滑轨左端铺到圆球右缘（重合无割裂）；off 档不渲染（auto 恰全轨蓝不超界）
-    assert(clientSrc.includes('width: thumbLeft + THUMB'), '填充右缘=圆球右缘（整球落在填充末端上）');
-    assert(!clientSrc.includes('width: thumbLeft + THUMB / 2'), '旧半程重合公式已移除');
-    assert(!clientSrc.includes('right: 0,'), '右侧填充锚定公式已移除');
-    assert(clientSrc.includes('activeIdx > 0 || drag !== null'), '静态关闭档不渲染填充，拖拽中恒显示');
-    // 粒子层：点阵粒子场（仓库B 路线）+ 档位分级 + 拖拽全套增强
-    assert(/jsx\)\(\s*"canvas"/.test(clientSrc), '粒子层 canvas 元素（JSX 自动运行时）');
-    assert(clientSrc.includes('cancelAnimationFrame') && clientSrc.includes('requestAnimationFrame'), 'rAF 循环带清理');
-    assert(clientSrc.includes('ctx.roundRect') && clientSrc.includes('height / 2)'), '胶囊形裁剪（roundRect 半径 = 半轨高）');
-    assert(clientSrc.includes('FIELD_TIERS') && clientSrc.includes('tier: activeIdx'), '场强按档位分级（与填充/气泡同源）');
-    assert(clientSrc.includes('flicker') && clientSrc.includes('ripplePhase'), '独立随机闪烁 + 明暗水波纹');
-    assert(clientSrc.includes('lastDrawn >= 33'), '30fps 节流');
-    assert(clientSrc.includes('saturate(1.45) brightness(1.28)'), '拖拽滤镜增饱和提亮');
-    assert(clientSrc.includes('mix-blend-mode: multiply'), '浅色主题 multiply 混合');
-    assert((clientSrc.match(/pointerEvents: "none",\s*\n\s*zIndex: 2,/g) ?? []).length >= 1, 'canvas 不挡指针（拖拽路径不受粒子层干扰）');
-    assert(clientSrc.includes('prefers-reduced-motion: reduce') && clientSrc.includes('redrawStatic'), 'reduced-motion 静帧降级');
-    // 浮层对称内边距：滑轨垂直居中，气泡经 overflow: visible 溢出到浮层上方
-    assert(clientSrc.includes('padding: "14px 16px"'), '浮层上下内边距对称（紧凑尺寸）');
-    assert(!clientSrc.includes('38px 16px'), '气泡预留顶部内边距已移除');
-    assert(!clientSrc.includes('top: 26'), '滑轨下方档位标签已删除（改拖动气泡）');
-    // 会话信息区（悬浮卡下半部）：session-stats 热路径端点 + 自适应轮询 + 静态 DOM
-    assert(clientSrc.includes('dsh-memory/session-stats'), 'session-stats 端点接线（信息区数据通道）');
-    assert(clientSrc.includes('.dsh-mem-sinfo-grid'), '信息区 2×2 指标网格类');
-    assert(clientSrc.includes('.dsh-mem-sinfo-warn'), '信息区降级警示行类');
-    // esbuild 数值规范化：2000/5000 印作 2e3/5e3
-    assert(clientSrc.includes('busyRef.current ? 2e3 : 5e3'), '自适应轮询（忙 2s / 静 5s）');
-    assert(clientSrc.includes('alive = false'), '轮询随浮层卸载停止（cleanup 置停）');
-    // pill：off 档透明化（压掉 UA 按钮默认底/边框，hover 淡底）、其余三档共用流光
-    assert(clientSrc.includes('.dsh-mem-pill-off { border: none; background: transparent; }'), 'off 档透明按钮类');
-    assert(clientSrc.includes('.dsh-mem-pill-off:hover { background: var(--dsh-mem-bg-hover); }'), 'off 档 hover 淡底');
-    assert(clientSrc.includes('.dsh-mem-flow:focus-visible'), '流光态焦点环（与 off 态对称）');
-    assert(clientSrc.includes('"dsh-mem-pill-off"'), 'off 档类接线到 pill');
-    assert(clientSrc.includes('isFlow = loaded && !isOff'), 'off 档排除流光');
-    assert(clientSrc.includes('--dsh-mem-pill-tint'), '流光内底混色通道');
+    // 范围滑条：Codex 式内联展开（grid-rows 生长动画）+ 主题色填充 + 键盘可达
+    assert(clientSrc.includes('.dsh-mem-sl-reveal'), '滑条内联展开容器');
+    assert(clientSrc.includes('grid-template-rows: 0fr') && clientSrc.includes('grid-template-rows: 1fr'), '0fr/1fr 生长动画');
+    assert(clientSrc.includes('background: var(--dsh-mem-accent-fill)'), '滑条填充走 accent-fill 令牌');
+    assert(clientSrc.includes('role: "slider"'), '圆钮 role=slider（键盘可达）');
+    assert(clientSrc.includes('aria-valuetext'), '滑条 aria-valuetext');
+    // 统计行遥测段（composer.dock）：待蒸馏计数 + 自适应轮询
+    assert(clientSrc.includes('conversation.composer.dock'), '统计行槽位注册');
+    assert(clientSrc.includes('待蒸馏 '), '待蒸馏遥测文案');
+    // 官方环外圈弧已移除（占用唯一展示处 = 官方面板记忆分项）
+    assert(!clientSrc.includes('dsh-mem-parasite'), '外圈寄生弧已删除');
+    assert(!clientSrc.includes('drop-shadow(0 0 3px'), '外圈光晕已删除');
     assert(!clientSrc.includes('.dsh-mem-glass'), '玻璃浮层类已移除（换原生实底浮层）');
     // 原生组件复用：guarded require + 三个包装器（含回退）
     assert(
@@ -2820,22 +2793,49 @@ async function main(): Promise<void> {
     );
     // 侧边栏 icon 补丁（书本）
     assert(clientSrc.includes('patchSidebarIcon') && clientSrc.includes('BOOK_ICON_SVG'), '侧边栏书本 icon 补丁');
-    // 圆角体系锁定：inline borderRadius 与 CSS border-radius 只允许 {4,8,10,12,999,50%}
-    //（4px 仅限重建进度条内轨，8=控件，10=卡片，12=浮层，999=胶囊）
+    // 圆角体系锁定：inline borderRadius 与 CSS border-radius 只允许 {4,8,10,12,24,999,50%}
+    //（4px 仅限重建进度条内轨，8=控件，10=卡片/菜单条目，12=浮层，24=原生芯片触发钮
+    //  实测值——与宿主 Sh0Q9G_trigger 对齐，999=胶囊）
     const inlineR = [...clientSrc.matchAll(/borderRadius: ([^,}]+)/g)].map((m) => m[1].trim().replace(/^"|"$/g, ''));
     assert(inlineR.length > 0, '圆角断言取样非空');
     for (const r of inlineR) {
-      assert(r === '50%' || ['4', '8', '10', '12', '999'].includes(r), `inline 圆角合规：${r}`);
+      assert(r === '50%' || ['4', '8', '10', '12', '24', '999'].includes(r), `inline 圆角合规：${r}`);
     }
     const cssR = [...clientSrc.matchAll(/border-radius: (\d+)px/g)].map((m) => m[1]);
-    for (const r of cssR) assert(['4', '8', '10', '12', '999'].includes(r), `CSS 圆角合规：${r}px`);
+    for (const r of cssR) assert(['4', '8', '10', '12', '24', '999'].includes(r), `CSS 圆角合规：${r}px`);
     // 可见文案零 em-dash（design-taste 铁律；代码注释除外）
     const emDashInString = clientSrc.match(/"[^"\n]*—[^"\n]*"/);
     assert(!emDashInString, `字符串内出现 em-dash：${emDashInString?.[0] ?? ''}`);
-    // 组件类接线：按钮/输入/Tab/卡片类在 JSX 侧被引用
-    for (const cls of ['dsh-mem-btn', 'dsh-mem-input', 'dsh-mem-select', 'dsh-mem-tab', 'dsh-mem-card', 'dsh-mem-root']) {
+    // 组件类接线：按钮/输入/下拉/卡片/根类在 JSX 侧被引用
+    for (const cls of ['dsh-mem-btn', 'dsh-mem-input', 'dsh-mem-select', 'dsh-mem-ws-tab', 'dsh-mem-card', 'dsh-mem-root']) {
       assert(clientSrc.includes(`"${cls}`), `组件类被引用：${cls}`);
     }
+    // ── 工作台五区（spec v2 §5-§10）：sticky tablist + 箭头键 + 五区词表 + 聚合端点 ──
+    assert(clientSrc.includes('role: "tablist"'), '工作台 tablist 角色');
+    assert(clientSrc.includes('position: sticky'), '任务导航 sticky');
+    assert(clientSrc.includes('ArrowRight') && clientSrc.includes('ArrowLeft'), 'tablist 箭头键巡游');
+    for (const [k, label] of [
+      ['overview', '总览'],
+      ['library', '记忆库'],
+      ['automation', '自动化'],
+      ['insights', '洞察'],
+      ['maintenance', '维护'],
+    ] as const) {
+      assert(clientSrc.includes(`"ws.tab.${k}": "${label}"`), `工作台区名（字典）：${label}`);
+    }
+    // 双语字典成对（EN 侧抽查，spec §11）
+    assert(clientSrc.includes('"ws.title": "Memory Workspace"'), '工作台标题 EN 词条');
+    assert(clientSrc.includes('"verb.new": "New"'), '活动流动词 EN 词条');
+    // 三个只读聚合端点接线（T4a）
+    for (const ep of ['dsh-memory/workspace-overview', 'dsh-memory/asset-activity', 'dsh-memory/runtime-insights']) {
+      assert(clientSrc.includes(`"${ep}"`), `聚合端点调用：${ep}`);
+    }
+    // 记忆库活动流 + 披露 + 危险区类接线
+    assert(clientSrc.includes('.dsh-mem-feed-head') && clientSrc.includes('.dsh-mem-feed-chev'), '活动流行类');
+    assert(clientSrc.includes('.dsh-mem-disc') && clientSrc.includes('.dsh-mem-disc-chev'), '披露头类');
+    assert(clientSrc.includes('.dsh-mem-danger'), '危险区容器类');
+    // 旧六 Tab 面板已删（旧下划线 tab 类不再定义）
+    assert(!clientSrc.includes('.dsh-mem-tab {'), '旧 tab 类已删（换 ws-tab 任务导航）');
     // 图表系列色接线（成本看板折线）：8 档令牌双主题定义 + PALETTE 只引用 var()
     for (let i = 1; i <= 8; i++) assert(clientSrc.includes(`--dsh-mem-chart-${i}: #`), `图表令牌定义：chart-${i}`);
     assert(clientSrc.includes('"var(--dsh-mem-chart-1)"'), 'PALETTE 引用 chart 令牌（非裸 hex）');

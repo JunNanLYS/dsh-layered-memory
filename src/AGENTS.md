@@ -7,7 +7,7 @@
 
 - `index.ts` — cordis 插件入口：`name`、`inject = ['llm', 'tools', 'systemPrompt']`（硬依赖）、
   Schemastery `Config`、`apply()` 装配 MemoryDb/embedding/所有 store/hook/tool/RPC。
-- `contract.ts` — RPC 契约单一事实源（**types-only，零运行时代码**）：23 个端点的
+- `contract.ts` — RPC 契约单一事实源（**types-only，零运行时代码**）：26 个端点的
   请求/响应类型 + 从各 host 模块迁入的纯数据类型（原模块保留 re-export 不断裂引用）。
   client 经 `import type` 引用（esbuild 构建期擦除）；扩端点先改这里，两侧编译器会追着改。
 - `bench-control.ts` — bench 控制服务（`benchControl` 配置门控，默认关）：`ctx.provide`
@@ -48,7 +48,9 @@
     `bm25.ts`（仅 L2 场景摘要选上下文用）+ `io.ts`（原子写等文件原语）。
 - `tools/index.ts` — 模型工具：memory_search / conversation_search / memory_read_scene
   （execute 的 `exec.agent.id === sessionId` 用于按会话档位过滤）。
-- `stats.ts` — 通用 RPC 端点 `dsh-memory/*`，供 client 状态页与输入栏控件拉数据。
+- `stats.ts` — 通用 RPC 端点 `dsh-memory/*`，供 client 工作台与输入栏芯片拉数据；
+  工作台三聚合端点（workspace-overview / asset-activity / runtime-insights）的装配在
+  `workspace-aggregates.ts`（只读、索引化，不改蒸馏/召回语义）。
 - `llm.ts` / `config.ts`（Schemastery schema + MemoryConfig）/ `types.ts` / `util/`。
 - `smoke.ts` — 冒烟测试（不依赖 DSH 运行时，纯 assert；第 21 节对 dist/client.js 产物断言）。
 

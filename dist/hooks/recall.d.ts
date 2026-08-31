@@ -45,6 +45,8 @@ export interface RecallHooks {
     invalidateProfile(): void;
     /** 会话召回统计只读视图（未发生过检索的会话返回 undefined）。 */
     stats(sessionId: string): RecallSessionStats | undefined;
+    /** 全量会话召回统计（工作台洞察聚合；进程内注册表快照，重启归零）。 */
+    statsAll(): RecallSessionStats[];
     /** 记忆占用账本只读出口：内存优先，miss 时从流水复生（重启后历史会话）；从未注入返回 null。 */
     occupancy(sessionId: string): OccupancyLedger | null;
     /**

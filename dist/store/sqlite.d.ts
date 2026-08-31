@@ -133,17 +133,24 @@ export declare class MemoryDb {
     /** 全量读取（调试/迁移/重嵌入用；检索请走 FTS/向量）。 */
     getAllL1(): MemoryRecord[];
     getL1ByIds(ids: string[]): MemoryRecord[];
-    /** 浏览列表（UI 用）：按更新时间倒序，支持类型/场景/族过滤与分页。失败返回空。 */
+    /** 浏览列表（UI 用）：按更新时间倒序，支持类型/场景/族/时间下限过滤与分页。失败返回空。 */
     listL1(opts: {
         type?: string;
         scene?: string;
         family?: string;
+        since?: string;
         limit: number;
         offset: number;
     }): {
         items: MemoryRecord[];
         total: number;
     };
+    /** 近 N 天逐日 L1 更新计数（工作台活动图；idx_l1_updated 范围扫描 + GROUP BY）。
+     *  day 为 ISO 日期前缀 YYYY-MM-DD（updated_time 存 ISO 文本，substr 即日期）。 */
+    countL1ByDay(sinceIso: string): Array<{
+        day: string;
+        n: number;
+    }>;
     /** 场景名去重列表（UI 筛选器数据源）。失败返回空。 */
     distinctL1Scenes(): string[];
     /** FTS5 BM25 检索（family 缺省不过滤）。失败返回空数组（调用方降级）。 */

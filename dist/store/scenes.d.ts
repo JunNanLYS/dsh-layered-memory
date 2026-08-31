@@ -1,4 +1,7 @@
 import type { MemoryFamily, MemoryLogger, SceneSummary } from '../types.js';
+/** 场景文件 META 块标记（工作台活动流剥正文复用，保持单一事实源）。 */
+export declare const META_START = "-----META-START-----";
+export declare const META_END = "-----META-END-----";
 export declare class SceneStore {
     private readonly logger?;
     private readonly dir;
