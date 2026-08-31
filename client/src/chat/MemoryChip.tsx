@@ -33,6 +33,8 @@ const SLIDER_SCOPES = ['chat', 'work', 'auto'] as const;
 type ScopeKey = (typeof SLIDER_SCOPES)[number];
 const FLOW_KEYS = ['follow', 'rw', 'wo', 'paused'] as const;
 type FlowKey = (typeof FLOW_KEYS)[number];
+/** 数据流子卡片设计高度估算：行 min-height 40 × 4 + 内衬 8 + 描边 2（视口翻转判定用）。 */
+const SUB_EST = FLOW_KEYS.length * 40 + 10;
 
 const scopeLabel = (k: string): string => t('scope.' + k);
 const flowLabel = (k: string): string => t('flow.' + k);
@@ -71,8 +73,12 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
   const [sliderOpen, setSliderOpen] = useState(false);
   /** 拖拽预览：滑条拖动期间芯片文字实时跟随（只在跨档时更新，拖完清空）。 */
   const [previewScope, setPreviewScope] = useState<string | null>(null);
+  /** 数据流子卡片视口翻转态（下方放不下时上翻；宿主 tooltip 浮层同款判定）。 */
+  const [subFlip, setSubFlip] = useState(false);
+  const [subMaxH, setSubMaxH] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const subWrapRef = useRef<HTMLDivElement | null>(null);
   const seqRef = useRef(0);
 
   const load = useCallback(() => {
@@ -135,6 +141,38 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
       document.removeEventListener('keydown', onKey);
     };
   }, [menuOpen]);
+
+  // 数据流子卡片视口适配（宿主 tooltip 浮层同款）：下方放不下整卡就上翻
+  // （bottom 锚定行底 +5px），两侧空间都不足时按可用侧夹持 maxHeight 滚动。
+  // 行 rect 在菜单打开期间由布局固定，但滚动/缩放窗口会移动锚点——宿主
+  // useAnchoredPosition 同样挂 scroll(capture)+resize 重算。
+  useLayoutEffect(() => {
+    if (!menuOpen) {
+      setSubFlip(false);
+      setSubMaxH(null);
+      return;
+    }
+    const MARGIN = 8;
+    const measure = () => {
+      const el = subWrapRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.height === 0) return; // 滑条展开期间行隐藏，保留旧值
+      const below = window.innerHeight - MARGIN - (rect.top - 5);
+      const above = rect.bottom + 5 - MARGIN;
+      const flip = above > below;
+      const avail = Math.max(80, flip ? above : below);
+      setSubFlip(flip && below < SUB_EST);
+      setSubMaxH(Math.min(SUB_EST, avail));
+    };
+    measure();
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+    };
+  }, [menuOpen, sliderOpen]);
 
   /** 乐观提交档位（范围/暂停共用）；RPC 失败回滚，token 丢弃过期会话响应。 */
   const commitMode = (next: string) => {
@@ -207,6 +245,12 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
 
   if (!sessionId || !rpc) return null;
   ensureThemeStyle();
+  // 菜单整体限高（上弹形态：底边锚定，宿主 useAnchoredMaxHeight 同语义）。
+  // 仅在限高真正收紧时才开滚动——子卡片是菜单内绝对定位元素，overflow 裁剪
+  // 会把它整个裁掉；常规窗口（限高=cap）保持 overflow:visible 让子卡片外浮。
+  const MENU_MAX_H = 480;
+  const menuMaxH = useMenuMaxHeight(menuRef, MENU_MAX_H, menuOpen);
+  const menuClamped = menuMaxH < MENU_MAX_H;
 
   const paused = mode === 'off';
   const scope = paused ? (resumeScope ?? 'auto') : (mode ?? 'auto');
@@ -241,7 +285,13 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
         </span>
       </button>
       {menuOpen ? (
-        <div className="dsh-mem-menu" ref={menuRef} role="menu" aria-label={t('chip.base')}>
+        <div
+          className="dsh-mem-menu"
+          ref={menuRef}
+          role="menu"
+          aria-label={t('chip.base')}
+          style={menuClamped ? { maxHeight: menuMaxH, overflowY: 'auto' } : undefined}
+        >
           <button
             type="button"
             className={'dsh-mem-pop-opt dsh-mem-sl-row' + (sliderOpen ? ' on' : '')}
@@ -273,7 +323,7 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
               />
             </div>
           </div>
-          <div className="dsh-mem-subwrap" hidden={sliderOpen}>
+          <div className="dsh-mem-subwrap" ref={subWrapRef} hidden={sliderOpen}>
             {/* 触发行：键盘聚焦也揭示子面板（spec §12 键盘通路）；鼠标点击不夺焦——
                 保持"点击不固定子卡片"的既定裁定（hover 是鼠标唯一揭示方式） */}
             <button
@@ -291,7 +341,17 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
                 <NIconChevronRight14 />
               </span>
             </button>
-            <div className="dsh-mem-sub" role="menu" aria-label={t('row.flow')}>
+            <div
+              className={'dsh-mem-sub' + (subFlip ? ' flip' : '')}
+              role="menu"
+              aria-label={t('row.flow')}
+              style={{
+                maxHeight: subMaxH ?? undefined,
+                // 只在 maxHeight 真正夹紧（< 设计高）时才开滚动：overflow 会把
+                // 卡外左侧的 ::before 桥接热区裁掉，hover 链在 6px 空隙处断裂
+                overflowY: subMaxH != null && subMaxH < SUB_EST ? 'auto' : undefined,
+              }}
+            >
               {FLOW_KEYS.map((k) => (
                 <button
                   type="button"

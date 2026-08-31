@@ -1084,6 +1084,9 @@ var __defProp = Object.defineProperty;
 		    ".dsh-mem-sub::before {",
 		    "  content: ''; position: absolute; left: -10px; top: 0; width: 10px; height: 100%;",
 		    "}",
+		    // 视口翻转态（下方放不下时 JS 加 .flip）：底边锚定行底 +5px 向上生长，
+		    // 桥接热区随卡片全高仍然成立（横向过桥不受纵向翻转影响）
+		    ".dsh-mem-sub.flip { top: auto; bottom: -5px; }",
 		    ".dsh-mem-subwrap:hover .dsh-mem-sub, .dsh-mem-subwrap:focus-within .dsh-mem-sub { display: block; }",
 		    '.dsh-mem-subwrap .dsh-mem-pop-opt[aria-hidden="true"] { cursor: default; }',
 		    // ── 记忆滑条（Codex 式内联展开，spec v2 §4.3）：grid-rows 0fr→1fr 原地长高；
@@ -1219,6 +1222,7 @@ var __defProp = Object.defineProperty;
 		})();
 		var SLIDER_SCOPES = ["chat", "work", "auto"];
 		var FLOW_KEYS = ["follow", "rw", "wo", "paused"];
+		var SUB_EST = FLOW_KEYS.length * 40 + 10;
 		var scopeLabel = (k) => t("scope." + k);
 		var flowLabel = (k) => t("flow." + k);
 		function useMaxHeightFallback(ref, cap, signal) {
@@ -1251,8 +1255,11 @@ var __defProp = Object.defineProperty;
 		  const [menuOpen, setMenuOpen] = (0, import_react2.useState)(false);
 		  const [sliderOpen, setSliderOpen] = (0, import_react2.useState)(false);
 		  const [previewScope, setPreviewScope] = (0, import_react2.useState)(null);
+		  const [subFlip, setSubFlip] = (0, import_react2.useState)(false);
+		  const [subMaxH, setSubMaxH] = (0, import_react2.useState)(null);
 		  const wrapRef = (0, import_react2.useRef)(null);
 		  const menuRef = (0, import_react2.useRef)(null);
+		  const subWrapRef = (0, import_react2.useRef)(null);
 		  const seqRef = (0, import_react2.useRef)(0);
 		  const load = (0, import_react2.useCallback)(() => {
 		    if (!sessionId || !rpc) return;
@@ -1307,6 +1314,33 @@ var __defProp = Object.defineProperty;
 		      document.removeEventListener("keydown", onKey);
 		    };
 		  }, [menuOpen]);
+		  (0, import_react2.useLayoutEffect)(() => {
+		    if (!menuOpen) {
+		      setSubFlip(false);
+		      setSubMaxH(null);
+		      return;
+		    }
+		    const MARGIN = 8;
+		    const measure = () => {
+		      const el = subWrapRef.current;
+		      if (!el) return;
+		      const rect = el.getBoundingClientRect();
+		      if (rect.height === 0) return;
+		      const below = window.innerHeight - MARGIN - (rect.top - 5);
+		      const above = rect.bottom + 5 - MARGIN;
+		      const flip = above > below;
+		      const avail = Math.max(80, flip ? above : below);
+		      setSubFlip(flip && below < SUB_EST);
+		      setSubMaxH(Math.min(SUB_EST, avail));
+		    };
+		    measure();
+		    window.addEventListener("scroll", measure, true);
+		    window.addEventListener("resize", measure);
+		    return () => {
+		      window.removeEventListener("scroll", measure, true);
+		      window.removeEventListener("resize", measure);
+		    };
+		  }, [menuOpen, sliderOpen]);
 		  const commitMode = (next) => {
 		    if (!rpc || !sessionId || mode === null || next === mode) return;
 		    const prev = mode;
@@ -1367,6 +1401,9 @@ var __defProp = Object.defineProperty;
 		  };
 		  if (!sessionId || !rpc) return null;
 		  ensureThemeStyle();
+		  const MENU_MAX_H = 480;
+		  const menuMaxH = useMenuMaxHeight(menuRef, MENU_MAX_H, menuOpen);
+		  const menuClamped = menuMaxH < MENU_MAX_H;
 		  const paused = mode === "off";
 		  const scope = paused ? resumeScope ?? "auto" : mode ?? "auto";
 		  const flow = paused ? "paused" : recall === false ? "wo" : recall === true ? "rw" : "follow";
@@ -1394,80 +1431,104 @@ var __defProp = Object.defineProperty;
 		        ]
 		      }
 		    ),
-		    menuOpen ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-mem-menu", ref: menuRef, role: "menu", "aria-label": t("chip.base"), children: [
-		      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-		        "button",
-		        {
-		          type: "button",
-		          className: "dsh-mem-pop-opt dsh-mem-sl-row" + (sliderOpen ? " on" : ""),
-		          disabled: paused,
-		          "aria-expanded": sliderOpen,
-		          onClick: () => setSliderOpen(!sliderOpen),
-		          children: [
-		            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-pop-opt-label", children: t("row.scope") }),
-		            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subval", children: scopeLabel(shownScope) }),
-		            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subchev", "aria-hidden": true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NIconChevronRight14, {}) })
-		          ]
-		        }
-		      ),
-		      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-mem-sl-reveal" + (sliderOpen ? " open" : ""), children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-mem-sl-inner", children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-mem-sl-labels", "aria-hidden": true, children: [
-		          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: scopeLabel("chat") }),
-		          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: scopeLabel("work") }),
-		          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: scopeLabel("auto") })
-		        ] }),
-		        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-		          ScopeSlider,
-		          {
-		            scope,
-		            disabled: paused,
-		            onPreview: (k) => setPreviewScope(k),
-		            onCommit: (k) => {
-		              setPreviewScope(null);
-		              commitMode(k);
+		    menuOpen ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+		      "div",
+		      {
+		        className: "dsh-mem-menu",
+		        ref: menuRef,
+		        role: "menu",
+		        "aria-label": t("chip.base"),
+		        style: menuClamped ? { maxHeight: menuMaxH, overflowY: "auto" } : void 0,
+		        children: [
+		          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+		            "button",
+		            {
+		              type: "button",
+		              className: "dsh-mem-pop-opt dsh-mem-sl-row" + (sliderOpen ? " on" : ""),
+		              disabled: paused,
+		              "aria-expanded": sliderOpen,
+		              onClick: () => setSliderOpen(!sliderOpen),
+		              children: [
+		                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-pop-opt-label", children: t("row.scope") }),
+		                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subval", children: scopeLabel(shownScope) }),
+		                /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subchev", "aria-hidden": true, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NIconChevronRight14, {}) })
+		              ]
 		            }
-		          }
-		        )
-		      ] }) }),
-		      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-mem-subwrap", hidden: sliderOpen, children: [
-		        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-		          "button",
-		          {
-		            type: "button",
-		            className: "dsh-mem-pop-opt",
-		            tabIndex: 0,
-		            "aria-haspopup": "menu",
-		            onMouseDown: (e) => {
-		              e.preventDefault();
-		            },
-		            children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-pop-opt-label", children: t("row.flow") }),
-		              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subval", children: flowLabel(flow) }),
-		              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subchev", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NIconChevronRight14, {}) })
-		            ]
-		          }
-		        ),
-		        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-mem-sub", role: "menu", "aria-label": t("row.flow"), children: FLOW_KEYS.map((k) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
-		          "button",
-		          {
-		            type: "button",
-		            role: "menuitemradio",
-		            "aria-checked": flow === k,
-		            className: "dsh-mem-pop-opt" + (flow === k ? " on" : ""),
-		            onClick: () => {
-		              applyFlow(k);
-		              setMenuOpen(false);
-		              setSliderOpen(false);
-		            },
-		            children: [
-		              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-pop-opt-label", children: flowLabel(k) }),
-		              flow === k ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-pop-check", children: "✓" }) : null
-		            ]
-		          },
-		          k
-		        )) })
-		      ] })
-		    ] }) : null,
+		          ),
+		          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dsh-mem-sl-reveal" + (sliderOpen ? " open" : ""), children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-mem-sl-inner", children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-mem-sl-labels", "aria-hidden": true, children: [
+		              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: scopeLabel("chat") }),
+		              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: scopeLabel("work") }),
+		              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: scopeLabel("auto") })
+		            ] }),
+		            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+		              ScopeSlider,
+		              {
+		                scope,
+		                disabled: paused,
+		                onPreview: (k) => setPreviewScope(k),
+		                onCommit: (k) => {
+		                  setPreviewScope(null);
+		                  commitMode(k);
+		                }
+		              }
+		            )
+		          ] }) }),
+		          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dsh-mem-subwrap", ref: subWrapRef, hidden: sliderOpen, children: [
+		            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+		              "button",
+		              {
+		                type: "button",
+		                className: "dsh-mem-pop-opt",
+		                tabIndex: 0,
+		                "aria-haspopup": "menu",
+		                onMouseDown: (e) => {
+		                  e.preventDefault();
+		                },
+		                children: [
+		                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-pop-opt-label", children: t("row.flow") }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subval", children: flowLabel(flow) }),
+		                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-subchev", "aria-hidden": "true", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NIconChevronRight14, {}) })
+		                ]
+		              }
+		            ),
+		            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+		              "div",
+		              {
+		                className: "dsh-mem-sub" + (subFlip ? " flip" : ""),
+		                role: "menu",
+		                "aria-label": t("row.flow"),
+		                style: {
+		                  maxHeight: subMaxH ?? void 0,
+		                  // 只在 maxHeight 真正夹紧（< 设计高）时才开滚动：overflow 会把
+		                  // 卡外左侧的 ::before 桥接热区裁掉，hover 链在 6px 空隙处断裂
+		                  overflowY: subMaxH != null && subMaxH < SUB_EST ? "auto" : void 0
+		                },
+		                children: FLOW_KEYS.map((k) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+		                  "button",
+		                  {
+		                    type: "button",
+		                    role: "menuitemradio",
+		                    "aria-checked": flow === k,
+		                    className: "dsh-mem-pop-opt" + (flow === k ? " on" : ""),
+		                    onClick: () => {
+		                      applyFlow(k);
+		                      setMenuOpen(false);
+		                      setSliderOpen(false);
+		                    },
+		                    children: [
+		                      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-pop-opt-label", children: flowLabel(k) }),
+		                      flow === k ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "dsh-mem-pop-check", children: "✓" }) : null
+		                    ]
+		                  },
+		                  k
+		                ))
+		              }
+		            )
+		          ] })
+		        ]
+		      }
+		    ) : null,
 		    error ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { role: "alert", style: { position: "absolute", top: "100%", left: 0, fontSize: 11, color: "var(--dsh-mem-danger)", whiteSpace: "nowrap", zIndex: 2 }, children: t("err.load") }) : null
 		  ] });
 		}

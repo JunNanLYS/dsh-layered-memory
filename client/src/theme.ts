@@ -378,6 +378,9 @@ export function ensureThemeStyle() {
     '.dsh-mem-sub::before {',
     "  content: ''; position: absolute; left: -10px; top: 0; width: 10px; height: 100%;",
     '}',
+    // 视口翻转态（下方放不下时 JS 加 .flip）：底边锚定行底 +5px 向上生长，
+    // 桥接热区随卡片全高仍然成立（横向过桥不受纵向翻转影响）
+    '.dsh-mem-sub.flip { top: auto; bottom: -5px; }',
     '.dsh-mem-subwrap:hover .dsh-mem-sub, .dsh-mem-subwrap:focus-within .dsh-mem-sub { display: block; }',
     '.dsh-mem-subwrap .dsh-mem-pop-opt[aria-hidden="true"] { cursor: default; }',
     // ── 记忆滑条（Codex 式内联展开，spec v2 §4.3）：grid-rows 0fr→1fr 原地长高；
