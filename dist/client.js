@@ -1039,8 +1039,9 @@ var __defProp = Object.defineProperty;
 		    "body:not([data-ds-dark-theme]) .dsh-mem-particles { mix-blend-mode: multiply; opacity: 0.82; }",
 		    // ── 会话记忆芯片（分散式，spec v2 §4.1）：逐字对齐原生访问模式触发钮
 		    //    （dsh-client-ui-conversation 源码 .Sh0Q9G_trigger）：13px/500/r24/padding 8·4/
-		    //    gap4/label-secondary/透明底/min-width 0/max-width 220；原生无 hover 与展开底色
-		    //    （仅 chevron 旋转反馈），故此处同样不加；focus-visible 环是键盘无障碍超集，保留 ──
+		    //    gap4/label-secondary/透明底/min-width 0/max-width 220；hover =
+		    //    .Sh0Q9G_trigger:hover:not(:disabled) 的 interactive-bg-hover 淡底（打开态无
+		    //    持续底色，仅 chevron 旋转反馈）；focus-visible 环是键盘无障碍超集，保留 ──
 		    ".dsh-mem-mchip {",
 		    "  display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px 0 8px;",
 		    "  min-width: 0; max-width: 220px;",
@@ -1048,6 +1049,7 @@ var __defProp = Object.defineProperty;
 		    "  color: var(--dsh-mem-text-2); font: inherit; font-size: 13px; font-weight: 500; line-height: 20px; white-space: nowrap;",
 		    "}",
 		    ".dsh-mem-mchip .mc-label { text-overflow: ellipsis; white-space: nowrap; min-width: 0; overflow: hidden; }",
+		    ".dsh-mem-mchip:hover:not(:disabled) { background: var(--dsh-mem-bg-hover); }",
 		    ".dsh-mem-mchip:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }",
 		    ".dsh-mem-mchip-chev { display: inline-flex; flex: none; color: var(--dsh-mem-chev); transition: transform .12s ease; }",
 		    // 展开态箭头翻转 180°（原生 .Sh0Q9G_chevronOpen 源码：rotate(180deg)，transition transform .12s）
