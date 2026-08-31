@@ -39,6 +39,7 @@ export function ensureThemeStyle() {
     '  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #61666b);',
     '  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #6e7781);',
     '  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #d0403f);',
+    '  --dsh-mem-warn: #a8821c;',
     // 图表系列（成本折线图）：8 档固定色，PALETTE 只引用 var()；1 档锚品牌蓝，8 档中性"其他"
     '  --dsh-mem-chart-1: #4d6bfe;',
     '  --dsh-mem-chart-2: #0e9c8f;',
@@ -79,6 +80,7 @@ export function ensureThemeStyle() {
     '  --dsh-mem-text-2: var(--dsw-alias-label-secondary, #cfd3d6);',
     '  --dsh-mem-text-3: var(--dsw-alias-label-tertiary, #8892a6);',
     '  --dsh-mem-danger: var(--dsw-alias-state-error-primary, #f4707b);',
+    '  --dsh-mem-warn: #d9b23c;',
     '  --dsh-mem-chart-1: #6e85ff;',
     '  --dsh-mem-chart-2: #35c4b5;',
     '  --dsh-mem-chart-3: #52c98d;',
@@ -269,6 +271,56 @@ export function ensureThemeStyle() {
     '}',
     // ── 粒子层（点阵场）：浅色 multiply 混合——深蓝点乘在浅蓝填充上沉显对比 ──
     'body:not([data-ds-dark-theme]) .dsh-mem-particles { mix-blend-mode: multiply; opacity: 0.82; }',
+    // ── 会话记忆芯片（分散式，spec v2 §4.1）：官方 composer chip 同款语法——
+    //    无边框、label-secondary、hover/展开淡底；语义点只在暂停（灰）/降级（琥珀）时出现 ──
+    '.dsh-mem-mchip {',
+    '  display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px;',
+    '  border: none; background: transparent; border-radius: 8px; cursor: pointer;',
+    '  color: var(--dsh-mem-text-2); font: inherit; font-size: 13px; line-height: 20px; white-space: nowrap;',
+    '}',
+    '.dsh-mem-mchip:hover, .dsh-mem-mchip[aria-expanded="true"] { background: var(--dsh-mem-bg-hover); }',
+    '.dsh-mem-mchip:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 1px; }',
+    '.dsh-mem-mchip-chev { color: var(--dsh-mem-text-3); font-size: 10px; }',
+    '.dsh-mem-mchip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dsh-mem-track); flex: none; }',
+    '.dsh-mem-mchip-dot.warn { background: var(--dsh-mem-warn); }',
+    // ── 级联菜单（芯片点击展开，向上、左缘对齐芯片）：dsh 原生菜单同配方浮层；
+    //    行复用 .dsh-mem-pop-opt；行尾当前值 + › 展开指示 ──
+    '.dsh-mem-menu {',
+    '  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 1000; min-width: 200px; padding: 4px;',
+    '  background: var(--dsh-mem-bg-pop); border: 1px solid var(--dsh-mem-border-pop);',
+    '  border-radius: 12px; box-shadow: var(--dsh-mem-shadow-pop); color: var(--dsh-mem-text-1);',
+    '}',
+    '.dsh-mem-subval { margin-left: auto; color: var(--dsh-mem-text-3); margin-right: 8px; font-variant-numeric: tabular-nums; }',
+    '.dsh-mem-subchev { color: var(--dsh-mem-text-3); font-size: 10px; transition: transform .15s ease; display: inline-block; }',
+    '.dsh-mem-sl-row.on .dsh-mem-subchev { transform: rotate(90deg); }',
+    // ── hover 二级子面板：仅 hover 展开（点击不固定）；::before 桥接热区盖住
+    //    行与子卡片之间的空隙，慢速移动不断悬停链（10px 宽 > 6px 间隙 + 2px 重叠） ──
+    '.dsh-mem-subwrap { position: relative; }',
+    '.dsh-mem-sub {',
+    '  position: absolute; display: none; top: -5px; left: calc(100% + 6px); min-width: 130px; z-index: 5; padding: 4px;',
+    '  background: var(--dsh-mem-bg-pop); border: 1px solid var(--dsh-mem-border-pop);',
+    '  border-radius: 12px; box-shadow: var(--dsh-mem-shadow-pop);',
+    '}',
+    '.dsh-mem-sub::before {',
+    "  content: ''; position: absolute; left: -10px; top: 0; width: 10px; height: 100%;",
+    '}',
+    '.dsh-mem-subwrap:hover .dsh-mem-sub { display: block; }',
+    '.dsh-mem-subwrap .dsh-mem-pop-opt[aria-hidden="true"] { cursor: default; }',
+    // ── 记忆滑条（Codex 式内联展开，spec v2 §4.3）：grid-rows 0fr→1fr 原地长高；
+    //    灰胶囊轨 + accent-fill 填充 + 白圆钮 + 三停点 + 上方档位标签 ──
+    '.dsh-mem-sl-reveal {',
+    '  display: grid; grid-template-rows: 0fr; opacity: 0;',
+    '  transition: grid-template-rows .26s cubic-bezier(.2,.7,.3,1), opacity .2s ease;',
+    '}',
+    '.dsh-mem-sl-reveal.open { grid-template-rows: 1fr; opacity: 1; }',
+    '.dsh-mem-sl-inner { overflow: hidden; min-height: 0; }',
+    '.dsh-mem-sl-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--dsh-mem-text-3); padding: 10px 10px 6px; }',
+    '.dsh-mem-sl-track { position: relative; height: 26px; border-radius: 999px; background: var(--dsh-mem-bg-inset); cursor: pointer; margin: 0 10px 12px; touch-action: none; }',
+    '.dsh-mem-sl-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--dsh-mem-accent-fill); transition: width .18s ease; }',
+    '.dsh-mem-sl-dot { position: absolute; top: 50%; width: 4px; height: 4px; border-radius: 50%; background: var(--dsh-mem-dot); transform: translate(-50%,-50%); }',
+    '.dsh-mem-sl-thumb { position: absolute; top: 50%; width: 22px; height: 22px; border-radius: 50%; background: var(--dsh-mem-thumb); transform: translate(-50%,-50%); box-shadow: 0 1px 4px rgba(0,0,0,.28); cursor: grab; transition: left .18s ease; }',
+    '.dsh-mem-sl-thumb.dragging { transition: none; cursor: grabbing; box-shadow: 0 2px 10px rgba(0,0,0,.35); }',
+    '.dsh-mem-sl-thumb:focus-visible { outline: 2px solid var(--dsh-mem-accent); outline-offset: 2px; }',
     // ── 重建面板 ──（模态本体走 NModal：原生 Modal 优先，回退 rb-overlay/rb-modal）
     '.dsh-mem-rb-card {',
     '  border: 1px solid var(--dsh-mem-border); border-radius: 10px; background: var(--dsh-mem-bg-card);',
@@ -295,7 +347,7 @@ export function ensureThemeStyle() {
     '.dsh-mem-sinfo-sum { font-size: 11px; color: var(--dsh-mem-text-3); line-height: 16px; margin-top: 8px; }',
     // reduced-motion 兜底放样式表末尾：同特异性下后置声明才能压过上面的组件类
     '@media (prefers-reduced-motion: reduce) {',
-    '  .dsh-mem-root, .dsh-mem-root *, .dsh-mem-btn, .dsh-mem-input, .dsh-mem-select, .dsh-mem-rb-fill, .dsh-mem-scene-chev, .dsh-mem-sel-chev { transition: none; }',
+    '  .dsh-mem-root, .dsh-mem-root *, .dsh-mem-btn, .dsh-mem-input, .dsh-mem-select, .dsh-mem-rb-fill, .dsh-mem-scene-chev, .dsh-mem-sel-chev, .dsh-mem-sl-reveal, .dsh-mem-sl-fill, .dsh-mem-sl-thumb, .dsh-mem-subchev { transition: none; }',
     '  .dsh-mem-flow { animation: none; }',
     '}',
   ].join('\n');

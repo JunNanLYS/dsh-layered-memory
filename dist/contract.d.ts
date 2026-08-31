@@ -340,6 +340,12 @@ export interface SessionModeGetResponse {
     /** host 解析后的注入生效值（会话覆盖 ?? 全局开关）：pill 面文直接消费，
      *  client 无需另知全局开关。 */
     recallResolved: boolean;
+    /** 暂停恢复快照（UI 重构分散式）：进入 off 档时记录的暂停前范围与注入覆盖，
+     *  非 off 档为 null；旧 host 缺省该字段时 client 回退默认档显示。 */
+    resume?: {
+        scope: MemoryMode;
+        recall: boolean | null;
+    } | null;
 }
 export interface SessionModeSetRequest {
     sessionId: string;
@@ -355,6 +361,11 @@ export interface SessionModeSetResponse {
     recall: boolean | null;
     /** 设置后的注入生效值（client 面文直接消费；清除覆盖后由 host 告知解析结果）。 */
     recallResolved: boolean;
+    /** 同 get：暂停恢复快照（进入 off 时写入，恢复/覆盖变更时清空）。 */
+    resume?: {
+        scope: MemoryMode;
+        recall: boolean | null;
+    } | null;
 }
 /** dsh-memory/session-stats（悬浮卡信息区；热路径端点）。 */
 export interface SessionStatsRequest {

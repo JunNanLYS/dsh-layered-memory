@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { MemoryStats, SettingsGetResponse, SettingsSetRequest } from '../../../src/contract.js';
 import { fmtTime } from '../format.js';
-import { modeLabel } from '../pill/modes.js';
+import { modeLabel } from '../i18n.js';
 import type { RpcFn } from '../rpc.js';
 import { S } from '../styles.js';
 import { SwitchRow } from '../ui/controls.js';

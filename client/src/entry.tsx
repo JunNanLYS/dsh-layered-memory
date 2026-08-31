@@ -14,16 +14,19 @@
  *   factory(require) 返回 { apply, inject }（wrapper 由构建脚本生成）。
  */
 import type { MemoryClientCtx } from './env.js';
+import { MemoryChip } from './chat/MemoryChip.js';
+import { StatsSegment } from './chat/stats-segment.js';
+import { initI18n } from './i18n.js';
 import { MemoryPanel } from './panel.js';
-import { MemoryModePill } from './pill/MemoryModePill.js';
 import { makeRpc } from './rpc.js';
 
 export const inject = ['slots', 'connection'];
 
 export function apply(ctx: MemoryClientCtx) {
   const rpc = makeRpc(ctx);
+  initI18n(ctx);
 
-  // 设置 → 记忆：状态页（浏览器保持两族混合视图）
+  // 设置 → 记忆：记忆工作台（浏览器保持两族混合视图）
   ctx.slots.inject('settings.section', () => {
     return ctx.slots.register(
       {
@@ -37,9 +40,8 @@ export function apply(ctx: MemoryClientCtx) {
     );
   });
 
-  // 输入栏（模式选择器右侧）：会话记忆档位 pill + 滑动选择器
-  // （inject owner 实测为裸 sessionId 字符串——rc.8 的命名座位不随快照 props；
-  //  旧会话占用回填因此在 host 侧完成，见 recall.ts estimateRecallTokens）
+  // 输入栏左簇（权限预设芯片右侧）：会话记忆芯片——级联菜单（范围滑条 + 数据流）。
+  // （inject owner 实测为裸 sessionId 字符串——rc.8 的命名座位不随快照 props）
   ctx.slots.inject('conversation.input.left', () => {
     return ctx.slots.register(
       {
@@ -48,7 +50,20 @@ export function apply(ctx: MemoryClientCtx) {
         order: 100,
         inject: (sessionId: string) => ({ sessionId, rpc }),
       },
-      MemoryModePill,
+      MemoryChip,
+    );
+  });
+
+  // 输入框下方统计行（官方 stats 段之后）：待蒸馏遥测段（spec v2 §4.6）
+  ctx.slots.inject('conversation.composer.dock', () => {
+    return ctx.slots.register(
+      {
+        name: 'conversation.composer.dock',
+        id: 'dsh-memory-telemetry',
+        order: 5,
+        inject: (sessionId: string) => ({ sessionId, rpc }),
+      },
+      StatsSegment,
     );
   });
 }
