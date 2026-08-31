@@ -7,7 +7,7 @@ import type { Context } from '@deepseek-ai/cordis';
 // 纯类型导入：拉入 ctx.settings 的 Context 声明合并
 import type {} from '@deepseek-ai/dsh-settings';
 import Schema from '@deepseek-ai/schemastery';
-import { settingsNamespace, type SettingsScope } from '@deepseek-ai/dsh-settings';
+import type { SettingsScope } from '@deepseek-ai/dsh-settings';
 import { EFFORT_CHOICES } from './config.js';
 import type { MemoryLogger } from './types.js';
 
@@ -84,7 +84,9 @@ export interface LiveSettingsHandle {
   update(patch: Partial<MemoryLiveSettings>): Promise<void>;
 }
 
-const NS = settingsNamespace('dsh-memory');
+// 0.1.2-alpha 起 dsh-settings 不再导出 settingsNamespace 品牌 helper：
+// register 改为泛型字面量签名（编译期校验 kebab-case，品牌在服务内部解析）。
+const NS = 'dsh-memory';
 
 const ALWAYS_ON: MemoryLiveSettings = {
   enabled: true,

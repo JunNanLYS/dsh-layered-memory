@@ -56,7 +56,7 @@ export function registerMemoryRpc(ctx, cfg, stores, logger, status, live, modes,
                     error: { code: 'internal', message: err instanceof Error ? err.message : String(err), details: {} },
                 };
             }
-        }, { authority: 'loopback' });
+        });
         registeredImpl = connection;
         if (!active) {
             void dispose();
