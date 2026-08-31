@@ -220,9 +220,14 @@ export class L1Store {
     return applyDecayWeight(hits, this.decayHalfLifeDays, (h) => updatedAtById.get(h.id));
   }
 
-  /** 浏览列表（UI 用）：无关键词时按更新时间倒序分页。 */
-  list(opts: { type?: string; scene?: string; family?: string; limit: number; offset: number }): { items: MemoryRecord[]; total: number } {
+  /** 浏览列表（UI 用）：无关键词时按更新时间倒序分页；since 为 ISO 时间下限（可选）。 */
+  list(opts: { type?: string; scene?: string; family?: string; since?: string; limit: number; offset: number }): { items: MemoryRecord[]; total: number } {
     return this.db.listL1(opts);
+  }
+
+  /** 近 N 天逐日更新计数（工作台活动图；索引化 GROUP BY）。 */
+  countByDay(sinceIso: string): Array<{ day: string; n: number }> {
+    return this.db.countL1ByDay(sinceIso);
   }
 
   /** 场景名去重列表（UI 筛选器数据源）。 */

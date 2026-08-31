@@ -32,6 +32,7 @@ import type { StateStore } from './store/state.js';
 import type { MemoryFamily, MemoryLogger, MemoryMode } from './types.js';
 import { errDetail } from './util/filelog.js';
 import { snapshotTokenCost } from './token-cost.js';
+import { buildRuntimeInsights, buildWorkspaceOverview, collectAssetActivity, decodeCursor } from './workspace-aggregates.js';
 
 const require = createRequire(import.meta.url);
 export const PLUGIN_VERSION = (require('../package.json') as { version: string }).version;
@@ -68,6 +69,8 @@ export interface SessionInfoSource {
   l0Count(sessionId: string): Promise<number>;
   /** 检索能力位（hybrid / keyword 降级判定）。 */
   capabilities(): { ftsSearch: boolean; vectorSearch: boolean };
+  /** 全量会话召回统计（工作台洞察聚合；缺省 = 装配未提供，洞察召回区隐藏计数）。 */
+  recallStatsAll?(): RecallSessionStats[];
 }
 
 // MemoryStats 与全部端点响应形状已迁入契约单一事实源（src/contract.ts）——
@@ -281,6 +284,44 @@ async function handleEndpoint(endpoint: string, payload: unknown, deps: Endpoint
   switch (endpoint) {
     case 'dsh-memory/stats':
       return buildStats(cfg, stores, status);
+
+    // ── 工作台聚合（UI 重构分散式；只读，装配见 workspace-aggregates.ts） ──
+    case 'dsh-memory/workspace-overview': {
+      const base = await buildStats(cfg, stores, status);
+      const caps = sessionInfo?.capabilities();
+      const retrieval = caps
+        ? caps.vectorSearch
+          ? caps.ftsSearch
+            ? 'hybrid'
+            : 'vector'
+          : caps.ftsSearch
+            ? 'keyword'
+            : 'none'
+        : null;
+      const weekWin = snapshotTokenCost('day', 0).windows.find((w) => w.range === 'week');
+      return buildWorkspaceOverview(stores, base, weekWin && weekWin.calls > 0 ? weekWin : null, retrieval);
+    }
+
+    case 'dsh-memory/asset-activity': {
+      const p = (payload ?? {}) as { query?: string; kind?: string; family?: string; since?: number; limit?: number; cursor?: string | null };
+      if (p.query !== undefined && p.query.length > 4096) throw new Error('query 过长（≤4096 字符）');
+      const kind = p.kind === 'l1' || p.kind === 'l2' || p.kind === 'l3' ? p.kind : '';
+      const family = p.family === 'chat' || p.family === 'work' ? p.family : '';
+      const since = Number(p.since) > 0 ? Number(p.since) : 0;
+      const limit = Math.min(Math.max(Number(p.limit) || 30, 1), 100);
+      const offset = Math.min(decodeCursor(typeof p.cursor === 'string' ? p.cursor : null), 1_000_000);
+      return collectAssetActivity(stores, {
+        query: (p.query ?? '').trim(),
+        kind,
+        family,
+        sinceMs: since,
+        limit,
+        offset,
+      });
+    }
+
+    case 'dsh-memory/runtime-insights':
+      return buildRuntimeInsights(stores, sessionInfo, modes, live);
 
     case 'dsh-memory/token-cost': {
       const p = (payload ?? {}) as { granularity?: string; rangeDays?: number };

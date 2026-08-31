@@ -40,6 +40,15 @@ export class PersonaStore {
     return stripSceneNavigation(raw).trim() || undefined;
   }
 
+  /** 文件 mtime（epoch ms；无画像文件 null）——工作台资产活动流的 L3 时间源。 */
+  async mtime(): Promise<number | null> {
+    try {
+      return (await fs.stat(this.file)).mtimeMs;
+    } catch {
+      return null;
+    }
+  }
+
   /** 写入正文（保留已有导航段则拼回尾部）。 */
   async write(body: string): Promise<void> {
     const raw = await readTextIfExists(this.file);
