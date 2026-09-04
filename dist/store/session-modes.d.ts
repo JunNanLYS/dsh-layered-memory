@@ -1,4 +1,5 @@
 import type { MemoryLogger, MemoryMode } from '../types.js';
+import type { RecallOverride } from '../contract.js';
 export declare function isMemoryMode(v: unknown): v is MemoryMode;
 export declare class SessionModeStore {
     private readonly defaultMode;
@@ -17,22 +18,25 @@ export declare class SessionModeStore {
     get default(): MemoryMode;
     /** 同步读取：未设置过的会话返回默认档。 */
     get(sessionId: string): MemoryMode;
-    /** 会话级注入覆盖原始值（#38）：undefined = 未覆盖，跟随全局。 */
-    getRecall(sessionId: string): boolean | undefined;
-    /** 解析后的注入开关：会话覆盖 ?? 全局运行时开关（部署级 cfg.recall.enabled
-     *  与主闸 s.enabled 不经此处，仍按既有硬门生效——覆盖打不穿部署上限）。 */
-    resolvedRecall(sessionId: string, globalRecall: boolean): boolean;
-    /** 设置会话级注入覆盖（#38；undefined = 清除覆盖跟随全局。写穿持久化）。 */
-    setRecall(sessionId: string, recall: boolean | undefined): void;
+    /** 会话级注入覆盖原始值（#38/persona）：undefined = 未覆盖，跟随全局。 */
+    getRecall(sessionId: string): RecallOverride | undefined;
+    /** 解析后的注入生效档位：会话覆盖 ?? 全局（true → 读写 / false → 只写）。
+     *  覆盖支持 'persona'（仅画像：跳过 L1 动态召回、保留稳定区注入），
+     *  全局开关（settings 布尔）不产生 persona——persona 是会话级专属语义。
+     *  部署级 cfg.recall.enabled 与主闸 s.enabled 不经此处，仍按既有硬门生效。 */
+    resolvedRecall(sessionId: string, globalRecall: boolean): RecallOverride;
+    /** 设置会话级注入覆盖（#38/persona；undefined = 清除覆盖跟随全局。写穿持久化）。 */
+    setRecall(sessionId: string, recall: RecallOverride | undefined): void;
     /** 注册档位切换回调（同步调用；回调异常只记日志不阻断写穿）。 */
     setModeChangeHandler(cb: (sessionId: string, oldMode: MemoryMode, newMode: MemoryMode) => void): void;
     /** 暂停恢复快照（无则 null）。 */
     getResume(sessionId: string): {
         scope: 'auto' | 'chat' | 'work';
-        recall: boolean | null;
+        recall: boolean | 'persona' | null;
     } | null;
     /** 停用侧分布（工作台洞察，只读计数）：off = 档位暂停会话；wo = 注入覆盖只写
-     *  （recall=false 且档位未停——两态互斥计数，与召回四因子短路序对齐）。 */
+     *  （recall=false 且档位未停——两态互斥计数，与召回四因子短路序对齐）。
+     *  persona（仅画像）属读侧降级而非停用，不计入任一停用态。 */
     countStates(): {
         off: number;
         wo: number;

@@ -26,8 +26,9 @@
   图标色 = **`var(--dsw-alias-label-caption)`**（源码原令牌；fallback 浅 #ADB2B8 /
   暗 #81858C 为实测值）；**展开态旋转 180°**，过渡 `transform .12s`（默认 ease）——
   与 `.Sh0Q9G_chevronOpen` 逐字一致。
-- 文案 = 解析真值（live）：`记忆 · {智能|日常|工作}`（注入生效）/ `记忆 · 只写`
-  （recallResolved=false）/ `记忆 · 暂停`（off 档，前置灰点）/ `记忆 · 降级`（warn 点）。
+- 文案 = 解析真值（live）：`记忆 · {智能|日常|工作}`（注入生效）/ `记忆 · 仅画像`
+  （recallResolved='persona'）/ `记忆 · 只写`（recallResolved=false）/
+  `记忆 · 暂停`（off 档，前置灰点）/ `记忆 · 降级`（warn 点）。
 - 暂停档显示的档位 = host 暂停快照 `resume.scope`（暂停前范围），无快照回退默认档。
 
 ## 级联菜单（.dsh-mem-menu）
@@ -43,12 +44,12 @@
   guarded require + 内联同款 path 回退），色 label-caption，展开旋转 90° 向下、
   过渡 transform .12s——插件内不再有文字箭头符号）。
 - **范围行点击** = 原地展开内联滑条（见下）；再点收起。展开期间数据流行 `hidden`。
-- **数据流行** hover 二级子面板（`.dsh-mem-sub`，右浮）：跟随全局✓/读写/只写/暂停。
+- **数据流行** hover 二级子面板（`.dsh-mem-sub`，右浮）：跟随全局✓/读写/仅画像/只写/暂停。
   仅 hover 揭示、点击不固定；`::before` 10px 桥接热区保证慢速移动不断链。
   键盘通路：触发行 tabbable（`tabIndex=0`），`:focus-within` 同样揭示子面板；
   鼠标 `mousedown` 被 `preventDefault`（点击不夺焦 = 不固定）。子项 `menuitemradio`。
 - **子卡片视口适配**：默认 `top:-5px` 下挂；菜单打开时量行 rect，
-  行下方（`innerHeight-8` 内）放不下整卡（≈4×40+10）即加 `.flip` 翻转为
+  行下方（`innerHeight-8` 内）放不下整卡（≈5×40+10）即加 `.flip` 翻转为
   `bottom:-5px` 上翻，并按可用侧夹持 `maxHeight`
   （`overflow-y:auto`）。滚动(capture)/resize 重算。输入栏贴视口底的结构下
   行下方恒 ≈120px < 170px，**上翻是常态路径**；桥接热区横跨卡片全高，
@@ -56,9 +57,9 @@
   上弹底锚语义），宿主原语缺失时本地回退（`rect.bottom - 12` 同式）；**仅当限高
   真正收紧（< cap，矮窗口）才开 `overflow-y:auto`**——菜单是子卡片的裁剪祖先，
   常态开滚动会把横向外浮的绝对定位子卡片整个裁掉。
-- wire 映射：follow→`recall:null`、rw→`recall:true`、wo→`recall:false`、
-  paused→`mode:'off'`（host 侧写入暂停快照 `{scope, recall}`；恢复 = 单次 RPC
-  `{mode: resume.scope, recall: resume.recall}` 合并提交）。
+- wire 映射：follow→`recall:null`、rw→`recall:true`、persona→`recall:'persona'`、
+  wo→`recall:false`、paused→`mode:'off'`（host 侧写入暂停快照 `{scope, recall}`；
+  恢复 = 单次 RPC `{mode: resume.scope, recall: resume.recall}` 合并提交）。
 - 乐观更新带 seq token 回滚；host 旧版无 `resume` 字段时客户端回退默认档显示。
 
 ## 内联滑条（Codex 式，.dsh-mem-sl-*）
@@ -82,6 +83,6 @@
 ## 交互事实
 
 - 芯片位置 = `＋` / Read Only / 记忆（原生顺序）；菜单两行 + 值 + 图标箭头均正常；
-- 滑条键盘切档芯片文字实时联动；数据流 hover 子面板四态 + ✓ 当前项；
-- 子卡片上翻后四选项全可见，`maxHeight` 夹持与 resize 重算生效；
+- 滑条键盘切档芯片文字实时联动；数据流 hover 子面板五态 + ✓ 当前项；
+- 子卡片上翻后五选项全可见，`maxHeight` 夹持与 resize 重算生效；
 - 全部文案走字典（宿主语言切换生效）；reduced-motion 压制全部过渡。

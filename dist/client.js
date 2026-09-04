@@ -303,11 +303,13 @@ var __defProp = Object.defineProperty;
 		  "scope.work": "工作",
 		  "flow.follow": "跟随全局",
 		  "flow.rw": "读写",
+		  "flow.persona": "仅画像",
 		  "flow.wo": "只写",
 		  "flow.paused": "暂停",
 		  "row.scope": "记忆范围",
 		  "row.flow": "数据流",
 		  "chip.base": "记忆",
+		  "chip.persona": "仅画像",
 		  "chip.wo": "只写",
 		  "chip.paused": "暂停",
 		  "chip.degraded": "降级",
@@ -465,11 +467,13 @@ var __defProp = Object.defineProperty;
 		  "scope.work": "Work",
 		  "flow.follow": "Follow global",
 		  "flow.rw": "Read & write",
+		  "flow.persona": "Persona only",
 		  "flow.wo": "Write only",
 		  "flow.paused": "Paused",
 		  "row.scope": "Memory scope",
 		  "row.flow": "Data flow",
 		  "chip.base": "Memory",
+		  "chip.persona": "persona-only",
 		  "chip.wo": "write-only",
 		  "chip.paused": "paused",
 		  "chip.degraded": "degraded",
@@ -1221,7 +1225,7 @@ var __defProp = Object.defineProperty;
 		  }
 		})();
 		var SLIDER_SCOPES = ["chat", "work", "auto"];
-		var FLOW_KEYS = ["follow", "rw", "wo", "paused"];
+		var FLOW_KEYS = ["follow", "rw", "persona", "wo", "paused"];
 		var SUB_EST = FLOW_KEYS.length * 40 + 10;
 		var scopeLabel = (k) => t("scope." + k);
 		var flowLabel = (k) => t("flow." + k);
@@ -1368,7 +1372,7 @@ var __defProp = Object.defineProperty;
 		      return;
 		    }
 		    const targetScope = paused ? resumeScope ?? "auto" : mode;
-		    const recallVal = k === "rw" ? true : k === "wo" ? false : null;
+		    const recallVal = k === "rw" ? true : k === "persona" ? "persona" : k === "wo" ? false : null;
 		    if (!paused && recallVal === recall) return;
 		    const prevMode = mode;
 		    const prevRecall = recall;
@@ -1406,9 +1410,9 @@ var __defProp = Object.defineProperty;
 		  const menuClamped = menuMaxH < MENU_MAX_H;
 		  const paused = mode === "off";
 		  const scope = paused ? resumeScope ?? "auto" : mode ?? "auto";
-		  const flow = paused ? "paused" : recall === false ? "wo" : recall === true ? "rw" : "follow";
+		  const flow = paused ? "paused" : recall === "persona" ? "persona" : recall === false ? "wo" : recall === true ? "rw" : "follow";
 		  const shownScope = previewScope ?? scope;
-		  const label = paused ? `${t("chip.base")} · ${t("chip.paused")}` : `${t("chip.base")} · ${t("scope." + shownScope)}${recallResolved ? "" : " · " + t("chip.wo")}`;
+		  const label = paused ? `${t("chip.base")} · ${t("chip.paused")}` : `${t("chip.base")} · ${t("scope." + shownScope)}${recallResolved === "persona" ? " · " + t("chip.persona") : recallResolved ? "" : " · " + t("chip.wo")}`;
 		  const toggleMenu = () => {
 		    if (error) load();
 		    setSliderOpen(false);

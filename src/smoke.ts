@@ -674,6 +674,15 @@ async function main(): Promise<void> {
       assert(smKeep.mode === 'chat' && smKeep.recall === false, '缺省 recall 切档不丢覆盖（档位与注入正交）');
       const smC = await call('dsh-memory/session-mode-set', { sessionId: 'sess-r0', mode: 'chat', recall: null }) as never as { recall: boolean | null; recallResolved: boolean };
       assert(smC.recall === null && smC.recallResolved === true, '显式 null 清除覆盖并回到全局解析值');
+      // persona-only 覆盖（仅画像）：写入/读回/清除三段往返
+      const smP = await call('dsh-memory/session-mode-set', { sessionId: 'sess-r0', mode: 'chat', recall: 'persona' }) as never as { mode: string; recall: boolean | 'persona' | null; recallResolved: boolean | 'persona' };
+      assert(smP.recall === 'persona' && smP.recallResolved === 'persona', 'session-mode-set 写入仅画像覆盖并回传 host 解析值');
+      const smPg = await call('dsh-memory/session-mode-get', { sessionId: 'sess-r0' }) as never as { recall: boolean | 'persona' | null; recallResolved: boolean | 'persona' };
+      assert(smPg.recall === 'persona' && smPg.recallResolved === 'persona', 'session-mode-get 读回仅画像覆盖');
+      let badRecall = false;
+      try { await call('dsh-memory/session-mode-set', { sessionId: 'sess-r0', mode: 'chat', recall: 'persona2' }); } catch { badRecall = true; }
+      assert(badRecall, 'session-mode-set 拒绝非法注入覆盖（persona 之外的字符串）');
+      await call('dsh-memory/session-mode-set', { sessionId: 'sess-r0', mode: 'chat', recall: null });
 
       // session-stats（悬浮卡信息区热路径端点）：会话档位联动 + 召回统计 + 攒批/挂起视图 + 索引计数
       const sst = await call('dsh-memory/session-stats', { sessionId: 'sess-x' }) as never as {
@@ -1006,6 +1015,23 @@ async function main(): Promise<void> {
       await ms2.init();
       assert(ms2.get('s1') === 'off' && ms2.get('s2') === 'work', '档位持久化重载');
       assert(ms2.get('nope') === 'chat', '默认档随部署配置变化');
+
+      // 11b2. persona-only 覆盖：setRecall 三态（'persona'/false/true）写穿 + 重载保持 + resolvedRecall
+      ms.setRecall('p1', 'persona');
+      ms.setRecall('p2', false);
+      ms.setRecall('p3', true);
+      assert(ms.resolvedRecall('p1', true) === 'persona', 'persona 覆盖解析为 persona（不受全局开影响）');
+      assert(ms.resolvedRecall('p2', true) === false && ms.resolvedRecall('p3', false) === true, '布尔覆盖压过全局（只写/读写语义不变）');
+      assert(ms.resolvedRecall('nope', true) === true && ms.resolvedRecall('nope', false) === false, '未覆盖会话解析跟随全局');
+      await ms.flush();
+      const ms3 = new SessionModeStore(tmpM, 'auto');
+      await ms3.init();
+      assert(ms3.getRecall('p1') === 'persona' && ms3.getRecall('p2') === false && ms3.getRecall('p3') === true, 'persona/布尔覆盖持久化重载');
+      // 非法值落盘 → 按损坏丢弃（= 跟随全局），不崩
+      ms3.setRecall('p1', undefined);
+      ms3.setRecall('p2', undefined);
+      ms3.setRecall('p3', undefined);
+      await ms3.flush();
 
       // 11c. 分族检索（FTS 路径）+ 去重候选族隔离 + DB 回填迁移
       const db = new MemoryDb(path.join(tmpM, 'memory.db'), 0);
@@ -1811,6 +1837,32 @@ async function main(): Promise<void> {
       );
       assert(d5e.kind === 'enter' && d5e.messages.length === 1, '跟随全局：全局关时不注入');
       liveGlobalRecall = true;
+
+      // ⑤f persona-only 覆盖（仅画像）：跳过 L1 动态召回注入与检索，
+      //   但稳定区画像/导航保留（与只写 recall=false 物理离场相反——persona 语义核心）
+      personaText = '用户偏好中文回答';
+      recallT5.invalidateProfile(); // 画像走缓存，主动失效后等首刷
+      await waitFor(() => (contextText['memory:profile']() ?? '').includes('用户偏好中文回答'), 'persona 画像缓存刷新');
+      modesT5.setRecall('agent-t5', 'persona');
+      const d5f = await preStep!(
+        { agent: { id: 'agent-t5' }, messages: [userMsg] as never, signal: { aborted: false } },
+        () => Promise.resolve(enter([userMsg])),
+      );
+      assert(d5f.kind === 'enter' && d5f.messages.length === 1, 'persona 会话不注入 L1（消息侧召回跳过）');
+      assert(searchCalls === 3, `persona 会话不发起检索（${searchCalls}）`);
+      const profile5f = contextText['memory:profile']();
+      assert(
+        profile5f.includes('<user-persona>') && profile5f.includes('用户偏好中文回答'),
+        'persona 会话稳定区保留（画像注入）',
+      );
+      // ⑤g persona → 只写：稳定区物理离场（读侧降级到全停的分界）
+      modesT5.setRecall('agent-t5', false);
+      assert((contextText['memory:profile']() ?? '') === '', '只写会话稳定区离场（persona → false 分界）');
+      // ⑤h persona → 读写恢复
+      modesT5.setRecall('agent-t5', true);
+      assert((contextText['memory:profile']() ?? '').includes('用户偏好中文回答'), '读写会话稳定区恢复注入');
+      modesT5.setRecall('agent-t5', undefined);
+      personaText = '';
 
       // 旧文件兼容：无 recall 键的存量 entry 载入 → 覆盖空、解析跟随全局
       await fs.writeFile(

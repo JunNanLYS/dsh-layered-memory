@@ -238,8 +238,10 @@ export function registerRecall(
         try {
           const s = live.get();
           const mode = modes.get(payload.agent.id);
-          // 三级读闸：主闸 → off 档（完全隐身）→ 注入开关（#38：会话覆盖 ?? 全局）
-          if (!s.enabled || mode === 'off' || !modes.resolvedRecall(payload.agent.id, s.recall)) return decision;
+          // 三级读闸：主闸 → off 档（完全隐身）→ 注入覆盖（#38 会话覆盖 ?? 全局）。
+          // persona（仅画像）只跳过 L1 动态召回注入（稳定区由 composeStableText 单独放行），
+          // 因此这里必须是 resolved === true 才注入——'persona'/false 都直接透传。
+          if (!s.enabled || mode === 'off' || modes.resolvedRecall(payload.agent.id, s.recall) !== true) return decision;
           // 只在有新的用户来源消息的步骤注入（轮首 claim 或 steering 插话）；纯工具步透传
           const hasNewUserMessage = decision.messages.some(
             (m) => (m as { source?: { kind?: string } }).source?.kind === 'user',
@@ -340,8 +342,9 @@ export function registerRecall(
    */  const composeStableText = (agentId: string): string => {
     const s = live.get();
     const mode = modes.get(agentId);
-    // 与 pre-step 同款三级读闸（#38）：主闸 → off 档 → 注入开关；空串即物理离场
-    if (!s.enabled || mode === 'off' || !modes.resolvedRecall(agentId, s.recall)) return '';
+    // 与 pre-step 同款读闸但语义不同（#38/persona）：只写（false）才物理离场；
+    // persona（仅画像）仍注入稳定区画像/导航——它只跳过 L1 动态召回，不动稳定区。
+    if (!s.enabled || mode === 'off' || modes.resolvedRecall(agentId, s.recall) === false) return '';
     // auto 档：两族按类别归组（画像/导航各一个标签，域内 <domain> 分块）；纯档：单族原格式
     const body =
       mode === 'auto'

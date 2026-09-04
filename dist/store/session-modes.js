@@ -13,6 +13,10 @@ const MAX_ENTRIES = 500;
 export function isMemoryMode(v) {
     return typeof v === 'string' && MODES.includes(v);
 }
+/** recall 覆盖值守卫：true/'persona'/false 三者之外一律视为损坏（丢弃 = 跟随全局）。 */
+function isRecallOverride(v) {
+    return v === true || v === false || v === 'persona';
+}
 export class SessionModeStore {
     defaultMode;
     logger;
@@ -44,12 +48,12 @@ export class SessionModeStore {
                 continue;
             this.entries.set(sid, {
                 mode: entry.mode,
-                // 非布尔视为损坏丢弃（= 跟随全局）；旧文件无此键同款兼容
-                recall: typeof entry.recall === 'boolean' ? entry.recall : undefined,
-                // 恢复快照：scope 必须是非 off 档、recall 必须是布尔或 null，否则整块丢弃
+                // 非三态值视为损坏丢弃（= 跟随全局）；旧文件只有布尔或缺失该键，同款兼容
+                recall: isRecallOverride(entry.recall) ? entry.recall : undefined,
+                // 恢复快照：scope 必须是非 off 档、recall 必须是三态或 null，否则整块丢弃
                 resume: entry.resume &&
                     ['auto', 'chat', 'work'].includes(entry.resume.scope) &&
-                    (typeof entry.resume.recall === 'boolean' || entry.resume.recall === null)
+                    (isRecallOverride(entry.resume.recall) || entry.resume.recall === null)
                     ? { scope: entry.resume.scope, recall: entry.resume.recall }
                     : undefined,
                 updatedAt: entry.updatedAt ?? now,
@@ -66,16 +70,18 @@ export class SessionModeStore {
     get(sessionId) {
         return this.entries.get(sessionId)?.mode ?? this.loaded;
     }
-    /** 会话级注入覆盖原始值（#38）：undefined = 未覆盖，跟随全局。 */
+    /** 会话级注入覆盖原始值（#38/persona）：undefined = 未覆盖，跟随全局。 */
     getRecall(sessionId) {
         return this.entries.get(sessionId)?.recall;
     }
-    /** 解析后的注入开关：会话覆盖 ?? 全局运行时开关（部署级 cfg.recall.enabled
-     *  与主闸 s.enabled 不经此处，仍按既有硬门生效——覆盖打不穿部署上限）。 */
+    /** 解析后的注入生效档位：会话覆盖 ?? 全局（true → 读写 / false → 只写）。
+     *  覆盖支持 'persona'（仅画像：跳过 L1 动态召回、保留稳定区注入），
+     *  全局开关（settings 布尔）不产生 persona——persona 是会话级专属语义。
+     *  部署级 cfg.recall.enabled 与主闸 s.enabled 不经此处，仍按既有硬门生效。 */
     resolvedRecall(sessionId, globalRecall) {
         return this.entries.get(sessionId)?.recall ?? globalRecall;
     }
-    /** 设置会话级注入覆盖（#38；undefined = 清除覆盖跟随全局。写穿持久化）。 */
+    /** 设置会话级注入覆盖（#38/persona；undefined = 清除覆盖跟随全局。写穿持久化）。 */
     setRecall(sessionId, recall) {
         const entry = this.entries.get(sessionId);
         this.entries.set(sessionId, {
@@ -95,7 +101,8 @@ export class SessionModeStore {
         return this.entries.get(sessionId)?.resume ?? null;
     }
     /** 停用侧分布（工作台洞察，只读计数）：off = 档位暂停会话；wo = 注入覆盖只写
-     *  （recall=false 且档位未停——两态互斥计数，与召回四因子短路序对齐）。 */
+     *  （recall=false 且档位未停——两态互斥计数，与召回四因子短路序对齐）。
+     *  persona（仅画像）属读侧降级而非停用，不计入任一停用态。 */
     countStates() {
         let off = 0;
         let wo = 0;
