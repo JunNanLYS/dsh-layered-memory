@@ -147,7 +147,7 @@ trajectory view):
 
 <p align="center">
   <img src="./assets/img/MemoryChip.png" width="72%"
-       alt="Session memory chip and cascade menu in dark theme: in the composer-left cluster, right of the Read Only chip sits the "Memory · Auto ▾" chip; clicking opens a rounded popover menu upward with two rows "Memory scope  Auto ›" / "Data flow  Follow global ›", and hovering the data-flow row reveals a secondary panel listing Follow global ✓ / Read & write / Write only / Paused">
+       alt="Session memory chip and cascade menu in dark theme: in the composer-left cluster, right of the Read Only chip sits the "Memory · Auto ▾" chip; clicking opens a rounded popover menu upward with two rows "Memory scope  Auto ›" / "Data flow  Follow global ›", and hovering the data-flow row reveals a secondary panel listing Follow global ✓ / Read & write / Persona only / Write only / Paused">
 </p>
 
 The conversation side is a **distributed memory surface** — each kind of information
@@ -155,12 +155,14 @@ lives in the native host seat designed for it; the plugin no longer owns a strip
 
 - **Memory chip** (composer-left cluster, right of the Read Only chip): a borderless
   `Memory · {Auto|Personal|Work}` chip in official composer-chip grammar; the text is
-  the resolved truth — `Memory · write-only` (injection off), `Memory · paused`
+  the resolved truth — `Memory · persona-only` (read narrowed to the profile stable
+  section), `Memory · write-only` (injection off), `Memory · paused`
   (gray dot), `Memory · degraded` (amber dot); zh/en bilingual, following the host
   language.
 - **Cascade menu** (click the chip, opens upward): two rows, `Memory scope {value} ›`
   and `Data flow {value} ›`; data-flow options live in a **hover-only secondary
-  panel** (Follow global / Read & write / Write only / Paused) — no click-pinning,
+  panel** (Follow global / Read & write / Persona only / Write only / Paused) — no
+  click-pinning,
   with bridge hot-zones so slow mouse travel never breaks the hover chain; full
   keyboard path (arrow-key roving + focus reveal).
 - **Inline slider** (click "Memory scope", grows in place): three stops
@@ -183,6 +185,18 @@ lives in the native host seat designed for it; the plugin no longer owns a strip
   toggle in Automation. Ideal for debug/eval/sensitive sessions that should absorb
   without interference. Orthogonal to Paused: paused is full stealth (capture off
   too), while write-only keeps the "in" and gates the "out".
+- **Persona-only sessions**: pick "Persona only" in the data-flow panel for a
+  **persona-only session** — a read-side narrowing between read/write and write-only:
+  capture and distillation continue as usual, but **L1 dynamic recall injection is
+  skipped** (relevant memories are not auto-prefixed into every turn), while the L3
+  persona and scene-navigation stable section is still injected and the model may
+  still actively call `memory_search` and the other read tools. Ideal for sessions
+  with self-sufficient context (terminal CLI, long-running task desks) where automatic
+  recall would be noise, but stable profile context and on-demand lookup are still
+  wanted. Read-side gradient: read/write (recall + persona) → persona-only (persona,
+  no dynamic recall) → write-only (neither injected). The override persists per
+  session and shares the #38 injection-override slot (new `'persona'` value; legacy
+  booleans true/false migrate transparently).
 
 ## UI Preview
 

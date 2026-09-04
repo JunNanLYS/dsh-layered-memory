@@ -89,6 +89,13 @@ export interface MemoryLiveSettings {
 /** 召回停用原因（session-stats recall.enabled=false 时带出；短路序第一个为假的因子）。 */
 export type RecallDisabledReason = 'deploy' | 'global' | 'session' | 'mode';
 
+/** 会话级注入覆盖值（#38 只写 + persona 仅画像）：
+ *  - true     = 读写：L1 召回 + 稳定区画像/导航全注入；
+ *  - 'persona' = 仅画像：跳过 L1 动态召回，只保留稳定区（画像/场景导航/工具指南）；
+ *  - false    = 只写：读侧全停（画像与召回都不注入）。
+ *  host 侧存储/解析（session-modes.ts）与 client 面文共用本别名。 */
+export type RecallOverride = boolean | 'persona';
+
 /** 单会话召回统计（悬浮卡信息区数据源；口径见 recall.ts 注释）。 */
 export interface RecallSessionStats {
   /** 发生过召回检索的轮次数（含零命中、全量压制与超时）。 */
@@ -452,32 +459,35 @@ export interface SessionModeGetResponse {
   sessionId: string;
   mode: MemoryMode;
   defaultMode: MemoryMode;
-  /** 会话级注入覆盖（#38 只写不读）：null = 未覆盖（跟随全局）——线上 JSON 用 null
-   *  不用 undefined（序列化丢包）。 */
-  recall: boolean | null;
+  /** 会话级注入覆盖（#38 只写不读 + persona 仅画像）：null = 未覆盖（跟随全局）
+   *  ——线上 JSON 用 null 不用 undefined（序列化丢包）。
+   *  - true    = 读写：L1 召回 + 稳定区画像/导航全注入；
+   *  - 'persona' = 仅画像：跳过 L1 动态召回，只保留稳定区（画像/场景导航/工具指南）；
+   *  - false   = 只写：读侧全停（不注入画像也不注入召回）。 */
+  recall: boolean | 'persona' | null;
   /** host 解析后的注入生效值（会话覆盖 ?? 全局开关）：pill 面文直接消费，
    *  client 无需另知全局开关。 */
-  recallResolved: boolean;
+  recallResolved: boolean | 'persona';
   /** 暂停恢复快照（UI 重构分散式）：进入 off 档时记录的暂停前范围与注入覆盖，
    *  非 off 档为 null；旧 host 缺省该字段时 client 回退默认档显示。 */
-  resume?: { scope: MemoryMode; recall: boolean | null } | null;
+  resume?: { scope: MemoryMode; recall: boolean | 'persona' | null } | null;
 }
 export interface SessionModeSetRequest {
   sessionId: string;
   mode: MemoryMode;
-  /** 会话级注入覆盖：布尔 = 设置覆盖；显式 null = 清除（跟随全局）；缺省 = 不动
-   *  （旧 client 纯切档兼容，覆盖不丢）。mode 与 recall 可独立设置。 */
-  recall?: boolean | null;
+  /** 会话级注入覆盖：布尔/'persona' = 设置覆盖；显式 null = 清除（跟随全局）；
+   *  缺省 = 不动（旧 client 纯切档兼容，覆盖不丢）。mode 与 recall 可独立设置。 */
+  recall?: boolean | 'persona' | null;
 }
 export interface SessionModeSetResponse {
   sessionId: string;
   mode: MemoryMode;
   /** 设置后的覆盖态（null = 跟随全局）。 */
-  recall: boolean | null;
+  recall: boolean | 'persona' | null;
   /** 设置后的注入生效值（client 面文直接消费；清除覆盖后由 host 告知解析结果）。 */
-  recallResolved: boolean;
+  recallResolved: boolean | 'persona';
   /** 同 get：暂停恢复快照（进入 off 时写入，恢复/覆盖变更时清空）。 */
-  resume?: { scope: MemoryMode; recall: boolean | null } | null;
+  resume?: { scope: MemoryMode; recall: boolean | 'persona' | null } | null;
 }
 
 /** dsh-memory/session-stats（悬浮卡信息区；热路径端点）。 */

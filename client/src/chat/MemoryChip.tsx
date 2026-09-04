@@ -3,7 +3,7 @@
  * 文字即解析真值（范围 / 只写 / 暂停 / 降级）。点击弹出级联菜单：
  *  - 「记忆范围」行：点击在菜单内联展开记忆滑条（grid-rows 生长动画），拖拽/点轨
  *    切换 日常/工作/智能，芯片文字随拖拽实时联动；滑条展开期间数据流行隐藏；
- *  - 「数据流」行：hover 子面板四态（跟随全局/读写/只写/暂停），仅 hover 展开
+ *  - 「数据流」行：hover 子面板五态（跟随全局/读写/仅画像/只写/暂停），仅 hover 展开
  *    （桥接热区防慢速断链），点击行本身不固定子面板。
  * 占用明细不在会话面（唯一展示处 = 官方上下文环面板的记忆分项小节）。
  */
@@ -31,9 +31,12 @@ const PRIMS = (() => {
 /** 范围滑条的三档（左→右即滑轨顺序）；off 不在滑条上——暂停属于数据流维度。 */
 const SLIDER_SCOPES = ['chat', 'work', 'auto'] as const;
 type ScopeKey = (typeof SLIDER_SCOPES)[number];
-const FLOW_KEYS = ['follow', 'rw', 'wo', 'paused'] as const;
+const FLOW_KEYS = ['follow', 'rw', 'persona', 'wo', 'paused'] as const;
 type FlowKey = (typeof FLOW_KEYS)[number];
-/** 数据流子卡片设计高度估算：行 min-height 40 × 4 + 内衬 8 + 描边 2（视口翻转判定用）。 */
+/** 会话级注入覆盖值（与 host contract 的 RecallOverride 对应）：
+ *  true = 读写 | 'persona' = 仅画像（跳过 L1 召回、保留画像/导航）| false = 只写 | null = 跟随全局。 */
+type RecallVal = boolean | 'persona' | null;
+/** 数据流子卡片设计高度估算：行 min-height 40 × 5 + 内衬 8 + 描边 2（视口翻转判定用）。 */
 const SUB_EST = FLOW_KEYS.length * 40 + 10;
 
 const scopeLabel = (k: string): string => t('scope.' + k);
@@ -64,8 +67,8 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
   const rpc = props.rpc;
   const sessionId = props.sessionId || (props.session && props.session.sessionId);
   const [mode, setMode] = useState<string | null>(null); // null = 加载中
-  const [recall, setRecall] = useState<boolean | null>(null);
-  const [recallResolved, setRecallResolved] = useState(true);
+  const [recall, setRecall] = useState<RecallVal>(null);
+  const [recallResolved, setRecallResolved] = useState<boolean | 'persona'>(true);
   /** 暂停恢复快照（spec v2 §4.5）：host 记录的暂停前范围；旧 host 缺省时回退默认档。 */
   const [resumeScope, setResumeScope] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -200,8 +203,9 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
       });
   };
 
-  /** 数据流四态应用：暂停 = 切 off（host 记录恢复快照）；从暂停恢复 = 恢复范围 +
-   *  该数据流态合并提交（单 RPC 无部分提交）。 */
+  /** 数据流五态应用：仅画像（persona）= 跳过 L1 动态召回但保留画像/导航注入；
+   *  暂停 = 切 off（host 记录恢复快照）；从暂停恢复 = 恢复范围 + 该数据流态合并提交
+   *  （单 RPC 无部分提交）。 */
   const applyFlow = (k: FlowKey) => {
     if (!rpc || !sessionId || mode === null) return;
     if (k === 'paused') {
@@ -209,7 +213,7 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
       return;
     }
     const targetScope = paused ? (resumeScope ?? 'auto') : (mode as string);
-    const recallVal: boolean | null = k === 'rw' ? true : k === 'wo' ? false : null;
+    const recallVal: RecallVal = k === 'rw' ? true : k === 'persona' ? 'persona' : k === 'wo' ? false : null;
     if (!paused && recallVal === recall) return; // 无变化
     const prevMode = mode;
     const prevRecall = recall;
@@ -254,12 +258,20 @@ export function MemoryChip(props: { rpc: RpcFn; sessionId?: string; session?: { 
 
   const paused = mode === 'off';
   const scope = paused ? (resumeScope ?? 'auto') : (mode ?? 'auto');
-  const flow: FlowKey = paused ? 'paused' : recall === false ? 'wo' : recall === true ? 'rw' : 'follow';
+  const flow: FlowKey = paused
+    ? 'paused'
+    : recall === 'persona'
+      ? 'persona'
+      : recall === false
+        ? 'wo'
+        : recall === true
+          ? 'rw'
+          : 'follow';
   const shownScope = previewScope ?? scope;
-  // 芯片文字 = 解析真值：暂停 > 只写 > 范围；拖拽预览期间范围实时跟随
+  // 芯片文字 = 解析真值：暂停 > 仅画像/只写（读侧收窄的语义点）> 范围；拖拽预览期间范围实时跟随
   const label = paused
     ? `${t('chip.base')} · ${t('chip.paused')}`
-    : `${t('chip.base')} · ${t('scope.' + shownScope)}${recallResolved ? '' : ' · ' + t('chip.wo')}`;
+    : `${t('chip.base')} · ${t('scope.' + shownScope)}${recallResolved === 'persona' ? ' · ' + t('chip.persona') : recallResolved ? '' : ' · ' + t('chip.wo')}`;
 
   const toggleMenu = () => {
     if (error) load();

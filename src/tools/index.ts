@@ -38,7 +38,9 @@ export function registerMemoryTools(
   if (!cfg.tools) return;
 
   /**
-   * 调用会话的检索族（auto → undefined 不过滤；off/只写 → null 表示整体禁用）。
+   * 调用会话的检索族（auto → undefined 不过滤；off → null 表示整体禁用；
+   *  persona（仅画像）→ 放行——它只关"自动 L1 召回注入"，模型主动工具检索不在其列；
+   *  只写（recall=false）→ null 整体拒读）。
    * fail-open：exec.agent 缺失（宿主调用路径未带 agent 标识）按全族检索放行——
    * 档位隔离依赖宿主正确传递 exec.agent.id，缺失只告警一次不拒绝工具调用。
    */
@@ -53,8 +55,9 @@ export function registerMemoryTools(
     }
     const mode = modes.get(agentId);
     if (mode === 'off') return null;
-    // 只写会话拒读（#38，T2 裁决）：与注入同属读维度，不拒则"不注入"从工具路径漏风
-    if (!modes.resolvedRecall(agentId, live.get().recall)) return null;
+    // 只写会话拒读（#38，T2 裁决）：与注入同属读维度，不拒则"不注入"从工具路径漏风。
+    // persona 只关自动注入：resolvedRecall 返回 'persona'（≠false）→ 放行，语义自洽。
+    if (modes.resolvedRecall(agentId, live.get().recall) === false) return null;
     return mode === 'auto' ? undefined : mode;
   };
 
