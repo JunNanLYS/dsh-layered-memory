@@ -258,10 +258,10 @@
 ## Gotchas（src 侧）
 
 - **直接 `node dist-smoke/smoke.js` 跑的可能是陈旧产物**：tsconfig exclude 了 `src/smoke.ts`，
-  `npm run build` 不产出 dist-smoke——`npm run smoke` 已前置 build:smoke 重建（CI 同链），但绕开
+  `pnpm run build` 不产出 dist-smoke——`pnpm run smoke` 已前置 build:smoke 重建（CI 同链），但绕开
   npm script 直跑 node 前须先重建。也可 `node --import tsx src/smoke.ts` 直接跑源码（需自装 tsx）。
   dist-smoke 也不拷资产：worker ping 测试在 `dist/embedding-worker.cjs` 缺失时自动跳过
-  （先 `npm run build` 再跑 smoke 才会真正执行该段）。
+  （先 `pnpm run build` 再跑 smoke 才会真正执行该段）。
 - smoke 里建的 `MemoryDb` 必须 `db.close()` 再删临时目录，否则 Windows 报 EBUSY（文件句柄未释放）。
 - `node:sqlite` 在启动 stdout 会打一条 ExperimentalWarning（Node 对 sqlite 模块的提示），
   无害，不要当成插件错误。

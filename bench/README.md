@@ -26,7 +26,7 @@ bench/
 
 ```bash
 # 1. 构建（bench profile 以 link: 指向本仓库，改代码后 build + 重跑即生效）
-npm run build
+pnpm run build
 
 # 2. 初始化 bench profile 并安装两个本地包（dsh rc.8 起全局安装、直接 `dsh`；
 #    老布局可用 DSH_BIN 覆盖入口路径）
@@ -186,7 +186,7 @@ report/compare 自动计算，也可独立跑 `node bench/harness/retrieval-metr
 
 ```bash
 # 改动前基线（首次正式跑的结果存 bench/baseline/）
-# ……修改插件、npm run build……
+# ……修改插件、pnpm run build……
 node bench/harness/run.mjs --arm A --repeats 3 --provider deepseek-official --model deepseek-v4-flash
 node bench/harness/compare.mjs bench/baseline/run-A bench/results/run-A-<新> [基线B 新B] --out compare.md
 ```

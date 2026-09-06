@@ -186,6 +186,6 @@ smoke 第 21 节机械断言：inline `borderRadius` 与 CSS `border-radius` 只
 6. **带 transition 的新类**：同步加进末尾 reduced-motion 压制名单（"动效"节）。
 7. ~~ES5 纯度~~（已废除：client 已迁 TS/TSX + esbuild，见 AGENTS.md 代码约定）。
 8. **可见文案零 em-dash**；中文注释；RPC 端点/载荷类型一律取 `src/contract.ts` 契约。
-9. 改完跑全链：`npm run typecheck`（client 侧 strict 双检）→ 重建 dist-smoke →
-   `npm run smoke`（第 21 节对 dist/client.js 产物拦令牌 / 圆角 / em-dash / 类接线 /
-   档位名 / handoff 协议回归）→ `npm run build` 产出最新 dist/client.js。
+9. 改完跑全链：`pnpm run typecheck`（client 侧 strict 双检）→ 重建 dist-smoke →
+   `pnpm run smoke`（第 21 节对 dist/client.js 产物拦令牌 / 圆角 / em-dash / 类接线 /
+   档位名 / handoff 协议回归）→ `pnpm run build` 产出最新 dist/client.js。

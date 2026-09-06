@@ -409,7 +409,10 @@ export function registerRecall(
       const session = typeof sessions?.get === 'function' ? sessions.get(sessionId as SessionId) : undefined;
       if (session) {
         const visible = new Set(session.surface.nodes);
-        const log = typeof session.snapshotEvents === 'function' ? session.snapshotEvents() : (session.events ?? []);
+        // 宿主 0.1.2-rc.1 起移除 events getter，改 snapshotEvents()；旧宿主仍走 events。
+        // 两者皆缺（未来宿主再改名）按不可估算处理——null = 回填隐藏，不静默显示零份额
+        const log = typeof session.snapshotEvents === 'function' ? session.snapshotEvents() : session.events;
+        if (!log) return null;
         let total = 0;
         for (const ev of log) {
           if (ev.type !== 'user/message' || !visible.has(ev.seq)) continue;
