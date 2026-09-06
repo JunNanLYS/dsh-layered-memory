@@ -1,0 +1,4 @@
+# pnpm 11 起所有 pnpm 设置都住在本文件（package.json 的 pnpm 字段已废弃）。
+# esbuild 的 postinstall 需要显式放行（pnpm 默认拦截依赖构建脚本）。
+allowBuilds:
+  esbuild: true

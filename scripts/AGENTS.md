@@ -28,14 +28,18 @@ esbuild 打包 `client/src/entry.tsx` → `dist/client.js`：
 
 ## verify-catalog.mjs
 
-权威源核验 `src/store/model-catalog.ts` 的 sha256/尺寸——**改目录后必跑**（`npm run
+权威源核验 `src/store/model-catalog.ts` 的 sha256/尺寸——**改目录后必跑**（`pnpm run
 verify-catalog`，需先 build）。
 
 ## CI（.github/workflows/ci.yml）
 
-push main/dev + PR 触发：npm ci → typecheck（双链）→ build → build:smoke → smoke →
-verify-catalog（Node 22 / ubuntu / 15min 超时）。发布流水线是另一个 `publish.yml`
-（tag 触发：校验 tag 与版本一致 → npm ci → build → 校验 → npm publish → 自动建 Release）。
+push main/dev + PR 触发：pnpm install --frozen-lockfile → typecheck（双链）→ build →
+build:smoke → smoke → verify-catalog（Node 22 / ubuntu / 15min 超时）。发布流水线是另一个 `publish.yml`
+（tag 触发：校验 tag 与版本一致 → pnpm install → build → 校验 → npm publish → 自动建 Release；
+0.10.0 起依赖安装走 pnpm，发布步骤仍走 npm CLI——OIDC Trusted Publishing 要求）。
+依赖管理自 0.10.0 起由 npm 迁移到 pnpm：`pnpm-workspace.yaml` 的 `allowBuilds` 放行
+esbuild 的 postinstall（pnpm 默认拦截依赖构建脚本），版本由 package.json 的
+`packageManager` 钉死。
 
 ## resources/（随包发布的纯资产，非代码）
 

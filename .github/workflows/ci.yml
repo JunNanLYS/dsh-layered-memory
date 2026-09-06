@@ -1,8 +1,10 @@
 # CI 门禁：PR 与分支推送跑全量验证链（typecheck → build → smoke → 目录核验）。
 # 这是 2026-08 体检后的 P0 修复——此前唯一工作流是 tag 触发的 publish.yml，
 # smoke 从未在 CI 跑过，回归防护全靠本地自觉。
-# 注意：`npm run build:smoke` 重建 dist-smoke（tsconfig exclude 了 src/smoke.ts，
-# `npm run build` 不产出它）——先跑它再跑 smoke，消除"陈旧产物"陷阱。
+# 注意：`pnpm run build:smoke` 重建 dist-smoke（tsconfig exclude 了 src/smoke.ts，
+# `pnpm run build` 不产出它）——先跑它再跑 smoke，消除"陈旧产物"陷阱。
+# 依赖管理自 0.10.0 起由 npm 迁移到 pnpm（与 dsh 官方安装通道一致），版本由
+# package.json 的 packageManager 字段钉死。
 name: CI
 
 on:
@@ -19,13 +21,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # 读 packageManager 字段
       # engines >=22.16（node:sqlite 与加载 sqlite-vec 的最低要求）
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run build
-      - run: npm run build:smoke
-      - run: npm run smoke
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm run build
+      - run: pnpm run build:smoke
+      - run: pnpm run smoke
       - run: node scripts/verify-catalog.mjs

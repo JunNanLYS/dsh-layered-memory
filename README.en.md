@@ -10,30 +10,29 @@
 [简体中文](README.md) · [Latest release](https://github.com/JunNanLYS/dsh-layered-memory/releases/latest) · [Report issues](https://github.com/JunNanLYS/dsh-layered-memory/issues)
 
 [![npm version](https://img.shields.io/npm/v/dsh-layered-memory?color=6f83ff&style=flat-square&label=npm)](https://www.npmjs.com/package/dsh-layered-memory)
-[![DSH 0.1.2-alpha.x](https://img.shields.io/badge/DSH-0.1.2--alpha.x-8b5cf6?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
+[![DSH 0.1.2](https://img.shields.io/badge/DSH-0.1.2-8b5cf6?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
 [![MIT License](https://img.shields.io/badge/license-MIT-536990?style=flat-square)](LICENSE)
 
 </div>
 
 ## Getting Started
 
-Requires Node ≥ 22.16 and DeepSeek Harness ≥ **0.1.2-alpha.1** (as of 0.8.12 only the
-0.1.2-alpha.x host line is supported; for older hosts see the
+Requires Node ≥ 22.16 and DeepSeek Harness **0.1.2-alpha.1 ~ 0.1.2-rc.1**
+(as of 0.10.0 support extends to 0.1.2-rc.1, which the npm "latest" tag
+already points to; for older hosts see the
 [release history](https://github.com/JunNanLYS/dsh-layered-memory/releases)).
 Two invocation styles — the `npx` prefix can replace `dsh` in
 any command below:
 
 ```bash
-# Option 1: run the official CLI directly via npx (no pre-installed dsh; the host version must
-# be pinned to the alpha line — the npm "latest" tag still points to 0.1.1-rc.x)
-npx -y @deepseek-ai/dsh@0.1.2-alpha.2 plugin --profile web add dsh-layered-memory
+# Option 1: run the official CLI directly via npx (no pre-installed dsh)
+npx -y @deepseek-ai/dsh plugin --profile web add dsh-layered-memory
 
-# Option 2: with the dsh CLI installed (upgrade to the alpha line first:
-# npm i -g @deepseek-ai/dsh@0.1.2-alpha.2, then restart; dsh is a pnpm forwarder —
-# npm i -g pnpm first if missing)
+# Option 2: with the dsh CLI installed (upgrade: npm i -g @deepseek-ai/dsh,
+# then restart; dsh is a pnpm forwarder — npm i -g pnpm first if missing)
 dsh plugin --profile web add dsh-layered-memory
 
-# Alternative sources: GitHub repo / local path (dev & debugging, link: points at the repo; npm run build + restart dsh to apply)
+# Alternative sources: GitHub repo / local path (dev & debugging, link: points at the repo; pnpm run build + restart dsh to apply)
 dsh plugin --profile web add https://github.com/JunNanLYS/dsh-layered-memory
 dsh plugin --profile web add /path/to/dsh-layered-memory
 ```
@@ -76,11 +75,13 @@ stays in `~/.dsh/memory/`; delete the whole directory manually if you don't need
 ```bash
 git clone https://github.com/JunNanLYS/dsh-layered-memory
 cd dsh-layered-memory
-npm install && npm run build
-dsh plugin --profile web add .        # link: install; after code changes, npm run build + restart dsh
-npm run smoke                         # smoke test (rebuild first: see command below)
+pnpm install && pnpm run build
+dsh plugin --profile web add .        # link: install; after code changes, pnpm run build + restart dsh
+pnpm run smoke                        # smoke test (rebuild first: see command below)
 npx tsc src/smoke.ts --outDir dist-smoke --module nodenext --moduleResolution nodenext --target es2022 --strict --skipLibCheck --esModuleInterop
 ```
+
+Dependencies are managed with pnpm (matching the official dsh install channel; the version is pinned via the `packageManager` field).
 
 ## Runtime Data Flow
 

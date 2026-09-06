@@ -395,13 +395,23 @@ export function registerRecall(
       // cordis 属性访问（ctx.sessions）对未 inject 的服务抛 "without inject"（实测）；
       // 可选服务一律走 ctx.get() 的宽容路径
       const sessions = ctx.get?.('sessions') as
-        | { get?: (id: SessionId) => { surface: { nodes: readonly number[] }; events: ReadonlyArray<{ type: string; seq: number; data?: { source?: Record<string, unknown>; content?: ReadonlyArray<{ type?: string; text?: string }> } }> } | undefined }
+        | {
+            get?: (
+              id: SessionId,
+            ) => {
+              surface: { nodes: readonly number[] };
+              // 宿主 0.1.2-rc.1 起移除 events getter，改 snapshotEvents()；旧宿主仍走 events
+              snapshotEvents?: () => ReadonlyArray<{ type: string; seq: number; data?: { source?: Record<string, unknown>; content?: ReadonlyArray<{ type?: string; text?: string }> } }>;
+              events?: ReadonlyArray<{ type: string; seq: number; data?: { source?: Record<string, unknown>; content?: ReadonlyArray<{ type?: string; text?: string }> } }>;
+            } | undefined;
+          }
         | undefined;
       const session = typeof sessions?.get === 'function' ? sessions.get(sessionId as SessionId) : undefined;
       if (session) {
         const visible = new Set(session.surface.nodes);
+        const log = typeof session.snapshotEvents === 'function' ? session.snapshotEvents() : (session.events ?? []);
         let total = 0;
-        for (const ev of session.events) {
+        for (const ev of log) {
           if (ev.type !== 'user/message' || !visible.has(ev.seq)) continue;
           const msg = ev.data as
             | { source?: Record<string, unknown>; content?: ReadonlyArray<{ type?: string; text?: string }> }

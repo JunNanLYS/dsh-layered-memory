@@ -142,7 +142,10 @@ export interface MemoryConfig {
   benchControl: boolean;
 }
 
-export const memorySchema = Schema.object({
+// 显式注解（官方 dsh-time-context 同款思路）：pnpm 符号链接布局下 TS 无法为推断类型
+// 命名传递依赖 cosmokit（TS2742）。输入侧 any（cordis 校验按 schema 填默认，原始
+// 输入本就宽松），输出侧钉死 MemoryConfig（.d.ts 只引用本包公开类型）。
+export const memorySchema: Schema<any, MemoryConfig> = Schema.object({
   dataDir: Schema.string().default(''),
   family: Schema.union(['auto', 'chat', 'work']).default('auto'),
   capture: Schema.object({

@@ -234,6 +234,11 @@
 - **Context 声明合并要靠 import 拉进来**：`ctx.get('connection')` 想拿到类型，必须
   `import type {} from '@deepseek-ai/dsh-client-connection'`（纯类型导入，无运行时依赖），
   否则是 any。`agentDefaultModel`/`agents` 同理。
+- **Session 事件读取（0.1.2-rc.1 起）**：宿主移除了 `Session.events` getter，改为
+  `eventAt(seq)` / `snapshotEvents(from?, to?)` / `ownEvents()`。鸭子探测路径
+  （recall.ts 的 estimateRecallTokens）双轨兼容：有 `snapshotEvents` 用之，否则回退
+  `events`（覆盖 alpha 宿主）——`surface.nodes`、`sessionPersistence.loadStored()`
+  返回的 `StoredPrefix.events` 均未变。
 
 （client bundle 侧的 handoff 协议与 slots 注册规则见 `client/AGENTS.md`。）
 
@@ -242,8 +247,11 @@
 - ESM（`"type": "module"`）+ TypeScript strict + NodeNext：src 内相对导入**必须带 `.js` 扩展名**。
 - 注释与日志用中文；日志走 `MemoryLogger`（`ctx.logger` 封装），消息带 `[memory]` 前缀。
 - 配置一律进 `src/config.ts` 的 Schemastery schema（带默认值），不要在别处读裸 env（`DSH_HOME` 除外）。
-- 无测试框架；验证用 `src/smoke.ts` 补 assert 场景（`npm run smoke` 自动先重建 dist-smoke；
+- 无测试框架；验证用 `src/smoke.ts` 补 assert 场景（`pnpm run smoke` 自动先重建 dist-smoke；
   陷阱见下方 Gotchas）。
+- **导出的 schema 常量必须显式注解类型**（如 `Schema<any, MemoryConfig>`，官方 dsh-time-context
+  同款）：pnpm 符号链接布局下 TS 无法为推断类型命名传递依赖 cosmokit（TS2742 声明发射
+  可移植性错误，npm 扁平布局掩盖了它）——新导出 schema 一律照此注解。
 - 新增/变更 RPC 端点：先改 `src/contract.ts`（类型单一事实源），再改 stats.ts 的 case 表与
   client 两侧——双链 typecheck 会追着改。
 

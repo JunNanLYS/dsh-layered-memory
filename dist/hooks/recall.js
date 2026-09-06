@@ -287,8 +287,9 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
             const session = typeof sessions?.get === 'function' ? sessions.get(sessionId) : undefined;
             if (session) {
                 const visible = new Set(session.surface.nodes);
+                const log = typeof session.snapshotEvents === 'function' ? session.snapshotEvents() : (session.events ?? []);
                 let total = 0;
-                for (const ev of session.events) {
+                for (const ev of log) {
                     if (ev.type !== 'user/message' || !visible.has(ev.seq))
                         continue;
                     const msg = ev.data;
