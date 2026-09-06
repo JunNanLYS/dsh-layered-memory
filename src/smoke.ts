@@ -4010,6 +4010,10 @@ async function main(): Promise<void> {
     try {
       const modes = new SessionModeStore(tmp34, 'auto', silentLogger);
       let liveOn = true;
+      const liveCbs = new Set<() => void>();
+      const notifyLive = (): void => {
+        for (const cb of liveCbs) cb();
+      };
       const live: LiveSettingsHandle = {
         supported: true,
         get: () => ({
@@ -4026,6 +4030,12 @@ async function main(): Promise<void> {
           distillMaxInputChars: 0,
         }),
         update: async () => {},
+        onChange: (cb: () => void) => {
+          liveCbs.add(cb);
+          return () => {
+            liveCbs.delete(cb);
+          };
+        },
       };
 
       // fake ctx：服务槽 + 事件监听 + effect 收集（与 16 节同款惯例）
@@ -4086,8 +4096,12 @@ async function main(): Promise<void> {
           return selectImpl!();
         },
       };
-      const mkInv = (sessionId: string, rawInput: string): { agent: { sessionId: string }; rawInput: string; signal: AbortSignal } => ({
-        agent: { sessionId },
+      const mkInv = (
+        sessionId: string,
+        rawInput: string,
+        agentKey: 'id' | 'sessionId' = 'id',
+      ): { agent: { id?: string; sessionId?: string }; rawInput: string; signal: AbortSignal } => ({
+        agent: { [agentKey]: sessionId },
         rawInput,
         signal: new AbortController().signal,
       });
@@ -4108,7 +4122,7 @@ async function main(): Promise<void> {
       fire('agent/session-start', { agent: { id: 's34-b' } });
       assert(statusSets.at(-1)?.[1] === '记忆:暂停', '会话切换后状态行跟随档位（off → 记忆:暂停）');
 
-      // 34d /memory 参数路径：切档 + 回执 + 状态行同步
+      // 34d /memory 参数路径：切档 + 回执 + 状态行同步（agent.id 是宿主契约字段）
       services.set('commands', commands);
       fire('internal/service', 'commands', commands);
       assert(commandDef?.name === 'memory', '命令服务上线即注册 /memory');
@@ -4116,6 +4130,8 @@ async function main(): Promise<void> {
       assert(r1.kind === 'success' && r1.text?.includes('工作') === true, '/memory work 回执成功文案');
       assert(modes.get('s34-b') === 'work', '/memory work 写穿档位存储');
       assert(statusSets.at(-1)?.[1] === '记忆:工作', '切档后状态行即时刷新（记忆:工作）');
+      const r1b = await commandDef!.handler(mkInv('s34-d', 'chat', 'sessionId'));
+      assert(r1b.kind === 'success' && modes.get('s34-d') === 'chat', 'sessionId 形状兜底同样落档');
 
       // 34e 非法参数且无弹窗服务 → 用法错误（web 形态同路径）
       const r2 = await commandDef!.handler(mkInv('s34-b', 'bogus'));
@@ -4132,10 +4148,13 @@ async function main(): Promise<void> {
       const r4 = await commandDef!.handler(mkInv('s34-c', ''));
       assert(r4.kind === 'success' && r4.text?.includes('已取消') === true && modes.get('s34-c') === 'chat', '弹窗取消档位不变');
 
-      // 34g 全局开关关闭：任何档位显示停用（状态行跟随 live 读数）
+      // 34g 全局开关关闭：任何档位显示停用（状态行跟随 live 读数）——两条触发路径都验
       liveOn = false;
       await commandDef!.handler(mkInv('s34-c', 'auto'));
       assert(statusSets.at(-1)?.[1] === '记忆:停用', '总开关关闭时状态行显示记忆:停用');
+      liveOn = true;
+      notifyLive();
+      assert(statusSets.at(-1)?.[1] === '记忆:智能', 'live.onChange 变更广播即时刷新状态行');
 
       // 34h 设置区块：ns 与字段覆盖
       services.set('tuiSettingsSections', sectionsSvc);
@@ -4155,6 +4174,19 @@ async function main(): Promise<void> {
       // 34i 服务下线：摘挂接并清状态行
       fire('internal/service', 'tuiStatus', undefined);
       assert(statusSets.at(-1)?.[0] === 'memory' && statusSets.at(-1)?.[1] === undefined, 'tuiStatus 下线即清行');
+
+      // 34i' 服务换实例重挂：新对象上线 → 重挂接并刷新（svc !== bound 分支）
+      const tuiStatus2 = {
+        set: (k: string, t: string | undefined) => {
+          statusSets.push([k, t]);
+          return () => {
+            statusSets.push([k, undefined]);
+          };
+        },
+      };
+      services.set('tuiStatus', tuiStatus2);
+      fire('internal/service', 'tuiStatus', tuiStatus2);
+      assert(statusSets.at(-1)?.[1] === '记忆:智能', '服务换实例自动重挂（新实例接管状态行）');
 
       // 34j fiber 卸载：全部 disposer 可跑不抛
       let disposedOk = true;

@@ -40,13 +40,16 @@ interface TuiSettingsSectionsLike {
   register(section: unknown): () => void;
 }
 
-/** dsh-commands 的最小面（@deepseek-ai/dsh-commands CommandDefinition/CommandResult）。 */
+/** dsh-commands 的最小面（@deepseek-ai/dsh-commands CommandDefinition/CommandResult）。
+ *  invocation.agent 是宿主侧活 Agent——身份字段契约是 `id`（dsh-agent types.d.ts：
+ *  `Agent { readonly id: SessionId }`）；`sessionId` 是工厂入参 CreateAgentOptions 的
+ *  字段、不在 Agent 上（0.11.0 首版读错被审查抓出）。作兜底同时接受两者。 */
 interface CommandsLike {
   register(definition: {
     name: string;
     description: string;
     handler: (
-      invocation: { agent: { sessionId: unknown }; rawInput: string; signal: AbortSignal },
+      invocation: { agent: { id?: unknown; sessionId?: unknown }; rawInput: string; signal: AbortSignal },
     ) =>
       | { kind: 'success'; text?: string }
       | { kind: 'error'; text: string }
@@ -72,7 +75,12 @@ function watchService(
     try {
       const d = attach(svc);
       if (!d) return;
-      disposer?.();
+      // 换实例摘旧：旧 disposer 可能指向已死服务，吞错不阻断新挂接
+      try {
+        disposer?.();
+      } catch {
+        // 旧服务所在宿主行已先一步卸载
+      }
       disposer = d;
       bound = svc;
     } catch (err) {
@@ -124,7 +132,8 @@ export function registerTuiSurface(ctx: Context, deps: TuiSurfaceDeps): void {
         const text = statusText();
         if (text === lastText) return;
         lastText = text;
-        status.set('memory', text);
+        // 第三参 identity（插件 ctx）只喂 dsh-tui 的效果台账归属（C-060），省略记 undeclared
+        status.set('memory', text, ctx);
       };
       refreshStatus();
       logger.info('[memory] TUI 状态行已接入（当前会话记忆档位可见）');
@@ -132,6 +141,8 @@ export function registerTuiSurface(ctx: Context, deps: TuiSurfaceDeps): void {
         refreshStatus = undefined;
         lastText = '';
         try {
+          // 本插件独占该 key，显式清行与保留 set() 返回的 disposer 语义等价（后者只清
+          // 自己那次写——这里没有并发写者，选更直白的一种）
           status.set('memory', undefined);
         } catch {
           // 宿主行已卸载
@@ -146,6 +157,9 @@ export function registerTuiSurface(ctx: Context, deps: TuiSurfaceDeps): void {
     lastSid = sid;
     refreshStatus?.();
   });
+  // 全局开关在 /settings 里被改动 → 状态行即时跟随（否则「记忆:停用」读数要等下次交互才刷新）
+  const unsubscribeLive = live.onChange?.(() => refreshStatus?.());
+  if (unsubscribeLive) ctx.effect(() => () => unsubscribeLive());
 
   // ── /memory 命令：切当前会话档位；无参数时 TUI 环境弹托管单选 ──
   const MODE_OPTIONS: readonly { id: MemoryMode; label: string; description: string }[] = [
@@ -154,7 +168,7 @@ export function registerTuiSurface(ctx: Context, deps: TuiSurfaceDeps): void {
     { id: 'work', label: '工作', description: '团队操作准则（work 族）' },
     { id: 'off', label: '暂停', description: '本会话停用记忆，可随时切回' },
   ];
-  const MODE_USAGE = '用法：/memory <auto|chat|work|off>（无参数时弹出选择）';
+  const MODE_USAGE = '用法：/memory <auto|chat|work|off>';
   watchService(
     ctx,
     'commands',
@@ -164,7 +178,9 @@ export function registerTuiSurface(ctx: Context, deps: TuiSurfaceDeps): void {
         name: 'memory',
         description: '切换本会话记忆档位（auto/chat/work/off，无参数弹出选择）',
         handler: async (inv) => {
-          const sid = String((inv.agent as { sessionId?: unknown } | undefined)?.sessionId ?? '');
+          // 宿主侧 Agent 身份契约是 id（见 CommandsLike 注释）；sessionId 仅作兜底
+          const agentId = (inv.agent as { id?: unknown; sessionId?: unknown } | undefined) ?? {};
+          const sid = String(agentId.id ?? agentId.sessionId ?? '');
           if (!sid) return { kind: 'error', text: '无法确定当前会话' };
           const arg = inv.rawInput.trim().toLowerCase();
           let mode: MemoryMode | undefined = (

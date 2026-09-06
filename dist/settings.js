@@ -134,6 +134,9 @@ export function registerLiveSettings(ctx, logger) {
         get: () => ALWAYS_ON,
         update: () => Promise.reject(new Error('settings 服务不可用')),
     };
+    // 变更订阅者（handle.onChange）：挂接在闭包层，inner 换新（服务迁移）后由新 scope 的
+    // watch 继续驱动——订阅方无感
+    const changeCbs = new Set();
     /** 挂接一个（新注册或复用的）scope：重挂前先摘旧 watcher，防跨重启累积。 */
     const wireScope = (scope) => {
         cachedUnwatch?.();
@@ -141,6 +144,14 @@ export function registerLiveSettings(ctx, logger) {
         cachedUnwatch = scope.watch((next) => {
             const prev = current;
             current = resolveSettings(next);
+            for (const cb of changeCbs) {
+                try {
+                    cb();
+                }
+                catch {
+                    // 订阅方异常不阻断开关链（与档位切换回调同纪律）
+                }
+            }
             const b = current.distillBudgets;
             const budgetNote = (b.extract || b.dedup || b.l2 || b.l3)
                 ? `，输出预算=抽取 ${b.extract || '默认'}/去重 ${b.dedup || '默认'}/L2 ${b.l2 || '默认'}/L3 ${b.l3 || '默认'}`
@@ -226,6 +237,12 @@ export function registerLiveSettings(ctx, logger) {
         },
         get: () => inner.get(),
         update: (patch) => inner.update(patch),
+        onChange: (cb) => {
+            changeCbs.add(cb);
+            return () => {
+                changeCbs.delete(cb);
+            };
+        },
     };
 }
 /** scope.get() 的防御性解析：异常值回退全开（宁可多记不可静默停摆）。 */

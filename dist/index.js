@@ -89,8 +89,6 @@ export async function apply(ctx, config) {
             logger.warn(`[memory] 会话档位载入失败（降级为默认档内存态）: ${err instanceof Error ? err.message : String(err)}`);
         }
     }
-    // ── TUI 形态原生接入（dsh-tui/官方 TUI 宿主；软探测，web/headless 下全部 no-op） ──
-    registerTuiSurface(ctx, { logger, live, modes });
     // ── 嵌入源三态（D4：远程/本地/关闭）——状态文件优先于静态配置 ──
     const sourceStore = new EmbeddingSourceStore(dataDir, logger);
     const installer = new RuntimeInstaller(dataDir, PINNED_TRANSFORMERS_VERSION, { logger });
@@ -290,6 +288,9 @@ export async function apply(ctx, config) {
     await runner.init();
     // 档位切换同步（ADR-0003）：切走按捕获档位落袋 / 切 off 挂起 / 切回清挂起
     modes.setModeChangeHandler((sessionId, oldMode, newMode) => runner.onModeChange(sessionId, oldMode, newMode));
+    // ── TUI 形态原生接入（dsh-tui/官方 TUI 宿主；软探测，web/headless 下全部 no-op）。
+    //    放切换链接线之后：/memory 在启动窗口内派发也不会绕过 runner.onModeChange ──
+    registerTuiSurface(ctx, { logger, live, modes });
     // 闲置兜底：静默达标会话的未蒸馏切片自动落袋（idleSeconds=0 关闭）
     runner.startIdleTimer();
     // 重建控制器（存储降级时不建——RPC 端点走 supported=false 分支）

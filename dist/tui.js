@@ -17,7 +17,13 @@ function watchService(ctx, name, attach, logger) {
             const d = attach(svc);
             if (!d)
                 return;
-            disposer?.();
+            // 换实例摘旧：旧 disposer 可能指向已死服务，吞错不阻断新挂接
+            try {
+                disposer?.();
+            }
+            catch {
+                // 旧服务所在宿主行已先一步卸载
+            }
             disposer = d;
             bound = svc;
         }
@@ -65,7 +71,8 @@ export function registerTuiSurface(ctx, deps) {
             if (text === lastText)
                 return;
             lastText = text;
-            status.set('memory', text);
+            // 第三参 identity（插件 ctx）只喂 dsh-tui 的效果台账归属（C-060），省略记 undeclared
+            status.set('memory', text, ctx);
         };
         refreshStatus();
         logger.info('[memory] TUI 状态行已接入（当前会话记忆档位可见）');
@@ -73,6 +80,8 @@ export function registerTuiSurface(ctx, deps) {
             refreshStatus = undefined;
             lastText = '';
             try {
+                // 本插件独占该 key，显式清行与保留 set() 返回的 disposer 语义等价（后者只清
+                // 自己那次写——这里没有并发写者，选更直白的一种）
                 status.set('memory', undefined);
             }
             catch {
@@ -87,6 +96,10 @@ export function registerTuiSurface(ctx, deps) {
         lastSid = sid;
         refreshStatus?.();
     });
+    // 全局开关在 /settings 里被改动 → 状态行即时跟随（否则「记忆:停用」读数要等下次交互才刷新）
+    const unsubscribeLive = live.onChange?.(() => refreshStatus?.());
+    if (unsubscribeLive)
+        ctx.effect(() => () => unsubscribeLive());
     // ── /memory 命令：切当前会话档位；无参数时 TUI 环境弹托管单选 ──
     const MODE_OPTIONS = [
         { id: 'auto', label: '智能', description: '按会话类型自动选 chat/work 族' },
@@ -94,14 +107,16 @@ export function registerTuiSurface(ctx, deps) {
         { id: 'work', label: '工作', description: '团队操作准则（work 族）' },
         { id: 'off', label: '暂停', description: '本会话停用记忆，可随时切回' },
     ];
-    const MODE_USAGE = '用法：/memory <auto|chat|work|off>（无参数时弹出选择）';
+    const MODE_USAGE = '用法：/memory <auto|chat|work|off>';
     watchService(ctx, 'commands', (svc) => {
         const commands = svc;
         const dispose = commands.register({
             name: 'memory',
             description: '切换本会话记忆档位（auto/chat/work/off，无参数弹出选择）',
             handler: async (inv) => {
-                const sid = String(inv.agent?.sessionId ?? '');
+                // 宿主侧 Agent 身份契约是 id（见 CommandsLike 注释）；sessionId 仅作兜底
+                const agentId = inv.agent ?? {};
+                const sid = String(agentId.id ?? agentId.sessionId ?? '');
                 if (!sid)
                     return { kind: 'error', text: '无法确定当前会话' };
                 const arg = inv.rawInput.trim().toLowerCase();
