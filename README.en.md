@@ -70,6 +70,26 @@ and the memory chip in the input bar (`Memory · Auto`) mean the client half is 
 **Uninstall**: `dsh plugin --profile web remove dsh-layered-memory` + restart. Data
 stays in `~/.dsh/memory/`; delete the whole directory manually if you don't need it.
 
+### Terminal Hosts (TUI / headless)
+
+Beyond web, the same plugin installs into terminal-shaped hosts:
+
+```bash
+# dsh-tui (Claude Code style TUI front door — see github.com/ccch1mneyyy/dsh-TUI)
+dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui   # first time: create profile + install the TUI host
+dsh plugin --profile dsh-tui add dsh-layered-memory
+dsh --profile dsh-tui
+```
+
+- **`/memory <auto|chat|work|off>`** switches the current session's memory mode; with no
+  argument a selection panel pops up;
+- **Status line**: a persistent `记忆:智能`-style mode readout sits right above the prompt;
+- **`/settings` section**: master switch, capture, distill, recall, distill model routing and
+  input budget are editable in place (same store as the web settings panel; complex routing
+  chains still go through web / YAML);
+- **headless** (`dsh --profile headless "one-shot task"`): capture and distillation work as
+  usual with no UI elements. Web and terminal hosts share the same `~/.dsh/memory/` store.
+
 ### Development from Source
 
 ```bash
@@ -184,6 +204,8 @@ lives in the native host seat designed for it; the plugin no longer owns a strip
   toggle in Automation. Ideal for debug/eval/sensitive sessions that should absorb
   without interference. Orthogonal to Paused: paused is full stealth (capture off
   too), while write-only keeps the "in" and gates the "out".
+- **Terminal host (TUI)**: the same mode system surfaces in the dsh-tui host as the
+  `/memory` command, a status line and a `/settings` section (see Quick Start).
 
 ## UI Preview
 

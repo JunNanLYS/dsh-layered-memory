@@ -8,6 +8,22 @@
 
 > **支持版本约定**：每个版本条目首行标注所支持的 DSH 宿主版本范围（自 0.10.0 起）。
 
+## [0.11.0] — 2026-09-07
+
+支持 DSH 宿主 **0.1.2-alpha.1 ~ 0.1.2-rc.1**；TUI 原生接缝兼容 **dsh-tui 0.10.0-beta.x**。
+
+### 新增（CLI / TUI 终端形态支持）
+
+- **可在终端形态宿主（dsh-tui profile）下运行**：`dsh plugin --profile dsh-tui add dsh-layered-memory`
+  安装后，捕获 / 蒸馏 / 召回 / 工具全链路与 web 形态一致工作。
+- **`/memory` 命令**（全形态注册）：`/memory <auto|chat|work|off>` 切换当前会话记忆档位；
+  无参数时在 TUI 中弹出档位选择面板，web / headless 环境回用法提示。
+- **TUI 状态行**：提示框上方常驻「记忆:智能 / 对话 / 工作 / 暂停 / 停用」当前会话档位读数。
+- **TUI 设置区块**：`/settings` 内可直接编辑总开关、捕获、蒸馏、召回、蒸馏思考档位、
+  蒸馏模型路由与输入预算（与 web 设置面板同一存储；复杂路由链仍走 web / YAML）。
+- 三个接缝（tuiStatus / tuiDialogs / tuiSettingsSections）全部软探测：web / headless
+  形态自动跳过，零开销零风险。
+
 ## [0.10.0] — 2026-09-06
 
 支持 DSH 宿主 **0.1.2-alpha.1 ~ 0.1.2-rc.1**。

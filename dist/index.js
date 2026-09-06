@@ -38,6 +38,7 @@ import { SceneStore } from './store/scenes.js';
 import { SessionModeStore } from './store/session-modes.js';
 import { StateStore } from './store/state.js';
 import { registerMemoryTools } from './tools/index.js';
+import { registerTuiSurface } from './tui.js';
 import { errDetail, withFileLog } from './util/filelog.js';
 import { buildRouteChain, resolveModelRoute, invalidateEffortCache } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
@@ -88,6 +89,8 @@ export async function apply(ctx, config) {
             logger.warn(`[memory] 会话档位载入失败（降级为默认档内存态）: ${err instanceof Error ? err.message : String(err)}`);
         }
     }
+    // ── TUI 形态原生接入（dsh-tui/官方 TUI 宿主；软探测，web/headless 下全部 no-op） ──
+    registerTuiSurface(ctx, { logger, live, modes });
     // ── 嵌入源三态（D4：远程/本地/关闭）——状态文件优先于静态配置 ──
     const sourceStore = new EmbeddingSourceStore(dataDir, logger);
     const installer = new RuntimeInstaller(dataDir, PINNED_TRANSFORMERS_VERSION, { logger });

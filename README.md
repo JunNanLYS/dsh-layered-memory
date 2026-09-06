@@ -61,6 +61,24 @@ Agent 应当返回安装结果，并明确告诉你配置中是否已经出现 `
 **卸载**：`dsh plugin --profile web remove dsh-layered-memory` + 重启。数据保留在
 `~/.dsh/memory/`，不需要时手动删除整个目录即可。
 
+### 终端形态（TUI / headless）
+
+除 web 外，同一插件可直接装进终端形态宿主：
+
+```bash
+# dsh-tui（Claude Code 风格 TUI 前门，详见 github.com/ccch1mneyyy/dsh-TUI）
+dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui   # 首次：建 profile 并装 TUI 宿主
+dsh plugin --profile dsh-tui add dsh-layered-memory
+dsh --profile dsh-tui
+```
+
+- **`/memory <auto|chat|work|off>`** 切换当前会话档位，无参数时弹出档位选择面板；
+- **状态行**：提示框上方常驻 `记忆:智能` 等当前档位读数；
+- **`/settings` 设置区块**：总开关、捕获、蒸馏、召回、蒸馏模型路由与输入预算可直接编辑
+  （与 web 设置面板同一存储；复杂路由链仍走 web / YAML）；
+- **headless**（`dsh --profile headless "一次性任务"`）：捕获与蒸馏照常工作，无界面元素。
+  web 与终端形态共享 `~/.dsh/memory/` 同一份记忆。
+
 ### 从源码开发
 
 ```bash
@@ -143,6 +161,8 @@ L1/L2/L3 层级过滤）、层级 × 时间窗口表格（调用数 / 输出与�
   一并停止；`memory_search` 等读工具返回只写提示）。覆盖按会话持久化，切回
   「跟随全局」即清除、跟随自动化区的召回开关；适合调试/评测/敏感会话「只吸收不干扰」。
   与暂停正交：暂停是完全隐身（连捕获都关），只写保留「进」关「出」。
+- **终端形态（TUI）**：同一档位体系在 dsh-tui 宿主下以 `/memory` 命令、状态行与
+  `/settings` 区块呈现（安装见快速开始）。
 
 ## 界面预览
 
