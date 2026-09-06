@@ -47,7 +47,7 @@
   esbuild external + factory 参数注入解析（与官方 dsh-client-ui-* 包同构）。
 - **RPC 类型只认 contract**：端点/载荷/响应类型一律 `import type` 自 `src/contract.ts`
   （esbuild 构建期擦除，零运行时依赖），不在 client 侧另写形状——契约漂移在
-  `npm run typecheck` 编译期双向暴露。
+  `pnpm run typecheck` 编译期双向暴露。
 - **文案只走 i18n 字典**（新代码）：zh/en 成对，宿主 locale 优先、缺键回退 zh；
   不写双语并列或裸硬编码。既有 tabs/ 编辑器中文文案属登记欠账，逐步迁移。
 - **颜色只写令牌**：用 `--dsh-mem-*` 主题令牌，不写裸 hex（令牌表见 design/global-spec.md）。
@@ -78,8 +78,8 @@
 
 ## 构建与验证
 
-- `npm run build` 产出 `dist/client.js`（esbuild 细节与产物形状约定见 `scripts/AGENTS.md`）。
-- `npm run typecheck` 双链之一就是 client：`tsconfig.client.json`（strict + react-jsx +
+- `pnpm run build` 产出 `dist/client.js`（esbuild 细节与产物形状约定见 `scripts/AGENTS.md`）。
+- `pnpm run typecheck` 双链之一就是 client：`tsconfig.client.json`（strict + react-jsx +
   DOM + noUncheckedIndexedAccess，noEmit；include client/src + src/contract.ts）。
 - smoke 第 21 节对 `dist/client.js` **产物**断言（协议头 / external 接线 / 展平尾 /
   数字规范化 / 五区词表 / 聚合端点接线等）——改产物形状、删组件或改文案词表

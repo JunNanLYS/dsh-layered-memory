@@ -1,6 +1,6 @@
 /**
  * 冒烟测试：独立运行核心逻辑（不依赖 DSH 运行时）。
- * 运行：npm run smoke（node dist-smoke/smoke.js）
+ * 运行：pnpm run smoke（node dist-smoke/smoke.js）
  */
 import { existsSync, promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -2723,10 +2723,10 @@ async function main(): Promise<void> {
   // ── 21. client bundle 产物静态断言（#15-#18 验收；断言对象是 esbuild 产物
   //    dist/client.js 而非手写源码——断言"发布给宿主的东西"） ──
   {
-    // 产物缺失时跳过本节（与 worker ping 同款约定：先 npm run build 再跑 smoke 才生效）
+    // 产物缺失时跳过本节（与 worker ping 同款约定：先 pnpm run build 再跑 smoke 才生效）
     const clientUrl = new URL('../dist/client.js', import.meta.url);
     if (!(await fs.stat(clientUrl).then(() => true, () => false))) {
-      console.log('  ⏭ 21. client bundle 产物缺失（先 npm run build），跳过');
+      console.log('  ⏭ 21. client bundle 产物缺失（先 pnpm run build），跳过');
     } else {
     const clientSrc = await fs.readFile(clientUrl, 'utf8');
     // handoff 协议：wrapper 头 + id=包名 + factory(require) 返回 module.exports
@@ -3696,7 +3696,7 @@ async function main(): Promise<void> {
   {
     const workerAsset = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'embedding-worker.cjs');
     if (!existsSync(workerAsset)) {
-      console.log('  (skip: dist/embedding-worker.cjs 未构建——先 npm run build 再跑本段)');
+      console.log('  (skip: dist/embedding-worker.cjs 未构建——先 pnpm run build 再跑本段)');
     } else {
       const w = new Worker(workerAsset, {
         workerData: { runtimeDir: '', modelDir: '', pooling: 'mean', dtype: 'q8', maxInputChars: 100 },

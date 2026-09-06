@@ -6,7 +6,7 @@
  * 本脚本对照权威源核验每个文件：LFS 文件比 HF tree API 的 lfs.oid（即 sha256），
  * 非 LFS 小文件按 `embedding.mirror` 实测哈希；大文件尺寸比对（内容靠下载期校验）。
  *
- * 用法：npm run verify-catalog [-- --mirror https://hf-mirror.com] [--proxy URL|none]
+ * 用法：pnpm run verify-catalog [-- --mirror https://hf-mirror.com] [--proxy URL|none]
  *   代理默认三态自动探测（HTTPS_PROXY/ALL_PROXY 等，尊重 NO_PROXY），与下载器同语义。
  * 退出码：全部吻合 0，任何失配/缺失 1。
  */

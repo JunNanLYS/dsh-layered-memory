@@ -21,13 +21,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Node 24 自带 npm ≥ 11.5.1（OIDC 自动探测的最低要求），且满足 engines >=22.16
+      - uses: pnpm/action-setup@v4 # 读 packageManager 字段（依赖管理自 0.10.0 起 pnpm）
+      # Node 24 自带 npm ≥ 11.5.1（OIDC 自动探测的最低要求；发布步骤仍走 npm publish），
+      # 且满足 engines >=22.16
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-      - run: npm ci
-      - run: npm run build
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
       # 仅 tag 触发时校验（workflow_dispatch 手动试跑跳过：ref 是分支名，会走到 publish 鉴权一步）
       - name: 校验 tag 与版本一致
         if: startsWith(github.ref, 'refs/tags/')
