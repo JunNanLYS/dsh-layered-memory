@@ -21,6 +21,11 @@
   明细（模块级单例 + init 注入 db；按 model 分组、持久化保留期默认 365 天，面向 UI 成本看板）。
 - `settings.ts` — 记忆模式运行时开关（官方 settings 服务命名空间 `dsh-memory`，live 生效；
   见下方不变量「记忆模式开关」）。
+- `tui.ts` — TUI 形态原生接入（dsh-tui/官方 TUI 宿主，0.11.0）：tuiStatus 状态行 /
+  `/memory` 命令（commands 是 **base 服务，全形态注册**）/ tuiSettingsSections 设置区块；
+  三接缝全部软探测（先 `ctx.get` + `internal/service` 晚就绪补挂 + 下线摘挂接），web/headless
+  下 no-op。服务形状是内联结构类型（鸭子探测，不引 dsh-tui 依赖）——升级 dsh-tui 后须真机
+  复验。设置区块字段只支持标量 kind（text/number/boolean/select），路由链等嵌套键不声明。
 - `hooks/capture.ts` — L0 捕获（session/event turn/end，清洗去噪后落盘 JSONL）。
 - `hooks/recall.ts` — **消息侧注入**（ADR-0001）：pre-step prepend 注册、先 next() 再
   在消息列表头部插入 `form:'recall'` 合成消息（排在用户新消息之前）；agent 作用域上下文

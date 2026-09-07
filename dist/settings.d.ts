@@ -37,6 +37,8 @@ export interface LiveSettingsHandle {
     get(): MemoryLiveSettings;
     /** UI 写入入口；不支持时抛错由 RPC 层转成业务错误 */
     update(patch: Partial<MemoryLiveSettings>): Promise<void>;
+    /** 订阅开关变更（TUI 状态行等即时刷新；可选——缺省方退化为下次交互时刷新）。返回退订。 */
+    onChange?(cb: () => void): () => void;
 }
 export declare function liveSettingsSchema(): Schema<MemoryLiveSettings>;
 export declare function registerLiveSettings(ctx: Context, logger: MemoryLogger): LiveSettingsHandle;

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import type { SessionEvent } from '@deepseek-ai/dsh-session';
 import type { MemoryConfig } from './config.js';
-import { memorySchema } from './config.js';
+import { EFFORT_CHOICES, memorySchema } from './config.js';
 import { EmbedHelper, NoopEmbeddingService, type EmbeddingService } from './store/embedding.js';
 import { applyRecallBudget, raceRecallTimeout, RECALL_TRUNCATION_SUFFIX, truncateRecallLine } from './util/recall-budget.js';
 import {
@@ -76,6 +76,7 @@ import { formatExtractionPrompt, getExtractMemoriesSystemPrompt } from './prompt
 import { formatBatchConflictPrompt, getConflictDetectionSystemPrompt } from './prompts/l1-dedup.js';
 import { buildScenePrompt, formatSceneSummaries } from './prompts/scene.js';
 import { buildPersonaPrompt } from './prompts/persona.js';
+import { registerTuiSurface } from './tui.js';
 import { blocksToText, tokenize } from './util/text.js';
 import { tokenizerStamp } from './util/tokenizer.js';
 
@@ -3999,6 +4000,206 @@ async function main(): Promise<void> {
       }
     } finally {
       await fs.rm(tmp33, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  // ── 34. TUI 形态原生接入：状态行 / /memory 命令 / 设置区块（软探测 + 晚就绪补挂 + 下线清理） ──
+  console.log('== 34. TUI 形态原生接入（tui.ts） ==');
+  {
+    const tmp34 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-tui-'));
+    try {
+      const modes = new SessionModeStore(tmp34, 'auto', silentLogger);
+      let liveOn = true;
+      const liveCbs = new Set<() => void>();
+      const notifyLive = (): void => {
+        for (const cb of liveCbs) cb();
+      };
+      const live: LiveSettingsHandle = {
+        supported: true,
+        get: () => ({
+          enabled: liveOn,
+          capture: true,
+          distill: true,
+          recall: true,
+          reasoningEffort: '',
+          distillProvider: '',
+          distillModel: '',
+          distillChain: [],
+          distillLayerChains: { l1: [], l2: [], l3: [] },
+          distillBudgets: { extract: 0, dedup: 0, l2: 0, l3: 0 },
+          distillMaxInputChars: 0,
+        }),
+        update: async () => {},
+        onChange: (cb: () => void) => {
+          liveCbs.add(cb);
+          return () => {
+            liveCbs.delete(cb);
+          };
+        },
+      };
+
+      // fake ctx：服务槽 + 事件监听 + effect 收集（与 16 节同款惯例）
+      type Handler = (...args: unknown[]) => void;
+      const services = new Map<string, unknown>();
+      const listeners = new Map<string, Set<Handler>>();
+      const disposers: Array<() => void> = [];
+      const ctx = {
+        get: (n: string) => services.get(n),
+        on: (e: string, h: Handler) => {
+          if (!listeners.has(e)) listeners.set(e, new Set());
+          listeners.get(e)!.add(h);
+          return () => {
+            listeners.get(e)?.delete(h);
+          };
+        },
+        effect: (f: () => (() => void)) => {
+          const d = f();
+          disposers.push(d);
+          return d;
+        },
+      } as never;
+      const fire = (e: string, ...args: unknown[]): void => {
+        for (const h of listeners.get(e) ?? []) h(...args);
+      };
+
+      // fake TUI 接缝服务
+      const statusSets: Array<[string, string | undefined]> = [];
+      const tuiStatus = {
+        set: (k: string, t: string | undefined) => {
+          statusSets.push([k, t]);
+          return () => {
+            statusSets.push([k, undefined]);
+          };
+        },
+      };
+      let commandDef: { name: string; handler: (inv: unknown) => Promise<{ kind: string; text?: string }> } | undefined;
+      const commands = {
+        register: (d: { name: string; handler: (inv: unknown) => Promise<{ kind: string; text?: string }> }) => {
+          commandDef = d;
+          return () => {
+            commandDef = undefined;
+          };
+        },
+      };
+      const sectionDefs: Array<{ ns: string; fields: Array<{ path: readonly string[]; kind: string; options?: unknown[] }> }> = [];
+      const sectionsSvc = {
+        register: (s: { ns: string; fields: Array<{ path: readonly string[]; kind: string; options?: unknown[] }> }) => {
+          sectionDefs.push(s);
+          return () => {};
+        },
+      };
+      let selectImpl: (() => Promise<string | undefined>) | undefined;
+      let selectReq: { title?: string; options?: unknown[] } | undefined;
+      const dialogsSvc = {
+        select: async (_owner: unknown, req: { title?: string; options?: unknown[] }) => {
+          selectReq = req;
+          return selectImpl!();
+        },
+      };
+      const mkInv = (
+        sessionId: string,
+        rawInput: string,
+        agentKey: 'id' | 'sessionId' = 'id',
+      ): { agent: { id?: string; sessionId?: string }; rawInput: string; signal: AbortSignal } => ({
+        agent: { [agentKey]: sessionId },
+        rawInput,
+        signal: new AbortController().signal,
+      });
+
+      // 34a 无任何 TUI 服务（web/headless 形态）：不抛、不注册命令
+      registerTuiSurface(ctx, { logger: silentLogger, live, modes });
+      assert(commandDef === undefined, '无 TUI 服务时零注册（web/headless no-op）');
+
+      // 34b 状态行晚就绪补挂：internal/service 上线后接入，默认档文案
+      services.set('tuiStatus', tuiStatus);
+      fire('internal/service', 'tuiStatus', tuiStatus);
+      assert(statusSets.at(-1)?.[0] === 'memory' && statusSets.at(-1)?.[1] === '记忆:智能', '状态行接入即显示默认档（记忆:智能）');
+      fire('internal/service', 'tuiStatus', tuiStatus);
+      assert(statusSets.length === 1, '同实例重复上线事件不重复挂接（幂等）');
+
+      // 34c 会话切换刷新：agent/session-start → 新会话档位上屏
+      modes.set('s34-b', 'off');
+      fire('agent/session-start', { agent: { id: 's34-b' } });
+      assert(statusSets.at(-1)?.[1] === '记忆:暂停', '会话切换后状态行跟随档位（off → 记忆:暂停）');
+
+      // 34d /memory 参数路径：切档 + 回执 + 状态行同步（agent.id 是宿主契约字段）
+      services.set('commands', commands);
+      fire('internal/service', 'commands', commands);
+      assert(commandDef?.name === 'memory', '命令服务上线即注册 /memory');
+      const r1 = await commandDef!.handler(mkInv('s34-b', ' Work '));
+      assert(r1.kind === 'success' && r1.text?.includes('工作') === true, '/memory work 回执成功文案');
+      assert(modes.get('s34-b') === 'work', '/memory work 写穿档位存储');
+      assert(statusSets.at(-1)?.[1] === '记忆:工作', '切档后状态行即时刷新（记忆:工作）');
+      const r1b = await commandDef!.handler(mkInv('s34-d', 'chat', 'sessionId'));
+      assert(r1b.kind === 'success' && modes.get('s34-d') === 'chat', 'sessionId 形状兜底同样落档');
+
+      // 34e 非法参数且无弹窗服务 → 用法错误（web 形态同路径）
+      const r2 = await commandDef!.handler(mkInv('s34-b', 'bogus'));
+      assert(r2.kind === 'error' && r2.text?.includes('用法') === true, '非法参数无弹窗时回用法错误');
+
+      // 34f 无参数 + 弹窗服务：选择落档 / 取消不变
+      services.set('tuiDialogs', dialogsSvc);
+      fire('internal/service', 'tuiDialogs', dialogsSvc);
+      selectImpl = async () => 'chat';
+      const r3 = await commandDef!.handler(mkInv('s34-c', ''));
+      assert(r3.kind === 'success' && modes.get('s34-c') === 'chat', '/memory 无参数弹窗选择落档（chat）');
+      assert(selectReq?.title === '记忆档位' && selectReq?.options?.length === 4, '弹窗请求形状（标题 + 四选项）');
+      selectImpl = async () => undefined;
+      const r4 = await commandDef!.handler(mkInv('s34-c', ''));
+      assert(r4.kind === 'success' && r4.text?.includes('已取消') === true && modes.get('s34-c') === 'chat', '弹窗取消档位不变');
+
+      // 34g 全局开关关闭：任何档位显示停用（状态行跟随 live 读数）——两条触发路径都验
+      liveOn = false;
+      await commandDef!.handler(mkInv('s34-c', 'auto'));
+      assert(statusSets.at(-1)?.[1] === '记忆:停用', '总开关关闭时状态行显示记忆:停用');
+      liveOn = true;
+      notifyLive();
+      assert(statusSets.at(-1)?.[1] === '记忆:智能', 'live.onChange 变更广播即时刷新状态行');
+
+      // 34h 设置区块：ns 与字段覆盖
+      services.set('tuiSettingsSections', sectionsSvc);
+      fire('internal/service', 'tuiSettingsSections', sectionsSvc);
+      assert(sectionDefs.length === 1 && sectionDefs[0].ns === 'dsh-memory', '设置区块注册到 dsh-memory 命名空间');
+      const paths34 = sectionDefs[0].fields.map((f) => f.path.join('.')).sort().join(',');
+      assert(
+        paths34 ===
+          ['enabled', 'capture', 'distill', 'recall', 'reasoningEffort', 'distillProvider', 'distillModel', 'distillMaxInputChars']
+            .sort()
+            .join(','),
+        '设置区块字段覆盖运行时开关 + 蒸馏路由/预算',
+      );
+      const effortField = sectionDefs[0].fields.find((f) => f.path[0] === 'reasoningEffort');
+      assert(effortField?.options?.length === EFFORT_CHOICES.length, '思考档位选项与 EFFORT_CHOICES 对齐');
+
+      // 34i 服务下线：摘挂接并清状态行
+      fire('internal/service', 'tuiStatus', undefined);
+      assert(statusSets.at(-1)?.[0] === 'memory' && statusSets.at(-1)?.[1] === undefined, 'tuiStatus 下线即清行');
+
+      // 34i' 服务换实例重挂：新对象上线 → 重挂接并刷新（svc !== bound 分支）
+      const tuiStatus2 = {
+        set: (k: string, t: string | undefined) => {
+          statusSets.push([k, t]);
+          return () => {
+            statusSets.push([k, undefined]);
+          };
+        },
+      };
+      services.set('tuiStatus', tuiStatus2);
+      fire('internal/service', 'tuiStatus', tuiStatus2);
+      assert(statusSets.at(-1)?.[1] === '记忆:智能', '服务换实例自动重挂（新实例接管状态行）');
+
+      // 34j fiber 卸载：全部 disposer 可跑不抛
+      let disposedOk = true;
+      for (const d of disposers) {
+        try {
+          d();
+        } catch {
+          disposedOk = false;
+        }
+      }
+      assert(disposedOk, 'fiber 卸载清理不抛');
+    } finally {
+      await fs.rm(tmp34, { recursive: true, force: true }).catch(() => {});
     }
   }
 
