@@ -38,6 +38,7 @@ import { SceneStore } from './store/scenes.js';
 import { SessionModeStore } from './store/session-modes.js';
 import { StateStore } from './store/state.js';
 import { registerMemoryTools } from './tools/index.js';
+import { registerTuiSurface } from './tui.js';
 import { errDetail, withFileLog } from './util/filelog.js';
 import { buildRouteChain, resolveModelRoute, invalidateEffortCache } from './llm.js';
 import { effectiveCfg } from './pipeline/runner.js';
@@ -287,6 +288,9 @@ export async function apply(ctx, config) {
     await runner.init();
     // 档位切换同步（ADR-0003）：切走按捕获档位落袋 / 切 off 挂起 / 切回清挂起
     modes.setModeChangeHandler((sessionId, oldMode, newMode) => runner.onModeChange(sessionId, oldMode, newMode));
+    // ── TUI 形态原生接入（dsh-tui/官方 TUI 宿主；软探测，web/headless 下全部 no-op）。
+    //    放切换链接线之后：/memory 在启动窗口内派发也不会绕过 runner.onModeChange ──
+    registerTuiSurface(ctx, { logger, live, modes });
     // 闲置兜底：静默达标会话的未蒸馏切片自动落袋（idleSeconds=0 关闭）
     runner.startIdleTimer();
     // 重建控制器（存储降级时不建——RPC 端点走 supported=false 分支）

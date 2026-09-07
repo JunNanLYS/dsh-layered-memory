@@ -82,6 +82,8 @@ export interface LiveSettingsHandle {
   get(): MemoryLiveSettings;
   /** UI 写入入口；不支持时抛错由 RPC 层转成业务错误 */
   update(patch: Partial<MemoryLiveSettings>): Promise<void>;
+  /** 订阅开关变更（TUI 状态行等即时刷新；可选——缺省方退化为下次交互时刷新）。返回退订。 */
+  onChange?(cb: () => void): () => void;
 }
 
 // 0.1.2-alpha 起 dsh-settings 不再导出 settingsNamespace 品牌 helper：
@@ -160,6 +162,9 @@ export function registerLiveSettings(ctx: Context, logger: MemoryLogger): LiveSe
     get: () => ALWAYS_ON,
     update: () => Promise.reject(new Error('settings 服务不可用')),
   };
+  // 变更订阅者（handle.onChange）：挂接在闭包层，inner 换新（服务迁移）后由新 scope 的
+  // watch 继续驱动——订阅方无感
+  const changeCbs = new Set<() => void>();
 
   /** 挂接一个（新注册或复用的）scope：重挂前先摘旧 watcher，防跨重启累积。 */
   const wireScope = (scope: SettingsScope<MemoryLiveSettings>): LiveSettingsHandle => {
@@ -168,6 +173,13 @@ export function registerLiveSettings(ctx: Context, logger: MemoryLogger): LiveSe
     cachedUnwatch = scope.watch((next) => {
       const prev = current;
       current = resolveSettings(next);
+      for (const cb of changeCbs) {
+        try {
+          cb();
+        } catch {
+          // 订阅方异常不阻断开关链（与档位切换回调同纪律）
+        }
+      }
       const b = current.distillBudgets;
       const budgetNote = (b.extract || b.dedup || b.l2 || b.l3)
         ? `，输出预算=抽取 ${b.extract || '默认'}/去重 ${b.dedup || '默认'}/L2 ${b.l2 || '默认'}/L3 ${b.l3 || '默认'}`
@@ -258,6 +270,12 @@ export function registerLiveSettings(ctx: Context, logger: MemoryLogger): LiveSe
     },
     get: (): MemoryLiveSettings => inner.get(),
     update: (patch: Partial<MemoryLiveSettings>): Promise<void> => inner.update(patch),
+    onChange: (cb: () => void): (() => void) => {
+      changeCbs.add(cb);
+      return () => {
+        changeCbs.delete(cb);
+      };
+    },
   };
 }
 
