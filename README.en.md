@@ -75,7 +75,7 @@ stays in `~/.dsh/memory/`; delete the whole directory manually if you don't need
 Beyond web, the same plugin installs into terminal-shaped hosts:
 
 ```bash
-# dsh-tui (Claude Code style TUI front door — see github.com/ccch1mneyyy/dsh-TUI)
+# dsh-tui (Claude Code style TUI front door — see github.com/ccch1mneyyy/dsh-TUI · site https://dshtui.com)
 dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui   # first time: create profile + install the TUI host
 dsh plugin --profile dsh-tui add dsh-layered-memory
 dsh --profile dsh-tui

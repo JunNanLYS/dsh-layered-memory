@@ -66,7 +66,7 @@ Agent 应当返回安装结果，并明确告诉你配置中是否已经出现 `
 除 web 外，同一插件可直接装进终端形态宿主：
 
 ```bash
-# dsh-tui（Claude Code 风格 TUI 前门，详见 github.com/ccch1mneyyy/dsh-TUI）
+# dsh-tui（Claude Code 风格 TUI 前门，详见 github.com/ccch1mneyyy/dsh-TUI · 官网 https://dshtui.com）
 dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui   # 首次：建 profile 并装 TUI 宿主
 dsh plugin --profile dsh-tui add dsh-layered-memory
 dsh --profile dsh-tui
