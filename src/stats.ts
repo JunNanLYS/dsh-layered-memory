@@ -13,6 +13,11 @@ import type { Context } from '@deepseek-ai/cordis';
 // 纯类型导入：把 dsh-client-connection 的 Context.connection 声明合并拉进编译，
 // 使 ctx.get('connection') 拿到 HostConnectionHandle 类型（编译后无运行时依赖）。
 import type {} from '@deepseek-ai/dsh-client-connection';
+// RPC 结果信封沿用 connection 的既有形状（本文件直接注册 /rpc 路由后自行组装）。
+import type { ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection';
+// 同款：webServer 服务的声明合并（ctx.webServer）——本文件按官方范式直接注册 /rpc 路由，
+// 见下方 registerMemoryRpc 的说明。
+import type {} from '@deepseek-ai/dsh-host-webserver';
 // 同款：llm 服务（ctx.llm）与默认模型选择（ctx.get('agentDefaultModel')）的声明合并
 import type {} from '@deepseek-ai/dsh-llm';
 import type {} from '@deepseek-ai/dsh-agent-default-model';
@@ -103,7 +108,12 @@ type FamilyStores = {
   persona: Record<MemoryFamily, PersonaStore>;
 };
 
-/** 注册状态 RPC（web 侧 connection 服务可选，缺失时跳过，不影响插件主体）。 */
+/**
+ * 注册状态 RPC（记忆工作台数据通道）。
+ * connection / webServer 是可选服务，且都可能晚于本插件就绪：用作用域 inject 等待二者，
+ * 就绪即挂 /rpc 前缀路由，服务下线或 fiber 卸载由 cordis 的 effect disposer 摘除。
+ * 不依赖 connection.rpc.handle——它的 owner 是 connection 自身 ctx，在 0.2.x 上必抛。
+ */
 export function registerMemoryRpc(
   ctx: Context,
   cfg: MemoryConfig,
@@ -123,87 +133,95 @@ export function registerMemoryRpc(
   embedManager?: EmbeddingManager,
   sessionInfo?: SessionInfoSource,
 ): void {
-  /** 当前是否持有一段有效注册（dispose 完成后清空，允许服务重上线时重注册）。 */
-  let holding = false;
-  /** 当前 handle 绑定的 connection 实例（internal/service 第二参；用于识别实例替换）。 */
-  let registeredImpl: unknown;
-
-  const tryRegister = (): void => {
-    if (holding) return;
-    const connection = ctx.get('connection');
-    if (!connection) return;
-    holding = true;
-    let active = true;
-    // handle() 同步注册并返回异步 disposer（() => Promise<void>）。
-    const dispose = connection.rpc.handle(
-      '/rpc',
-      async (endpoint, payload) => {
-        try {
-          const value = await handleEndpoint(endpoint, payload, {
-            ctx,
-            cfg,
-            stores,
-            status,
-            live,
-            modes,
-            dataDir: dataDir ?? resolveDataDir(cfg),
-            logger,
-            rebuild,
-            embedManager,
-            sessionInfo,
-          });
-          return { ok: true, value };
-        } catch (err) {
-          return {
-            ok: false,
-            error: { code: 'internal', message: err instanceof Error ? err.message : String(err), details: {} },
-          };
-        }
-      },
-    );
-    registeredImpl = connection;
-    if (!active) {
-      void dispose();
-      return;
-    }
-    logger.debug?.('[memory] 状态 RPC 已注册（/rpc → dsh-memory/*）');
-    disposers.push(() => {
-      active = false;
-      holding = false;
-      void dispose();
-    });
-  };
-
-  /** 释放全部持有注册（handle 随旧服务实例失效，holding 复位以允许重挂）。 */
-  const release = (): void => {
-    for (const dispose of disposers.splice(0)) dispose();
-  };
-
-  const disposers: Array<() => void> = [];
-
-  ctx.effect(() => {
-    tryRegister();
-    const off = ctx.on('internal/service', (name: string, impl: unknown) => {
-      if (name !== 'connection') return;
-      if (!impl) {
-        // 服务下线：旧 handle 已随旧服务实例失效——主动释放并复位，
-        // 服务恢复时本事件再触发即可重挂（否则 holding 恒真 → RPC 永久失联）
-        release();
-        registeredImpl = undefined;
-        logger.debug?.('[memory] connection 服务下线，RPC 注册已释放（待恢复重挂）');
-        return;
+  // 【反模式，已实测证伪】曾假设 connection.rpc.handle 会以「调用方 ctx」为 owner，
+  // 于是用 ctx.inject(['connection','webServer']) 去满足它——该假设在本版本不成立：
+  // 见下方实测堆栈。不要再回到 rpc.handle 这条路。connection 仍是可选服务：
+  // 用 inject 等待其就绪，服务上线/下线/替换由 cordis 自动重挂与释放。
+  ctx.inject(['connection', 'webServer'], (injected) => {
+    // connection.rpc.handle() 在本版本里取的是 connection 服务自身 ctx 作 owner，
+    // 而那里从未注入 webServer，调用即抛 'cannot get property "webServer" without
+    // inject'（实测堆栈：dsh-client-connection/lib/index.js:656）→ 异常发生在 apply
+    // 同步路径上，宿主整体 fatal（桌面端直接起不来）。官方代码库零处使用该 API，
+    // 一律走 webServer.register，故此处按同一范式直接注册 /rpc 前缀路由；收发沿用
+    // 客户端已实现的 client-request / server-response 信封契约，客户端无需改动。
+    const rpcHandler = async (endpoint: string, payload: unknown): Promise<ConnectionRpcResult<unknown>> => {
+      try {
+        const value = await handleEndpoint(endpoint, payload, {
+          ctx,
+          cfg,
+          stores,
+          status,
+          live,
+          modes,
+          dataDir: dataDir ?? resolveDataDir(cfg),
+          logger,
+          rebuild,
+          embedManager,
+          sessionInfo,
+        });
+        return { ok: true, value };
+      } catch (err) {
+        return {
+          ok: false,
+          error: { code: 'internal', message: err instanceof Error ? err.message : String(err), details: {} },
+        };
       }
-      if (impl !== registeredImpl) {
-        // 实例替换：旧 handle 失效，换新实例重挂
-        release();
-        registeredImpl = undefined;
-      }
-      tryRegister();
-    });
-    return () => {
-      off();
-      release();
     };
+
+    injected.effect(
+      () =>
+        injected.webServer.register({
+          kind: 'prefix',
+          path: '/rpc',
+          handler: async (req, res) => {
+            // 与 connection 自有 RPC 路由同一道 Host/Origin 围栏 + 浏览器 cookie 鉴权
+            const rejection = injected.connection.requestRejection(req);
+            if (rejection !== undefined) {
+              res.writeHead(rejection);
+              res.end(rejection === 401 ? 'unauthorized' : 'forbidden');
+              return;
+            }
+            const pathname = new URL(req.url ?? '/', 'http://dsh.invalid').pathname;
+            const endpoint = pathname.startsWith('/rpc/') ? pathname.slice(5) : undefined;
+            if (
+              req.method !== 'POST' ||
+              endpoint === undefined ||
+              endpoint.split('/').some((s) => s === '' || s === '.' || s === '..' || !/^[A-Za-z0-9_$.-]+$/.test(s))
+            ) {
+              res.writeHead(404);
+              res.end('not found');
+              return;
+            }
+            if (String(req.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase() !== 'application/json') {
+              res.writeHead(415);
+              res.end('content type must be application/json');
+              return;
+            }
+            let raw = '';
+            for await (const chunk of req) raw += chunk;
+            let message: { rpcId?: unknown; type?: unknown; method?: unknown; payload?: unknown };
+            try {
+              message = JSON.parse(raw) as typeof message;
+            } catch {
+              res.writeHead(400);
+              res.end('body is not JSON');
+              return;
+            }
+            const rpcId = typeof message?.rpcId === 'string' ? message.rpcId : 'invalid-request';
+            const send = (result: unknown): void => {
+              res.writeHead(200, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({ type: 'server-response', rpcId, result }));
+            };
+            if (!message || message.type !== 'client-request' || message.method !== endpoint) {
+              send({ ok: false, error: { code: 'gateway/bad-request', message: 'invalid client-request message', details: {} } });
+              return;
+            }
+            send(await rpcHandler(endpoint, message.payload));
+          },
+        }),
+      'memory: /rpc RPC channel',
+    );
+    logger.info('[memory] 状态 RPC 已注册（/rpc → dsh-memory/*；direct webServer route）');
   });
 }
 
