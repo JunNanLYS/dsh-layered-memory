@@ -4,9 +4,11 @@
  */
 import { existsSync, promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import type { SessionEvent } from '@deepseek-ai/dsh-session';
@@ -587,9 +589,13 @@ async function main(): Promise<void> {
         },
       };
 
-      // fake connection：捕获 rpc.handle 注册的 handler；
+      // fake connection / webServer：本模块按官方范式直接把 /rpc 前缀路由注册到
+      // webServer.register（connection.rpc.handle 的 owner 是 connection 自身 ctx，
+      // 在 0.2.x 上会抛 "without inject"），故这里捕获 WebRoute 的 handler，
+      // 再由 call() 组装 client-request 信封调用。
       // llm/agentDefaultModel 提供 listProviders/listModels/currentSelection 假实现（模型选择器端点用）
-      let handler: ((endpoint: string, payload?: unknown) => Promise<unknown>) | undefined;
+      let rpcHandler: ((endpoint: string, payload?: unknown) => Promise<unknown>) | undefined;
+      let routeHandler: ((req: IncomingMessage, res: ServerResponse) => Promise<void>) | undefined;
       const fakeCtx = {
         llm: {
           listProviders: () => [{ id: 'deepseek-official', name: 'DeepSeek' }, { id: 'custom-oai', name: '自定义 OpenAI' }],
@@ -604,11 +610,22 @@ async function main(): Promise<void> {
               : { reasoning: { efforts: [{ id: 'off' }, { id: 'high' }] } },
         },
         get: (name: string) =>
-          name === 'connection'
-            ? { rpc: { handle: (ch: string, h: typeof handler) => { handler = h; return async () => {}; } } }
-            : name === 'agentDefaultModel'
-              ? { currentSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-v4-flash' }) }
-              : undefined,
+          name === 'agentDefaultModel'
+            ? { currentSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-v4-flash' }) }
+            : undefined,
+        // inject(deps, cb)：cordis 语义是等依赖就绪后以子 ctx 调 cb；smoke 里直接以假服务同步满足。
+        inject: (_deps: readonly string[], cb: (injected: unknown) => unknown) =>
+          cb({
+            connection: { requestRejection: () => undefined },
+            webServer: {
+              register: (route: { handler: typeof routeHandler }) => {
+                routeHandler = route.handler;
+                return () => {};
+              },
+            },
+            // cordis 派生 ctx 同样带 effect（立即执行并返回 disposer）
+            effect: (f: () => () => void) => f(),
+          }),
         on: () => () => {},
         effect: (f: () => (() => void)) => f(),
       } as never;
@@ -634,10 +651,32 @@ async function main(): Promise<void> {
         undefined,
         sessionInfoStub,
       );
-      assert(typeof handler === 'function', 'RPC handler 注册成功');
+      assert(typeof routeHandler === 'function', 'RPC handler 注册成功（webServer /rpc 路由）');
+
+      // 把捕获到的 WebRoute handler 包成原来的 (endpoint, payload) 调用形态：
+      // 走完整信封路径（client-request / server-response），顺带覆盖路由自身的入参校验。
+      let rpcSeq = 0;
+      const invoke = async (endpoint: string, payload?: unknown): Promise<{ ok: boolean; value?: unknown; error?: { message?: string } }> => {
+        const body = JSON.stringify({ type: 'client-request', rpcId: `smoke-${++rpcSeq}`, method: endpoint, payload });
+        const req = Object.assign(Readable.from([Buffer.from(body, 'utf8')]), {
+          method: 'POST',
+          url: `/rpc/${endpoint}`,
+          headers: { 'content-type': 'application/json' },
+        }) as unknown as IncomingMessage;
+        const chunks: string[] = [];
+        let status = 0;
+        const res = {
+          writeHead: (code: number) => { status = code; return res; },
+          end: (chunk?: string) => { if (chunk) chunks.push(String(chunk)); return res; },
+        } as unknown as ServerResponse;
+        await routeHandler!(req, res);
+        assert(status === 200, `rpc ${endpoint} 走 200（实际 ${status}）`);
+        const envelope = JSON.parse(chunks.join('')) as { result: { ok: boolean; value?: unknown; error?: { message?: string } } };
+        return envelope.result;
+      };
 
       const call = async (endpoint: string, payload?: unknown): Promise<never> => {
-        const r = (await handler!(endpoint, payload)) as { ok: boolean; value?: unknown };
+        const r = (await invoke(endpoint, payload)) as { ok: boolean; value?: unknown };
         if (!r.ok) throw new Error(`rpc ${endpoint} failed`);
         return r.value as never;
       };
@@ -720,7 +759,7 @@ async function main(): Promise<void> {
       const sstBack = await call('dsh-memory/session-stats', { sessionId: 'sess-x' }) as never as { recall: { enabled: boolean; reason?: string } };
       assert(sstBack.recall.enabled === true && sstBack.recall.reason === undefined, 'session-stats：清除只写后恢复注入且无 reason');
       // 数据源缺失（旧装配）走 supported=false：信息区整体隐藏
-      const sst2HandlerPayload: unknown = await handler!('dsh-memory/session-stats', { sessionId: '' });
+      const sst2HandlerPayload = await invoke('dsh-memory/session-stats', { sessionId: '' });
       assert((sst2HandlerPayload as { ok: boolean }).ok === false, 'session-stats：空 sessionId 拒绝');
 
 
@@ -2484,62 +2523,139 @@ async function main(): Promise<void> {
     assert(h3.llm.maxInputChars === 300_000 && h3.llm.budgets?.extract === 8000, '输入与输出预算覆盖同轮生效');
   }
 
-  console.log('== 17. connection 波动后 RPC 重挂（M11） ==');
+  console.log('== 17. /rpc 路由注册契约（webServer.register + inject 生命周期） ==');
   {
     const tmpT9 = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-mem-conn-'));
     try {
-      type H = (endpoint: string, payload?: unknown) => Promise<unknown>;
-      let handler1: H | undefined;
-      let handler2: H | undefined;
-      let disposed1 = 0;
-      let disposed2 = 0;
-      const svc1 = {
-        rpc: {
-          handle: (_ch: string, h: H) => {
-            handler1 = h;
-            return async () => {
-              disposed1++;
-            };
-          },
-        },
-      };
-      const svc2 = {
-        rpc: {
-          handle: (_ch: string, h: H) => {
-            handler2 = h;
-            return async () => {
-              disposed2++;
-            };
-          },
-        },
-      };
-      let svc: unknown = svc1;
-      let serviceListener: ((name: string, impl: unknown) => void) | undefined;
+      // 改用 ctx.inject(['connection','webServer'], cb) 后，路由的注册/释放由 cordis
+      // 的 inject 作用域承担（服务上线即挂、fiber 卸载即由 effect disposer 摘除），
+      // 本节的职责相应变为：验证注册走的是 webServer.register、effect 返回的 disposer
+      // 被交给 cordis，以及路由自身对请求的准入判定。
+      type RouteHandler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
+      let routeHandler: RouteHandler | undefined;
+      let routeKind = '';
+      let routePath = '';
+      let effectDisposer: (() => void) | undefined;
+      let rejectStatus: number | undefined;
+      let injectedDeps: readonly string[] = [];
+
       const ctxC = {
-        get: (n: string) => (n === 'connection' ? svc : undefined),
-        on: (_e: string, h: (name: string, impl: unknown) => void) => {
-          serviceListener = h;
-          return () => {};
+        inject: (deps: readonly string[], cb: (injected: unknown) => unknown) => {
+          injectedDeps = deps;
+          cb({
+            connection: {
+              requestRejection: () => rejectStatus,
+            },
+            webServer: {
+              register: (route: { kind: string; path: string; handler: RouteHandler }) => {
+                routeKind = route.kind;
+                routePath = route.path;
+                routeHandler = route.handler;
+                return () => {
+                  effectDisposer = undefined;
+                };
+              },
+            },
+            effect: (f: () => () => void) => {
+              effectDisposer = f();
+              return () => {};
+            },
+          });
         },
+        on: () => () => {},
         effect: (f: () => (() => void)) => {
           f();
           return () => {};
         },
       } as never;
+
       registerMemoryRpc(ctxC, {} as never, {} as never, silentLogger, undefined, undefined, undefined, tmpT9);
-      assert(typeof handler1 === 'function', '初始注册到 svc1');
+      assert(injectedDeps.join(',') === 'connection,webServer', 'inject 同时声明 connection 与 webServer');
+      assert(routeKind === 'prefix' && routePath === '/rpc', '注册 /rpc 前缀路由（而非 rpc.handle）');
+      assert(typeof routeHandler === 'function', '路由 handler 已注册');
+      assert(typeof effectDisposer === 'function', 'effect 返回 disposer 交给 cordis 管理生命周期');
 
-      // 服务下线（impl=undefined）：旧 handle 随旧实例失效 → 立即释放复位
-      svc = undefined;
-      serviceListener!('connection', undefined);
-      assert(disposed1 === 1, '下线即释放旧 handle（holding 复位，不再卡死）');
+      const mkRes = () => {
+        const chunks: string[] = [];
+        let status = 0;
+        const res = {
+          writeHead: (code: number) => {
+            status = code;
+            return res;
+          },
+          end: (chunk?: string) => {
+            if (chunk) chunks.push(String(chunk));
+            return res;
+          },
+        } as unknown as ServerResponse;
+        return { res, chunks, status: () => status };
+      };
+      const mkReq = (init: { method?: string; url?: string; contentType?: string; body?: string }) =>
+        Object.assign(Readable.from(init.body === undefined ? [] : [Buffer.from(init.body, 'utf8')]), {
+          method: init.method ?? 'POST',
+          url: init.url ?? '/rpc/dsh-memory/log-tail',
+          headers: init.contentType === undefined ? {} : { 'content-type': init.contentType },
+        }) as unknown as IncomingMessage;
 
-      // 服务恢复（新实例）：自动重挂
-      svc = svc2;
-      serviceListener!('connection', svc2);
-      assert(typeof handler2 === 'function', '恢复后自动重挂到新实例');
-      const r = (await handler2!('dsh-memory/log-tail', { lines: 3 })) as { ok: boolean; value: { lines: string[] } };
-      assert(r.ok === true && Array.isArray(r.value.lines), '重挂后的 handler 端点可用');
+      // 围栏：connection.requestRejection 给出 401 时直接拒绝，不进端点
+      rejectStatus = 401;
+      {
+        const r = mkRes();
+        await routeHandler!(mkReq({ body: '{}' }), r.res);
+        assert(r.status() === 401, '围栏拒绝时返回 401（不透传端点）');
+      }
+      rejectStatus = 403;
+      {
+        const r = mkRes();
+        await routeHandler!(mkReq({ body: '{}' }), r.res);
+        assert(r.status() === 403, '围栏拒绝时返回 403');
+      }
+      rejectStatus = undefined;
+
+      // 路由形态校验：非 POST / 路径不合法 / content-type 非 JSON / body 非 JSON
+      {
+        const r = mkRes();
+        await routeHandler!(mkReq({ method: 'GET', body: '{}' }), r.res);
+        assert(r.status() === 404, '非 POST 返回 404');
+      }
+      {
+        const r = mkRes();
+        await routeHandler!(mkReq({ url: '/rpc/', body: '{}' }), r.res);
+        assert(r.status() === 404, '空端点返回 404');
+      }
+      {
+        const r = mkRes();
+        await routeHandler!(mkReq({ url: '/rpc/..%2fetc', body: '{}' }), r.res);
+        assert(r.status() === 404, '路径穿越端点返回 404');
+      }
+      {
+        const r = mkRes();
+        await routeHandler!(mkReq({ contentType: 'text/plain', body: '{}' }), r.res);
+        assert(r.status() === 415, '非 JSON content-type 返回 415');
+      }
+      {
+        const r = mkRes();
+        await routeHandler!(mkReq({ contentType: 'application/json', body: 'not json' }), r.res);
+        assert(r.status() === 400, 'body 非 JSON 返回 400');
+      }
+
+      // 信封契约：method 与路径不一致 → gateway/bad-request；一致 → 正常端点结果
+      {
+        const r = mkRes();
+        const body = JSON.stringify({ type: 'client-request', rpcId: 'x1', method: 'dsh-memory/other', payload: {} });
+        await routeHandler!(mkReq({ contentType: 'application/json', body }), r.res);
+        const env = JSON.parse(r.chunks.join('')) as { type: string; rpcId: string; result: { ok: boolean; error?: { code: string } } };
+        assert(env.type === 'server-response' && env.rpcId === 'x1', '回 server-response 信封并回显 rpcId');
+        assert(env.result.ok === false && env.result.error?.code === 'gateway/bad-request', 'method 与路径不一致被拒');
+      }
+      {
+        const r = mkRes();
+        const body = JSON.stringify({ type: 'client-request', rpcId: 'x2', method: 'dsh-memory/log-tail', payload: { lines: 3 } });
+        await routeHandler!(mkReq({ contentType: 'application/json', body }), r.res);
+        assert(r.status() === 200, '合法请求走 200');
+        const env = JSON.parse(r.chunks.join('')) as { result: { ok: boolean; value: { lines: string[] } } };
+        assert(env.result.ok === true && Array.isArray(env.result.value.lines), '端点在信封路径下可用');
+      }
     } finally {
       await fs.rm(tmpT9, { recursive: true, force: true }).catch(() => {});
     }
