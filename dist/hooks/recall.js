@@ -6,6 +6,24 @@ import { clearProfileShare, emptyOccupancyLedger, estimateInjectedMessageTokens,
 import { errDetail } from '../util/filelog.js';
 import { blocksToText } from '../util/text.js';
 const PROFILE_TTL = 60_000;
+/**
+ * 判定一条 `user/message` 是否为本插件写下的召回注入。
+ *
+ * 两种形态都要认：
+ * - `kind: 'plugin:memory'`——0.2.x 起写入端要求 source.kind 自证生产者
+ *   （老式 `kind:'plugin'` + `plugin` 字段的包装会被 dsh-session-format-v3-to-v4 拒绝）；
+ * - `kind: 'plugin'` + `plugin: 'memory'`——迁移前的历史行，以及旧版写下的存量。
+ *   注意迁移会**剥掉 `plugin` 字段**并把 kind 改写为 `'plugin:<id>'`，故两个分支都不可少。
+ *
+ * 只认本子系统：其它来源（如 `plugin:skill-catalog`）不应计入召回注入账目。
+ */
+function isMemoryRecallSource(src) {
+    if (!src || src.form !== 'recall')
+        return false;
+    if (src.kind === 'plugin:memory')
+        return true;
+    return src.kind === 'plugin' && src.plugin === 'memory';
+}
 const storedEstimateCache = new Map();
 /** 召回查询只取会话末尾 N 条消息（长会话每步把全史拼进 FTS MATCH 会让检索成本线性上涨）。 */
 const RECALL_QUERY_TAIL_MESSAGES = 8;
@@ -198,9 +216,12 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
                 const injection = createUserMessage({
                     content: [{ type: 'text', text }],
                     // plugin 字段是宿主 UI 的署名后缀（"上下文注入 · memory"）——用展示友好的
-                    // 子系统名，不用 cordis id（dsh-memory）；kind:'plugin' 的标题恒为通用
-                    // "上下文注入"（专用"跨会话召回"标题仅留给 session-reference 来源）
-                    source: { kind: 'plugin', plugin: 'memory', form: 'recall' },
+                    // 子系统名，不用 cordis id（dsh-memory）；专用"跨会话召回"标题仅留给
+                    // session-reference 来源。
+                    // kind 用生产者自有标识 'plugin:<id>'：0.2.x 的会话格式 v4 写入端要求
+                    // source.kind 自证生产者（老式 kind:'plugin' + plugin 字段的包装会被
+                    // dsh-session-format-v3-to-v4 拒绝，异常成为未处理的 Promise 拒绝冒到界面）。
+                    source: { kind: 'plugin:memory', plugin: 'memory', form: 'recall' },
                 });
                 // 入账在成功构造注入消息之后、返回 enter 之前——任何前置抛错路径账目零扰动
                 const led = ledgerFor(payload.agent.id);
@@ -256,7 +277,7 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
                     if (ev.type !== 'user/message')
                         continue;
                     const src = ev.data?.source;
-                    if (!src || src.kind !== 'plugin' || src.plugin !== 'memory' || src.form !== 'recall')
+                    if (!isMemoryRecallSource(src))
                         continue;
                     let chars = 0;
                     for (const b of ev.data?.content ?? []) {
@@ -298,7 +319,7 @@ export function registerRecall(ctx, cfg, stores, logger, live, modes, dataDir) {
                         continue;
                     const msg = ev.data;
                     const src = msg?.source;
-                    if (!src || src.kind !== 'plugin' || src.plugin !== 'memory' || src.form !== 'recall')
+                    if (!msg || !isMemoryRecallSource(src))
                         continue;
                     let chars = 0;
                     for (const b of msg.content ?? []) {

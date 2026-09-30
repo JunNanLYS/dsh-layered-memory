@@ -16,6 +16,27 @@
  * 由定时刷新 + 管线更新后的主动失效来更新。
  */
 import type { Context } from '@deepseek-ai/cordis';
+import type { ContextFormed } from '@deepseek-ai/dsh-llm';
+/**
+ * 扩展宿主的可合并来源和类型（`MessageSourceMap` 的文档明确写「plugins add their own kinds」）。
+ *
+ * 0.2.x 的会话格式 v4 写入端要求 `source.kind` 自证生产者（`'plugin:<id>'`），
+ * 老式 `kind:'plugin'` + `plugin` 字段的包装会被 `dsh-session-format-v3-to-v4` 拒绝，
+ * 异常成为未处理的 Promise 拒绝冒到界面（每轮对话一次）。这里按官方扩展点声明本子系统
+ * 自己的 kind，取代原先借用 `'plugin'` 包装的写法。
+ *
+ * 语义：`kind` 回答「谁产出的」，`form` 回答「产出了什么」。本 kind 目前只产出
+ * `form: 'recall'` 的召回注入，故把两个字段一起声明，读侧投影据此显示为召回来源。
+ */
+declare module '@deepseek-ai/dsh-llm' {
+    interface MessageSourceMap {
+        'plugin:memory': {
+            readonly kind: 'plugin:memory';
+            /** 展示用子系统名（宿主 UI 的署名后缀）。 */
+            readonly plugin: 'memory';
+        } & ContextFormed;
+    }
+}
 import type { MemoryConfig } from '../config.js';
 import type { LiveSettingsHandle } from '../settings.js';
 import type { L1Store } from '../store/l1.js';

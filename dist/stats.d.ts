@@ -54,7 +54,12 @@ export interface SessionInfoSource {
 }
 import type { MemoryOccupancy } from './contract.js';
 export type { MemoryStats } from './contract.js';
-/** 注册状态 RPC（web 侧 connection 服务可选，缺失时跳过，不影响插件主体）。 */
+/**
+ * 注册状态 RPC（记忆工作台数据通道）。
+ * connection / webServer 是可选服务，且都可能晚于本插件就绪：用作用域 inject 等待二者，
+ * 就绪即挂 /rpc 前缀路由，服务下线或 fiber 卸载由 cordis 的 effect disposer 摘除。
+ * 不依赖 connection.rpc.handle——它的 owner 是 connection 自身 ctx，在 0.2.x 上必抛。
+ */
 export declare function registerMemoryRpc(ctx: Context, cfg: MemoryConfig, stores: {
     l0: L0Store;
     l1: L1Store;
